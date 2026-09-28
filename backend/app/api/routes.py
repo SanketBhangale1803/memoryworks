@@ -1915,7 +1915,9 @@ def create_briefing(
 
     # The ledger row is what lets record_briefing_outcome close this loop later.
     # It is best-effort by design: a briefing must still be served if the
-    # instrumentation behind it fails.
+    # instrumentation behind it fails. It records every memory the agent was
+    # shown, in display order, so an outcome can be attributed to the context
+    # that preceded it rather than only to the wording of the task.
     briefing_id = record_context(
         project_id=request.project_id,
         query=f"[briefing] {request.task}",
@@ -1924,7 +1926,7 @@ def create_briefing(
             "answer_scope": "briefing",
             "answer_kind": brief["verdict"],
             "answer_sufficient": brief["verdict"] != "no_memory",
-            "evidence": [],
+            "evidence": _briefing_evidence(brief),
             "confidence": 0.0,
             "context_envelope": {},
         },
@@ -1985,6 +1987,35 @@ def record_briefing_outcome(
         "outcome": outcome,
         "recorded": True,
     }
+
+
+BRIEFING_CITED_GROUPS = (
+    "must_read",
+    "constraints",
+    "prior_incidents",
+    "blast_radius",
+    "procedures",
+)
+
+
+def _briefing_evidence(brief: dict) -> list[dict]:
+    """The memories a briefing showed, one ledger evidence row per memory.
+
+    A briefing never repeats a memory across groups, so display order is also
+    rank order. The source is the memory's first one; that is enough to join
+    an outcome back to the document a person would open.
+    """
+    evidence: list[dict] = []
+    for group in BRIEFING_CITED_GROUPS:
+        for item in brief.get(group) or []:
+            memory_id = str(item.get("memory_id") or "")
+            if not memory_id:
+                continue
+            sources = (company_memory.get(memory_id) or {}).get("source_ids") or []
+            evidence.append(
+                {"memory_id": memory_id, "source_id": sources[0] if sources else "", "group": group}
+            )
+    return evidence
 
 
 def _briefing_project_ids(principal: dict) -> list[str]:

@@ -166,10 +166,14 @@ def run(cases_path: Path) -> dict:
                 # Share of what was shown that the case asked for. A briefing that
                 # surfaces the right source among five unrelated ones "passes" on
                 # recall but costs the agent the same attention as a wrong one.
-                "precision": round(len(found) / len(surfaced_sources), 3) if must and surfaced_sources else None,
+                "precision": round(len(found) / len(surfaced_sources), 3)
+                if must and surfaced_sources
+                else None,
                 "approval_ok": approval_ok,
                 "verdict_ok": verdict_ok,
-                "ledger_memory_ids": len(json.loads((ledger or {}).get("evidence_ids_json") or "[]")),
+                "ledger_memory_ids": len(
+                    json.loads((ledger or {}).get("evidence_ids_json") or "[]")
+                ),
                 "passed": not missed and not leaked and approval_ok and verdict_ok,
             }
         )
@@ -181,7 +185,9 @@ def _summarize(results: list[dict]) -> dict:
     required = sum(len(r["found"]) + len(r["missed"]) for r in results)
     found = sum(len(r["found"]) for r in results)
     with_must = [r for r in results if r["found"] or r["missed"]]
-    reciprocal = [1 / r["first_correct_rank"] if r["first_correct_rank"] else 0.0 for r in with_must]
+    reciprocal = [
+        1 / r["first_correct_rank"] if r["first_correct_rank"] else 0.0 for r in with_must
+    ]
     return {
         "cases": len(results),
         "passed": sum(r["passed"] for r in results),
@@ -194,7 +200,9 @@ def _summarize(results: list[dict]) -> dict:
             3,
         ),
         "cases_with_leak": sum(bool(r["leaked"]) for r in results),
-        "approval_accuracy": round(sum(r["approval_ok"] for r in results) / max(len(results), 1), 3),
+        "approval_accuracy": round(
+            sum(r["approval_ok"] for r in results) / max(len(results), 1), 3
+        ),
         "avg_memories_shown": round(
             sum(r["memory_count"] for r in results) / max(len(results), 1), 1
         ),
@@ -230,16 +238,22 @@ def _print(report: dict) -> None:
     print(f"  passed               {s['passed']}/{s['cases']} ({s['pass_rate']:.0%})")
     print(f"  recall               {s['recall']:.0%} of required sources surfaced")
     print(f"  MRR                  {s['mrr']:.2f} (1.0 = right source always shown first)")
-    print(f"  precision            {s['precision']:.0%} of surfaced sources were the ones asked for")
+    print(
+        f"  precision            {s['precision']:.0%} of surfaced sources were the ones asked for"
+    )
     print(f"  cases with a leak    {s['cases_with_leak']}")
     print(f"  approval accuracy    {s['approval_accuracy']:.0%}")
     print(f"  avg memories shown   {s['avg_memories_shown']}")
-    print(f"  attributable         {s['briefings_attributable']}/{s['cases']} ledger rows record which memories were shown")
+    print(
+        f"  attributable         {s['briefings_attributable']}/{s['cases']} ledger rows record which memories were shown"
+    )
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--cases", type=Path, default=Path(__file__).with_name("briefing_cases.json"))
+    parser.add_argument(
+        "--cases", type=Path, default=Path(__file__).with_name("briefing_cases.json")
+    )
     parser.add_argument("--json", type=Path, help="Also write the full report here.")
     parser.add_argument("--min-pass", type=float, default=0.0, help="Exit 1 below this pass rate.")
     args = parser.parse_args()
