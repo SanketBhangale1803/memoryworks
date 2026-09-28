@@ -22,8 +22,14 @@ import {
 
 const COLLAPSED_KEY = "orgmemory.nav.collapsed";
 
-type FrameContext = { openNav: () => void };
-const NavContext = createContext<FrameContext>({ openNav: () => undefined });
+type FrameContext = { openNav: () => void; inFrame: boolean };
+const NavContext = createContext<FrameContext>({ openNav: () => undefined, inFrame: false });
+
+/* For pages that also render outside the frame (the public WebMCP demo): inside
+   it, the brand and the way back belong to the sidebar, not the page. */
+export function useInWorkspaceFrame() {
+  return useContext(NavContext).inFrame;
+}
 
 /* The menu button a page bar shows on narrow screens, where the sidebar is a drawer. */
 export function NavToggle() {
@@ -123,7 +129,7 @@ export default function WorkspaceFrame({
     .toUpperCase();
 
   return (
-    <NavContext.Provider value={{ openNav: () => setDrawerOpen(true) }}>
+    <NavContext.Provider value={{ openNav: () => setDrawerOpen(true), inFrame: true }}>
       <div className="nav-frame" data-drawer={drawerOpen ? "open" : "closed"}>
         <aside className="nav-side" aria-label="Workspace navigation">
           <div className="nav-brand">

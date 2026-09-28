@@ -2617,9 +2617,9 @@ select:focus, .project-select:focus { outline:none; border-color:var(--ink-4); b
 
 @media (max-width:960px) {
   .nav-frame { grid-template-columns:minmax(0,1fr); }
-  .nav-side { position:fixed; inset:0 auto 0 0; width:min(86vw,300px); box-shadow:var(--shadow-lg); transform:translateX(-102%); transition:transform .28s var(--ease); }
+  .nav-side { position:fixed; inset:0 auto 0 0; z-index:50; width:min(86vw,300px); box-shadow:var(--shadow-lg); transform:translateX(-102%); transition:transform .28s var(--ease); }
   .nav-frame[data-drawer="open"] .nav-side { transform:none; }
-  .nav-scrim { position:fixed; inset:0; z-index:29; display:block; border:0; background:var(--overlay); opacity:0; pointer-events:none; transition:opacity .28s var(--ease); }
+  .nav-scrim { position:fixed; inset:0; z-index:49; display:block; border:0; background:var(--overlay); opacity:0; pointer-events:none; transition:opacity .28s var(--ease); }
   .nav-frame[data-drawer="open"] .nav-scrim { opacity:1; pointer-events:auto; }
   .nav-close, .nav-toggle { display:inline-flex; }
 }

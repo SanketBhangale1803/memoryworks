@@ -73,6 +73,13 @@ test("every signed-in page shows the whole registry in a sidebar", () => {
   assert.match(frame, /!closed \|\| holdsCurrent/);
   // Chat, the agent console, and every satellite page sit inside the frame.
   assert.equal(shell.match(/<WorkspaceFrame/g)?.length, 2);
+  // Pages with their own bar still offer the drawer on phones; the console
+  // drops its own brand and way back only when the frame provides them.
+  const chat = readFileSync(new URL("../components/WorkspaceChat.tsx", import.meta.url), "utf8");
+  const console_ = readFileSync(new URL("../components/AgentOperations.tsx", import.meta.url), "utf8");
+  assert.match(chat, /<NavToggle \/>/);
+  assert.match(console_, /<NavToggle \/>/);
+  assert.match(console_, /const inFrame = useInWorkspaceFrame\(\)/);
   // Connecting things is one group, not scattered across Knowledge and Admin.
   for (const href of ["/connectors", "/integrations", "/ingest", "/jobs", "/keys"]) {
     assert.match(map, new RegExp(`href: "${href}",[^}]*group: "Integrations"`));

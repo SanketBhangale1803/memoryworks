@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RunbookMark } from "@/components/RunbookLogo";
+import { NavToggle, useInWorkspaceFrame } from "@/components/WorkspaceFrame";
 import { api } from "@/lib/api";
 import { WEBMCP_DEMO_MODE } from "@/lib/demoOrgMemory";
 import { registerOrgConsoleWebMCP, type WebMCPActivity } from "@/lib/webmcp";
@@ -136,6 +137,7 @@ export default function AgentOperations() {
   const ready = scenario.length >= SCENARIO_SPACES.length - 1;
   const scope = useMemo(() => scenario.map((space) => space.id), [scenario]);
   const backHref = WEBMCP_DEMO_MODE ? "/" : "/workspace";
+  const inFrame = useInWorkspaceFrame();
 
   const refresh = useCallback(async () => {
     const spaceList = await orgApi.spaces().catch(() => ({ spaces: [] as OrgSpace[] }));
@@ -559,13 +561,23 @@ export default function AgentOperations() {
   return (
     <div className="ag-page">
       <header className="ag-bar">
-        <Link href={backHref} className="ag-id">
-          <RunbookMark />
-          <span>
-            <strong>OrgMemory</strong>
-            <small>Agent operations</small>
-          </span>
-        </Link>
+        {inFrame ? (
+          <div className="page-bar-id">
+            <NavToggle />
+            <span>
+              <small>Agents</small>
+              <strong>Agent operations</strong>
+            </span>
+          </div>
+        ) : (
+          <Link href={backHref} className="ag-id">
+            <RunbookMark />
+            <span>
+              <strong>OrgMemory</strong>
+              <small>Agent operations</small>
+            </span>
+          </Link>
+        )}
         <div className="ag-bar-right">
           <span className={`ag-webmcp ${webmcp === "ready" ? "ready" : webmcp}`}>
             <i />
@@ -578,9 +590,11 @@ export default function AgentOperations() {
           <Link className="ag-link" href="/docs">
             Tool reference
           </Link>
-          <Link className="ag-link" href={backHref}>
-            {WEBMCP_DEMO_MODE ? "Back to site" : "Back to chat"}
-          </Link>
+          {!inFrame && (
+            <Link className="ag-link" href={backHref}>
+              {WEBMCP_DEMO_MODE ? "Back to site" : "Back to chat"}
+            </Link>
+          )}
         </div>
       </header>
 
