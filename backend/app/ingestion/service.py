@@ -120,9 +120,7 @@ class IngestionService:
         metadata["source_family"] = (
             "repository"
             if source_type in REPOSITORY_SOURCE_TYPES
-            else "slack"
-            if source_type in SLACK_SOURCE_TYPES
-            else "document"
+            else "slack" if source_type in SLACK_SOURCE_TYPES else "document"
         )
         content, redaction_count = sanitize_for_index(content, source_url or title)
         metadata["secret_redactions"] = redaction_count
