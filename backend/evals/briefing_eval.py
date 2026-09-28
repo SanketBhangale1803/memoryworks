@@ -11,9 +11,13 @@ Run from backend/:
 
     .venv/bin/python evals/briefing_eval.py
     .venv/bin/python evals/briefing_eval.py --json results.json --min-pass 0.8
+    .venv/bin/python evals/briefing_eval.py --semantic   # local embedding + cross-encoder
 
 The run is hermetic: a throwaway SQLite file, an in-memory graph, and no model
-provider keys, so two runs over the same cases give the same score.
+provider keys, so two runs over the same cases give the same score. --semantic
+turns on the local FastEmbed embedding model and cross-encoder (from
+RUNBOOK_EMBEDDING_CACHE_DIR); without it retrieval is purely lexical, which is
+what CI measures.
 """
 
 from __future__ import annotations
@@ -33,7 +37,7 @@ from app.graph.memory_graph import InMemoryGraphStore, set_graph_store  # noqa: 
 CITED_GROUPS = ("must_read", "constraints", "prior_incidents", "blast_radius", "procedures")
 
 
-def _hermetic(tmp: Path) -> None:
+def _hermetic(tmp: Path, semantic: bool = False) -> None:
     """The same local defaults the test suite pins, so a developer .env cannot leak in."""
     settings.sqlite_path = tmp / "eval.db"
     settings.generated_runbooks_dir = tmp / "generated"
@@ -54,6 +58,9 @@ def _hermetic(tmp: Path) -> None:
     settings.org_memory_default_model_provider = "none"
     settings.org_memory_answer_candidates = 1
     settings.org_memory_answer_judge_enabled = False
+    provider = "fastembed" if semantic else "deterministic"
+    settings.runbook_embedding_provider = provider
+    settings.runbook_reranker_provider = provider
     set_graph_store(InMemoryGraphStore())
 
 
@@ -211,7 +218,11 @@ def _summarize(results: list[dict]) -> dict:
         "avg_memories_shown": round(
             sum(r["memory_count"] for r in results) / max(len(results), 1), 1
         ),
-        "briefings_attributable": sum(r["ledger_memory_ids"] > 0 for r in results),
+        # Only a briefing that showed something has anything to attribute.
+        "briefings_showing_memory": sum(r["memory_count"] > 0 for r in results),
+        "briefings_attributable": sum(
+            r["ledger_memory_ids"] > 0 for r in results if r["memory_count"] > 0
+        ),
     }
 
 
@@ -254,7 +265,7 @@ def _print(report: dict) -> None:
     print(f"  approval accuracy    {s['approval_accuracy']:.0%}")
     print(f"  avg memories shown   {s['avg_memories_shown']}")
     print(
-        f"  attributable         {s['briefings_attributable']}/{s['cases']} ledger rows record which memories were shown"
+        f"  attributable         {s['briefings_attributable']}/{s['briefings_showing_memory']} ledger rows record which memories were shown"
     )
 
 
@@ -265,10 +276,13 @@ def main() -> int:
     )
     parser.add_argument("--json", type=Path, help="Also write the full report here.")
     parser.add_argument("--min-pass", type=float, default=0.0, help="Exit 1 below this pass rate.")
+    parser.add_argument(
+        "--semantic", action="store_true", help="Use the local embedding model and reranker."
+    )
     args = parser.parse_args()
 
     with tempfile.TemporaryDirectory(prefix="orgmemory-eval-") as tmp:
-        _hermetic(Path(tmp))
+        _hermetic(Path(tmp), semantic=args.semantic)
         report = run(args.cases)
 
     _print(report)

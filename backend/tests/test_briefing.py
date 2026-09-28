@@ -175,3 +175,38 @@ def test_a_failing_retrieval_degrades_the_briefing_instead_of_raising():
     )
     assert brief["verdict"] == "no_memory"
     assert brief["requires_approval"], "a consequential intent stays gated even with no evidence"
+
+
+def test_relevance_hits_stay_within_the_named_service_and_its_dependencies():
+    corpus = [
+        unit("mem_payments_retry", "incident", "payments retry double charge", "payments-service"),
+        unit("mem_email_retry", "incident", "notification retry storm", "notification-worker"),
+        unit(
+            "mem_ledger_rule",
+            "decision",
+            "ledger writes retry through the ledger-service API",
+            "ledger-service",
+        ),
+        unit(
+            "mem_dep",
+            "dependency",
+            "billing-service depends on ledger-service",
+            "billing-service",
+            content="billing-service depends on ledger-service for invoice balances.",
+        ),
+    ]
+
+    def shown(result):
+        return {
+            item["memory_id"]
+            for group in ("must_read", "constraints", "prior_incidents", "blast_radius")
+            for item in result[group]
+        }
+
+    worker = build("tune the retry loop", service="notification-worker", memory=corpus)
+    assert "mem_email_retry" in shown(worker)
+    assert "mem_payments_retry" not in shown(worker)
+
+    billing = build("retry ledger writes", service="billing-service", memory=corpus)
+    assert "mem_ledger_rule" in shown(billing)
+    assert "mem_payments_retry" not in shown(billing)

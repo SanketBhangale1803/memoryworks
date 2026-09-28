@@ -138,6 +138,17 @@ class CrossEncoderReranker:
             local_files_only=True,
         )
 
+    def logits(self, query: str, documents: list[str]) -> list[float]:
+        """Uncalibrated relevance, comparable across queries for one model."""
+        return [
+            float(value)
+            for value in self._model.rerank(
+                query,
+                documents,
+                batch_size=max(1, min(8, settings.runbook_embedding_batch_size)),
+            )
+        ]
+
     def score(self, query: str, documents: list[str]) -> list[float]:
         raw = [
             float(value)

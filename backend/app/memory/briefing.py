@@ -25,6 +25,8 @@ import re
 from collections.abc import Callable
 from typing import Any
 
+from app.ingestion.extractors import extract_services
+
 # Verbs that change the world. Their presence in an intent does not make it
 # forbidden — it makes it something a person should have agreed to first, which
 # is exactly the boundary the WebMCP tool surface is built around.
@@ -137,6 +139,15 @@ def build(
         if scoped
         else []
     )
+
+    # The relevance pass matches wording, not ownership, so on its own it put a
+    # payments postmortem in front of an agent tuning notification-worker
+    # because both mention retries. With a named service, a hit has to be about
+    # that service, about one it is recorded as depending on or serving, or not
+    # about any particular service at all.
+    if scoped:
+        reach = _reach(resolved_service, structure)
+        relevant = [unit for unit in relevant if _within(unit, reach)]
 
     # The task-relevant hits carry the strongest signal, so they lead the
     # must-read list; the kind pulls fill in what the wording missed.
@@ -265,6 +276,27 @@ def _for_service(units: list[dict[str, Any]], service: str) -> list[dict[str, An
         or needle in str(unit.get("subject") or "").casefold()
         or needle in str(unit.get("content") or "").casefold()
     ]
+
+
+def _reach(service: str, structure: list[dict[str, Any]]) -> set[str]:
+    """The named service plus every service a recorded dependency links it to."""
+    reach = {service.casefold()}
+    for unit in structure:
+        if unit.get("type") != "dependency":
+            continue
+        text = f"{unit.get('subject') or ''} {unit.get('content') or ''}"
+        named = {name.casefold() for name in extract_services(text)}
+        if reach & named:
+            reach |= named
+    return reach
+
+
+def _within(unit: dict[str, Any], reach: set[str]) -> bool:
+    scoped_to = str((unit.get("scope") or {}).get("service") or "").casefold()
+    if not scoped_to or scoped_to in reach:
+        return True
+    text = f"{unit.get('subject') or ''} {unit.get('content') or ''}".casefold()
+    return any(name in text for name in reach)
 
 
 def _dedupe(units: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
