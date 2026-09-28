@@ -210,3 +210,24 @@ def test_relevance_hits_stay_within_the_named_service_and_its_dependencies():
     billing = build("retry ledger writes", service="billing-service", memory=corpus)
     assert "mem_ledger_rule" in shown(billing)
     assert "mem_payments_retry" not in shown(billing)
+
+
+def test_a_recorded_review_rule_requires_approval_whatever_kind_it_is():
+    corpus = [
+        unit(
+            "mem_owner",
+            "ownership",
+            "fraud-engine",
+            "fraud-engine",
+            content="fraud-engine is owned by the Risk team, and changes to it need a Risk reviewer.",
+        ),
+    ]
+    result = build("adjust the scoring threshold", service="fraud-engine", memory=corpus)
+    assert result["verdict"] == "requires_approval"
+    assert any("review" in reason for reason in result["requires_approval"])
+
+    quiet = [
+        unit("mem_owner", "ownership", "fraud-engine", "fraud-engine", content="Owned by Risk.")
+    ]
+    result = build("adjust the scoring threshold", service="fraud-engine", memory=quiet)
+    assert result["requires_approval"] == []

@@ -84,6 +84,15 @@ VERDICTS = (
 
 _WORD_RE = re.compile(r"[^a-z0-9]+")
 
+# A recorded rule that says changes need a person, whatever kind of memory it
+# was filed as: "changes to it need a Risk reviewer" lives in an ownership
+# page, "must be reviewed by the Ledger team" in a policy.
+_REVIEW_RULE_RE = re.compile(
+    r"\b(?:needs?|requires?|required|must\s+(?:be|get|have))\b[^.]{0,60}?"
+    r"\b(?:approv\w*|review\w*|sign[- ]?off)",
+    re.IGNORECASE,
+)
+
 # Service names are the join key between an intent and the memory graph, so they
 # are worth extracting from free text rather than demanding as a parameter an
 # agent may not have.
@@ -161,7 +170,13 @@ def build(
     # happened to rank high enough to lead the briefing.
     all_constraints = _dedupe(constraints, limit=limit)
     all_prior = _dedupe(history, limit=limit)
-    approvals = _approval_reasons(intent, all_constraints, all_prior, resolved_service)
+    approvals = _approval_reasons(
+        intent,
+        all_constraints,
+        all_prior,
+        resolved_service,
+        rules=_dedupe([*constraints, *structure], limit=limit * 2),
+    )
     known = bool(must_read or all_constraints or all_prior or structure or procedures)
     verdict = _verdict(
         known=known, approvals=approvals, constraints=all_constraints, prior=all_prior
@@ -367,6 +382,7 @@ def _approval_reasons(
     constraints: list[dict[str, Any]],
     prior: list[dict[str, Any]],
     service: str,
+    rules: list[dict[str, Any]] | None = None,
 ) -> list[str]:
     reasons: list[str] = []
     if intent:
@@ -376,6 +392,14 @@ def _approval_reasons(
             reasons.append(
                 f"Policy in memory constrains this: {str(unit.get('subject') or '')[:120]}"
             )
+    for unit in rules or []:
+        if unit.get("type") == "policy" and unit in constraints[:3]:
+            continue
+        if _REVIEW_RULE_RE.search(str(unit.get("content") or "")):
+            reasons.append(
+                f"A recorded rule requires a person to review this: {str(unit.get('content'))[:160]}"
+            )
+            break
     if prior and intent:
         where = f" on {service}" if service else ""
         reasons.append(
