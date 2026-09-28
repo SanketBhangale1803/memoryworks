@@ -14,7 +14,8 @@ export default function IngestionJobs() {
 
   return (
     <Page
-      title="Ingestion Jobs"
+      eyebrow="Integrations"
+      title="Sync status"
       description="Source ingestion progress, scanned artifacts, graph writes, warnings, and failures."
     >
       {error && <div className="notice error">{error}</div>}

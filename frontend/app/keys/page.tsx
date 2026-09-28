@@ -41,7 +41,7 @@ export default function Keys() {
     }
   }
 
-  return <Page title="API Keys" description="Keys for MCP clients and automation. The secret is shown once at creation; only a hash is stored.">
+  return <Page eyebrow="Integrations" title="API keys" description="Keys for MCP clients and automation. The secret is shown once at creation; only a hash is stored.">
     <section className="card card-pad stack">
       <div className="row">
         <input value={name} onChange={event=>setName(event.target.value)} placeholder="Key name, e.g. Claude Desktop MCP"/>

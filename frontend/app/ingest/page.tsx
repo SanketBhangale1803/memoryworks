@@ -48,6 +48,13 @@ export default function Ingest() {
   const [bulk, setBulk] = useState<{ queued: number } | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
 
+  // Sources links here with ?source=github (or files, website, slack, paste), so
+  // connecting a system lands on choosing what to read from it, not a menu.
+  useEffect(() => {
+    const requested = new URLSearchParams(window.location.search).get("source");
+    if (sourceChoices.some(choice => choice.id === requested)) setKind(requested as SourceKind);
+  }, []);
+
   useEffect(() => {
     api<any[]>("/api/projects").then(items => {
       setProjects(items);
@@ -172,7 +179,7 @@ export default function Ingest() {
           : Boolean(channel && (project !== "__new__" || newProject.trim()));
   const memoryCount = result?.memory_units_created ?? result?.memory_unit_ids?.length ?? 0;
 
-  return <Page eyebrow="Build company memory" title="Add knowledge" description="Choose a source. OrgMemory handles chunking, memory extraction, relationships, and indexing automatically.">
+  return <Page eyebrow="Integrations" title="Upload & import" description="Choose a source. OrgMemory handles chunking, memory extraction, relationships, and indexing automatically.">
     <section className="memory-builder">
       <div className="builder-progress" aria-label="Memory creation progress">
         <span className="active"><i>1</i>Choose</span><b/><span className={busy || result ? "active" : ""}><i>2</i>Remember</span><b/><span className={result ? "active" : ""}><i>3</i>Ask</span>
@@ -190,7 +197,7 @@ export default function Ingest() {
         <div className="ingest-ecosystem-strip">
           <div><strong>Company-wide source map</strong><span>Live sources can be selected above. Upcoming adapters remain visible without pretending they are connected.</span></div>
           <div>{catalog.filter(item => item.role !== "delivery").map(item => <span key={item.provider} className={item.status}><i>{item.label.split(/\s+/).map((part:string)=>part[0]).join("").slice(0,2)}</i>{item.label}<em>{item.status === "live" ? "live" : item.status === "next" ? "next" : "planned"}</em></span>)}</div>
-          <Link href="/connectors">Manage connections →</Link>
+          <Link href="/connectors">Manage sources →</Link>
         </div>
 
         <div className="builder-card">

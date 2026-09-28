@@ -3,10 +3,12 @@
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import ChatBackBar from "@/components/ChatBackBar";
+import IntegrationsNav from "@/components/IntegrationsNav";
 import { RunbookMark } from "@/components/RunbookLogo";
+import WorkspaceFrame from "@/components/WorkspaceFrame";
 import { api } from "@/lib/api";
 import { WEBMCP_DEMO_MODE } from "@/lib/demoOrgMemory";
-import { titleFor } from "@/lib/workspaceMap";
+import { destinationFor, titleFor } from "@/lib/workspaceMap";
 
 const SECURING_MIN_MS = 450;
 
@@ -61,17 +63,25 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   if (isPublic) return <>{children}</>;
   if (!ready || !user) return <div className="auth-loading"><RunbookMark /><div><p>Opening your memory…</p><span>Loading authorized company context</span></div><div className="secure-progress" aria-hidden="true"><i /></div></div>;
-  // The chat carries its own minimal chrome. Wrapping it in the multi-domain
-  // header would put the mechanics back on screen it was built to remove.
-  if (isChat) return <>{children}</>;
-  // Every other page is a satellite of the chat and wears the same slim bar.
-  // A route missing from the map still lands here rather than falling through
-  // to a second navigation model — it just shows without a name, which is the
-  // visible reminder to register it.
+  // Every signed-in page sits in the same frame: the sidebar lists the whole
+  // registry, so nothing is reachable only by a shortcut or a typed URL. The
+  // chat and the agent console keep their own page bars inside it.
+  if (isChat) {
+    return (
+      <WorkspaceFrame user={user} ownsCommandMenu={pathname !== "/workspace"}>
+        {children}
+      </WorkspaceFrame>
+    );
+  }
+  // A route missing from the map still lands here — it just shows without a
+  // name, which is the visible reminder to register it.
   return (
-    <div className="om-home ws-satellite">
-      <ChatBackBar user={user} title={title || "Workspace"} />
-      <main>{children}</main>
-    </div>
+    <WorkspaceFrame user={user} ownsCommandMenu>
+      <div className="om-home ws-satellite">
+        <ChatBackBar title={title || "Workspace"} pathname={pathname} />
+        {destinationFor(pathname)?.group === "Integrations" && <IntegrationsNav pathname={pathname} />}
+        <main>{children}</main>
+      </div>
+    </WorkspaceFrame>
   );
 }
