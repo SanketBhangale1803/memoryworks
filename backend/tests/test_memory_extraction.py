@@ -191,3 +191,33 @@ def test_existing_source_revision_is_restored_to_graph_after_repair(graph):
     assert restored["id"] == payload["id"]
     assert graph.list_nodes(project_id, "Source", 10)
     assert graph.list_nodes(project_id, "SourceRevision", 10)
+
+
+def test_incident_reports_are_promoted_to_memory(graph):
+    ingestion = IngestionService(graph, HCAGAdapter(graph), AuditService())
+    project_id = ingestion.create_project("Incident extraction")
+    ingestion.ingest_item(
+        project_id,
+        "incident",
+        "Outage: ledger-service pool exhaustion",
+        "ledger-service failed for 47 minutes after a backfill opened 400 connections.",
+        source_id="incident:ledger-pool",
+    )
+
+    kinds = {
+        unit["type"]
+        for unit in rows("SELECT type FROM memory_units WHERE project_id=?", (project_id,))
+    }
+    assert "incident" in kinds
+
+
+def test_inflected_failure_words_still_read_as_incidents():
+    from app.memory.extraction import extract_atomic_memories
+
+    for sentence in (
+        "fraud-engine timeouts spike whenever payments-service raises its concurrency.",
+        "The checkout worker crashed twice during the Friday deploy window.",
+        "Card authorizations timed out for twenty minutes during the migration.",
+    ):
+        kinds = {kind for kind, *_ in extract_atomic_memories("thread", sentence, "slack", {})}
+        assert kinds == {"incident"}, sentence

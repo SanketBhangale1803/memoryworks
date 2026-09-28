@@ -115,6 +115,7 @@ from app.outcomes import (
 from app.outcomes import stats as outcome_stats
 from app.reliability import ChangeImpactService, OperationalAssertionService
 from app.retrieval import RetrievalService
+from app.retrieval.memory_search import rank as rank_memories
 from app.runbooks import RunbookService
 from app.skills import get as get_learned_skill
 from app.skills import list_skills as list_learned_skills
@@ -1915,7 +1916,9 @@ def create_briefing(
 
     # The ledger row is what lets record_briefing_outcome close this loop later.
     # It is best-effort by design: a briefing must still be served if the
-    # instrumentation behind it fails.
+    # instrumentation behind it fails. It records every memory the agent was
+    # shown, in display order, so an outcome can be attributed to the context
+    # that preceded it rather than only to the wording of the task.
     briefing_id = record_context(
         project_id=request.project_id,
         query=f"[briefing] {request.task}",
@@ -1924,7 +1927,7 @@ def create_briefing(
             "answer_scope": "briefing",
             "answer_kind": brief["verdict"],
             "answer_sufficient": brief["verdict"] != "no_memory",
-            "evidence": [],
+            "evidence": _briefing_evidence(brief),
             "confidence": 0.0,
             "context_envelope": {},
         },
@@ -1985,6 +1988,35 @@ def record_briefing_outcome(
         "outcome": outcome,
         "recorded": True,
     }
+
+
+BRIEFING_CITED_GROUPS = (
+    "must_read",
+    "constraints",
+    "prior_incidents",
+    "blast_radius",
+    "procedures",
+)
+
+
+def _briefing_evidence(brief: dict) -> list[dict]:
+    """The memories a briefing showed, one ledger evidence row per memory.
+
+    A briefing never repeats a memory across groups, so display order is also
+    rank order. The source is the memory's first one; that is enough to join
+    an outcome back to the document a person would open.
+    """
+    evidence: list[dict] = []
+    for group in BRIEFING_CITED_GROUPS:
+        for item in brief.get(group) or []:
+            memory_id = str(item.get("memory_id") or "")
+            if not memory_id:
+                continue
+            sources = (company_memory.get(memory_id) or {}).get("source_ids") or []
+            evidence.append(
+                {"memory_id": memory_id, "source_id": sources[0] if sources else "", "group": group}
+            )
+    return evidence
 
 
 def _briefing_project_ids(principal: dict) -> list[str]:
@@ -2196,31 +2228,6 @@ def memory_updates(project_id: str, authorization: str | None = Header(default=N
     return company_memory.relationships(project_id, "UPDATES", _principal_team_ids(principal))
 
 
-def _memory_search_score(unit: dict, terms: list[str]) -> float:
-    """Rank a memory unit against the query terms.
-
-    Structured fields (subject, service scope, type) carry more signal than the
-    free-text content, mirroring how a person skims a memory card.
-    """
-    subject = unit.get("subject", "").casefold()
-    content = unit.get("content", "").casefold()
-    scope = unit.get("scope") or {}
-    service = str(scope.get("service") or "").casefold()
-    kind = unit.get("type", "").casefold()
-    haystacks = (
-        (subject, 3.0),
-        (service, 2.0),
-        (kind, 1.0),
-        (content, 1.0),
-    )
-    score = 0.0
-    for term in terms:
-        for text, weight in haystacks:
-            if term in text:
-                score += weight
-    return score
-
-
 def _public_memory_unit(unit: dict) -> dict:
     return {
         "id": unit.get("id"),
@@ -2290,29 +2297,32 @@ def _memory_search_core(
     if not terms and not type:
         raise HTTPException(400, "Provide a query, a memory type, or both")
     project_names = {item["id"]: item["name"] for item in rows("SELECT id,name FROM projects")}
-    matches: list[dict] = []
-    for candidate_project in project_ids:
+    units = [
+        {**unit, "project_name": project_names.get(candidate_project, "")}
+        for candidate_project in project_ids
         for unit in company_memory.list(
             candidate_project,
             latest=True,
             kind=type,
             limit=2000,
             allowed_team_ids=team_ids,
-        ):
-            if terms:
-                score = _memory_search_score(unit, terms)
-                if score <= 0:
-                    continue
-            else:
-                score = 1.0
-            matches.append(
-                {
-                    **_public_memory_unit(unit),
-                    "project_name": project_names.get(candidate_project, ""),
-                    "score": round(score, 3),
-                }
-            )
-    matches.sort(key=lambda item: (item["score"], item.get("updated_at") or ""), reverse=True)
+        )
+    ]
+    if terms:
+        # Ranked across every visible project at once, so a word's rarity is
+        # judged against everything this caller could have been shown.
+        ranked = rank_memories(units, q, limit)
+    else:
+        units.sort(key=lambda unit: unit.get("updated_at") or "", reverse=True)
+        ranked = [(unit, 1.0) for unit in units]
+    matches = [
+        {
+            **_public_memory_unit(unit),
+            "project_name": unit["project_name"],
+            "score": round(score, 3),
+        }
+        for unit, score in ranked
+    ]
     return {
         "query": q,
         "project_id": project_id or None,

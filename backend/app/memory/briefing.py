@@ -25,6 +25,8 @@ import re
 from collections.abc import Callable
 from typing import Any
 
+from app.ingestion.extractors import extract_services
+
 # Verbs that change the world. Their presence in an intent does not make it
 # forbidden — it makes it something a person should have agreed to first, which
 # is exactly the boundary the WebMCP tool surface is built around.
@@ -82,6 +84,15 @@ VERDICTS = (
 
 _WORD_RE = re.compile(r"[^a-z0-9]+")
 
+# A recorded rule that says changes need a person, whatever kind of memory it
+# was filed as: "changes to it need a Risk reviewer" lives in an ownership
+# page, "must be reviewed by the Ledger team" in a policy.
+_REVIEW_RULE_RE = re.compile(
+    r"\b(?:needs?|requires?|required|must\s+(?:be|get|have))\b[^.]{0,60}?"
+    r"\b(?:approv\w*|review\w*|sign[- ]?off)",
+    re.IGNORECASE,
+)
+
 # Service names are the join key between an intent and the memory graph, so they
 # are worth extracting from free text rather than demanding as a parameter an
 # agent may not have.
@@ -138,6 +149,15 @@ def build(
         else []
     )
 
+    # The relevance pass matches wording, not ownership, so on its own it put a
+    # payments postmortem in front of an agent tuning notification-worker
+    # because both mention retries. With a named service, a hit has to be about
+    # that service, about one it is recorded as depending on or serving, or not
+    # about any particular service at all.
+    if scoped:
+        reach = _reach(resolved_service, structure)
+        relevant = [unit for unit in relevant if _within(unit, reach)]
+
     # The task-relevant hits carry the strongest signal, so they lead the
     # must-read list; the kind pulls fill in what the wording missed.
     must_read = _dedupe(
@@ -150,7 +170,13 @@ def build(
     # happened to rank high enough to lead the briefing.
     all_constraints = _dedupe(constraints, limit=limit)
     all_prior = _dedupe(history, limit=limit)
-    approvals = _approval_reasons(intent, all_constraints, all_prior, resolved_service)
+    approvals = _approval_reasons(
+        intent,
+        all_constraints,
+        all_prior,
+        resolved_service,
+        rules=_dedupe([*constraints, *structure], limit=limit * 2),
+    )
     known = bool(must_read or all_constraints or all_prior or structure or procedures)
     verdict = _verdict(
         known=known, approvals=approvals, constraints=all_constraints, prior=all_prior
@@ -267,6 +293,27 @@ def _for_service(units: list[dict[str, Any]], service: str) -> list[dict[str, An
     ]
 
 
+def _reach(service: str, structure: list[dict[str, Any]]) -> set[str]:
+    """The named service plus every service a recorded dependency links it to."""
+    reach = {service.casefold()}
+    for unit in structure:
+        if unit.get("type") != "dependency":
+            continue
+        text = f"{unit.get('subject') or ''} {unit.get('content') or ''}"
+        named = {name.casefold() for name in extract_services(text)}
+        if reach & named:
+            reach |= named
+    return reach
+
+
+def _within(unit: dict[str, Any], reach: set[str]) -> bool:
+    scoped_to = str((unit.get("scope") or {}).get("service") or "").casefold()
+    if not scoped_to or scoped_to in reach:
+        return True
+    text = f"{unit.get('subject') or ''} {unit.get('content') or ''}".casefold()
+    return any(name in text for name in reach)
+
+
 def _dedupe(units: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
     seen: set[str] = set()
     unique: list[dict[str, Any]] = []
@@ -335,6 +382,7 @@ def _approval_reasons(
     constraints: list[dict[str, Any]],
     prior: list[dict[str, Any]],
     service: str,
+    rules: list[dict[str, Any]] | None = None,
 ) -> list[str]:
     reasons: list[str] = []
     if intent:
@@ -344,6 +392,14 @@ def _approval_reasons(
             reasons.append(
                 f"Policy in memory constrains this: {str(unit.get('subject') or '')[:120]}"
             )
+    for unit in rules or []:
+        if unit.get("type") == "policy" and unit in constraints[:3]:
+            continue
+        if _REVIEW_RULE_RE.search(str(unit.get("content") or "")):
+            reasons.append(
+                f"A recorded rule requires a person to review this: {str(unit.get('content'))[:160]}"
+            )
+            break
     if prior and intent:
         where = f" on {service}" if service else ""
         reasons.append(

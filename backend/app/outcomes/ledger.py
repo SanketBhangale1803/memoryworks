@@ -103,7 +103,15 @@ def record_context(
                     int(deliberation.get("candidate_count") or 0),
                     1 if deliberation.get("judged") else 0,
                     json.dumps(deliberation.get("candidates") or []),
-                    json.dumps([item.get("chunk_id") for item in evidence if item.get("chunk_id")]),
+                    # Answers cite chunks; briefings cite memory units. Either id is
+                    # what an outcome has to be traced back to.
+                    json.dumps(
+                        [
+                            item.get("chunk_id") or item.get("memory_id")
+                            for item in evidence
+                            if item.get("chunk_id") or item.get("memory_id")
+                        ]
+                    ),
                     len(evidence),
                     json.dumps(
                         sorted(

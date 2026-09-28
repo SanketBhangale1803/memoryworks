@@ -13,6 +13,9 @@ PROSE_SOURCE_TYPES = {
     "document",
     "github_issue",
     "github_commit",
+    # Postmortems and incident reports are the memory a pre-change briefing
+    # most needs; without this they were ingested but never promoted.
+    "incident",
     "pull_request",
     "report",
     "slack",
@@ -359,7 +362,10 @@ def _prose_candidates(content: str) -> list[MemoryCandidate]:
             kind, confidence = "dependency", 0.88
         elif re.search(r"\b(run|install|deploy|start|configure)\b", lower) and "`" in raw:
             kind, confidence = "procedure", 0.84
-        elif re.search(r"\b(failed|failure|outage|incident|timeout|crash)\b", lower):
+        elif re.search(
+            r"\b(fail(?:ed|s|ures?)?|outages?|incidents?|time(?:outs?|d out)|crash(?:ed|es)?)\b",
+            lower,
+        ):
             kind, confidence = "incident", 0.86
         elif re.search(
             r"\b(prototype|application|app|service|tool)\b.{0,100}"

@@ -175,3 +175,59 @@ def test_a_failing_retrieval_degrades_the_briefing_instead_of_raising():
     )
     assert brief["verdict"] == "no_memory"
     assert brief["requires_approval"], "a consequential intent stays gated even with no evidence"
+
+
+def test_relevance_hits_stay_within_the_named_service_and_its_dependencies():
+    corpus = [
+        unit("mem_payments_retry", "incident", "payments retry double charge", "payments-service"),
+        unit("mem_email_retry", "incident", "notification retry storm", "notification-worker"),
+        unit(
+            "mem_ledger_rule",
+            "decision",
+            "ledger writes retry through the ledger-service API",
+            "ledger-service",
+        ),
+        unit(
+            "mem_dep",
+            "dependency",
+            "billing-service depends on ledger-service",
+            "billing-service",
+            content="billing-service depends on ledger-service for invoice balances.",
+        ),
+    ]
+
+    def shown(result):
+        return {
+            item["memory_id"]
+            for group in ("must_read", "constraints", "prior_incidents", "blast_radius")
+            for item in result[group]
+        }
+
+    worker = build("tune the retry loop", service="notification-worker", memory=corpus)
+    assert "mem_email_retry" in shown(worker)
+    assert "mem_payments_retry" not in shown(worker)
+
+    billing = build("retry ledger writes", service="billing-service", memory=corpus)
+    assert "mem_ledger_rule" in shown(billing)
+    assert "mem_payments_retry" not in shown(billing)
+
+
+def test_a_recorded_review_rule_requires_approval_whatever_kind_it_is():
+    corpus = [
+        unit(
+            "mem_owner",
+            "ownership",
+            "fraud-engine",
+            "fraud-engine",
+            content="fraud-engine is owned by the Risk team, and changes to it need a Risk reviewer.",
+        ),
+    ]
+    result = build("adjust the scoring threshold", service="fraud-engine", memory=corpus)
+    assert result["verdict"] == "requires_approval"
+    assert any("review" in reason for reason in result["requires_approval"])
+
+    quiet = [
+        unit("mem_owner", "ownership", "fraud-engine", "fraud-engine", content="Owned by Risk.")
+    ]
+    result = build("adjust the scoring threshold", service="fraud-engine", memory=quiet)
+    assert result["requires_approval"] == []
