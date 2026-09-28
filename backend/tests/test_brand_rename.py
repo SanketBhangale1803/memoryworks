@@ -5,7 +5,7 @@ def test_primary_product_surfaces_use_orgmemory_brand():
     root = Path(__file__).resolve().parents[2]
     for relative in (
         "frontend/app/page.tsx",
-        "frontend/components/ChatBackBar.tsx",
+        "frontend/components/WorkspaceFrame.tsx",
         "frontend/lib/workspaceMap.ts",
         "backend/app/main.py",
         "README.md",
