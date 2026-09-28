@@ -258,3 +258,23 @@ test("the chat closes the outcome loop it opened", () => {
   // Recording must never surface as an error to the person who just asked.
   assert.match(chat, /catch\(\(\) => undefined\)/);
 });
+
+test("integrations read as one hub where every source has one next step", () => {
+  const shell = readFileSync(new URL("../components/AppShell.tsx", import.meta.url), "utf8");
+  const hub = readFileSync(new URL("../components/IntegrationsNav.tsx", import.meta.url), "utf8");
+  const sources = readFileSync(new URL("../app/connectors/page.tsx", import.meta.url), "utf8");
+  const ingest = readFileSync(new URL("../app/ingest/page.tsx", import.meta.url), "utf8");
+  const tools = readFileSync(new URL("../app/integrations/page.tsx", import.meta.url), "utf8");
+  // The tab strip is the registry's Integrations group, shown on each of its pages.
+  assert.match(hub, /item\.group === "Integrations"/);
+  assert.match(shell, /group === "Integrations" && <IntegrationsNav/);
+  // One card per provider: the directory and the connectable list are merged.
+  assert.match(sources, /function toCards\(connectors: any\[\], catalog: any\[\]\)/);
+  assert.match(sources, /"connected" \| "connect" \| "setup_needed" \| "import" \| "agent" \| "soon"/);
+  // OAuth still returns to /connectors?connected=…, and the next step is choosing what to read.
+  assert.match(sources, /params\.get\("connected"\)/);
+  assert.match(sources, /Choose what to import/);
+  assert.match(ingest, /get\("source"\)/);
+  // Editors first: the AI tools page leads with the per-client snippet.
+  assert.ok(tools.indexOf("<IdeAccess />") < tools.indexOf("Hosted assistants"));
+});

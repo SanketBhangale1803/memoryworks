@@ -2626,3 +2626,79 @@ select:focus, .project-select:focus { outline:none; border-color:var(--ink-4); b
 @media (prefers-reduced-motion:reduce) {
   .nav-side, .nav-scrim, .nav-group-head i { transition:none; }
 }
+
+/* ==========================================================================
+   Integrations hub — one strip across the five integration pages, and the
+   Sources grid where every provider is a single card with one next step.
+   ========================================================================== */
+.hub-nav { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; padding:0 max(20px,calc((100% - 1080px) / 2)); border-bottom:1px solid var(--line); background:var(--bg); }
+.hub-tabs { display:flex; gap:2px; overflow-x:auto; scrollbar-width:none; }
+.hub-tabs a { position:relative; padding:12px 12px 11px; color:var(--ink-3); font-size:13px; font-weight:550; white-space:nowrap; transition:color .15s var(--ease); }
+.hub-tabs a:hover { color:var(--ink); }
+.hub-tabs a.active { color:var(--ink); }
+.hub-tabs a.active::after { position:absolute; right:10px; bottom:-1px; left:10px; height:2px; border-radius:2px; background:var(--accent); content:""; }
+.hub-status { display:flex; gap:14px; margin:0; padding:10px 0; color:var(--ink-3); font-size:12px; }
+.hub-status span { display:inline-flex; align-items:center; gap:6px; }
+.hub-status span::before { width:6px; height:6px; border-radius:50%; background:var(--ink-4); content:""; }
+.hub-status span.on::before { background:var(--accent); }
+
+.notice.next-step { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; border-color:var(--accent-line); background:var(--accent-soft); }
+.notice.next-step > div { display:flex; flex-direction:column; gap:2px; }
+
+.source-toolbar { display:flex; flex-direction:column; gap:12px; }
+.source-toolbar input[type="search"] { width:100%; min-height:40px; padding:0 14px; border:1px solid var(--line-strong); border-radius:var(--r); background:var(--surface); color:var(--ink); font:inherit; font-size:14px; }
+.source-toolbar input[type="search"]:focus { outline:2px solid var(--accent); outline-offset:-1px; border-color:transparent; }
+.source-filters { display:flex; gap:6px; flex-wrap:wrap; }
+.source-filters button { min-height:30px; padding:0 12px; border:1px solid var(--line); border-radius:999px; background:var(--surface); color:var(--ink-2); font:inherit; font-size:12.5px; cursor:pointer; transition:border-color .15s var(--ease),color .15s var(--ease),background .15s var(--ease); }
+.source-filters button:hover { border-color:var(--line-strong); color:var(--ink); }
+.source-filters button.active { border-color:var(--ink); background:var(--ink); color:var(--surface); }
+.source-empty { margin:0; }
+
+.source-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(290px,1fr)); gap:14px; }
+.source-card { display:flex; flex-direction:column; gap:10px; padding:16px; border:1px solid var(--line); border-radius:var(--r-lg); background:var(--surface); box-shadow:var(--shadow-sm); transition:border-color .2s var(--ease),box-shadow .2s var(--ease); }
+.source-card:hover { border-color:var(--line-strong); box-shadow:var(--shadow-md); }
+.source-card.connected { border-color:var(--accent-line); }
+.source-card.soon { background:var(--surface-2); box-shadow:none; }
+.source-card.soon:hover { border-color:var(--line); box-shadow:none; }
+.source-card header { display:grid; grid-template-columns:36px minmax(0,1fr) auto; align-items:center; gap:10px; }
+.source-logo { display:inline-flex; align-items:center; justify-content:center; width:36px; height:36px; border:1px solid var(--line); border-radius:var(--r); background:var(--surface-2); color:var(--ink); font-size:12px; font-weight:700; letter-spacing:.02em; }
+.source-card h2 { margin:0; overflow:hidden; font-size:14.5px; font-weight:620; letter-spacing:-.012em; text-overflow:ellipsis; white-space:nowrap; }
+.source-card header small { color:var(--ink-3); font-size:11.5px; }
+.source-state { display:inline-flex; align-items:center; gap:6px; color:var(--ink-3); font-size:11.5px; white-space:nowrap; }
+.source-state i { width:6px; height:6px; border-radius:50%; background:var(--ink-4); }
+.source-state.connected { color:var(--accent); font-weight:600; }
+.source-state.connected i { background:var(--accent); }
+.source-state.connect i { background:var(--ink-2); }
+.source-state.setup_needed { color:var(--warn); }
+.source-state.setup_needed i { background:var(--warn); }
+.source-reads, .source-account, .source-tools { margin:0; color:var(--ink-2); font-size:12.5px; line-height:1.5; }
+.source-account strong { color:var(--ink); font-weight:600; }
+.source-tools { color:var(--ink-3); font-size:12px; }
+.source-card footer { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-top:auto; padding-top:6px; }
+.source-card footer .subtle { font-size:12px; }
+
+.source-more { border:1px solid var(--line); border-radius:var(--r-lg); background:var(--surface); }
+.source-more > summary { padding:14px 16px; color:var(--ink); font-size:13.5px; font-weight:600; cursor:pointer; list-style:none; }
+.source-more > summary::-webkit-details-marker { display:none; }
+.source-more > summary::after { float:right; color:var(--ink-3); content:"+"; }
+.source-more[open] > summary::after { content:"−"; }
+.source-more[open] > summary { border-bottom:1px solid var(--line); }
+.source-more > :not(summary) { margin:14px 16px; }
+
+.copy-field { display:flex; align-items:center; gap:10px; padding:6px 6px 6px 12px; border:1px solid var(--line); border-radius:var(--r); background:var(--surface-2); }
+.copy-field code { flex:1; min-width:0; overflow:hidden; font-size:12.5px; text-overflow:ellipsis; white-space:nowrap; }
+
+@media (max-width:700px) {
+  .hub-status { display:none; }
+  .source-grid { grid-template-columns:1fr; }
+}
+
+@media (max-width:700px) {
+  /* Phones: the title keeps the room; "Ask a question" is one tap away in the drawer. */
+  .page-bar .ws-pill.quiet { display:none; }
+  .nav-main .ws-bar { gap:10px; }
+  .nav-main .ws-pill.ws-jump { min-width:0; }
+  .nav-main .ws-pill.ws-jump kbd { display:none; }
+  .source-filters { flex-wrap:nowrap; margin:0 -20px; padding:0 20px 2px; overflow-x:auto; scrollbar-width:none; }
+  .source-filters button { flex:none; }
+}
