@@ -120,7 +120,9 @@ class IngestionService:
         metadata["source_family"] = (
             "repository"
             if source_type in REPOSITORY_SOURCE_TYPES
-            else "slack" if source_type in SLACK_SOURCE_TYPES else "document"
+            else "slack"
+            if source_type in SLACK_SOURCE_TYPES
+            else "document"
         )
         content, redaction_count = sanitize_for_index(content, source_url or title)
         metadata["secret_redactions"] = redaction_count
@@ -295,8 +297,20 @@ class IngestionService:
                 )
                 self.graph.link("PROJECT_HAS_SERVICE", "Project", project_id, "Service", service_id)
                 self.graph.link_chunk_to_service(chunk_id, service_id)
+        superseded_by = self.memory.superseded_by(project_id, source_id, title)
         memory_units = self.memory.extract_memory_units(
-            project_id, item_id, source_id, source_type, title, content, metadata, chunk_ids
+            project_id,
+            item_id,
+            source_id,
+            source_type,
+            title,
+            content,
+            metadata,
+            chunk_ids,
+            historical=bool(superseded_by),
+        )
+        self.memory.apply_supersession(
+            project_id, source_id, content, memory_units, superseded_by=superseded_by
         )
         change_set = (
             self.brain.finalize_change_set(
@@ -382,8 +396,7 @@ class IngestionService:
         claimed_slug = self._repository_slug(str(metadata.get("repository") or source_url or ""))
         if project_slug and claimed_slug and project_slug != claimed_slug:
             raise ValueError(
-                f"Source repository {claimed_slug} does not match project repository "
-                f"{project_slug}"
+                f"Source repository {claimed_slug} does not match project repository {project_slug}"
             )
 
     @staticmethod

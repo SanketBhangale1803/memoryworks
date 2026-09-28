@@ -93,16 +93,19 @@ def run(cases_path: Path) -> dict:
     # A document that produced no memory units is invisible to every briefing,
     # however good retrieval is. Counting this separately keeps an extraction
     # miss from being misread as a ranking miss.
+    # Current and total are counted apart: a superseded record has memories
+    # that are no longer current, which is correct, while a record with none
+    # at all was never extracted.
+    units = rows(
+        "SELECT source_ids_json, is_latest FROM memory_units WHERE project_id=?", (project_id,)
+    )
     coverage = {}
     for doc in spec["documents"]:
-        coverage[doc["source_id"]] = sum(
-            1
-            for unit in rows(
-                "SELECT source_ids_json FROM memory_units WHERE project_id=? AND is_latest=1",
-                (project_id,),
-            )
-            if doc["source_id"] in json.loads(unit["source_ids_json"] or "[]")
-        )
+        mine = [u for u in units if doc["source_id"] in json.loads(u["source_ids_json"] or "[]")]
+        coverage[doc["source_id"]] = {
+            "current": sum(1 for u in mine if u["is_latest"]),
+            "total": len(mine),
+        }
 
     results = []
     for case in spec["cases"]:
@@ -160,7 +163,9 @@ def run(cases_path: Path) -> dict:
                 "surfaced_sources": surfaced_sources,
                 "found": found,
                 "missed": missed,
-                "missed_never_extracted": [s for s in missed if coverage.get(s, 0) == 0],
+                "missed_never_extracted": [
+                    s for s in missed if coverage.get(s, {}).get("total", 0) == 0
+                ],
                 "leaked": leaked,
                 "first_correct_rank": first_rank,
                 # Share of what was shown that the case asked for. A briefing that
@@ -211,10 +216,14 @@ def _summarize(results: list[dict]) -> dict:
 
 
 def _print(report: dict) -> None:
-    print("\nExtraction coverage (memory units per source)")
+    print("\nExtraction coverage (current memory units per source)")
     for source, count in report["coverage"].items():
-        flag = "  <- invisible to briefings" if count == 0 else ""
-        print(f"  {count:>2}  {source}{flag}")
+        flag = ""
+        if count["total"] == 0:
+            flag = "  <- never extracted"
+        elif count["current"] == 0:
+            flag = "  <- superseded"
+        print(f"  {count['current']:>2}  {source}{flag}")
 
     print("\nCases")
     for r in report["results"]:

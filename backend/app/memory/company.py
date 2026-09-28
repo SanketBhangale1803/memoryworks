@@ -24,6 +24,18 @@ MEMORY_TYPES = {
 }
 RELATIONSHIPS = {"UPDATES", "EXTENDS", "DERIVES", "CONTRADICTS", "SUPPORTS"}
 
+# Kinds that record something that happened rather than something that holds.
+# A second incident on the same service is another incident, not a correction
+# of the first, so these never supersede one another.
+EVENT_KINDS = {"incident"}
+
+# "Supersedes ADR-009", "replaces RFC 12". Decision records name what they
+# retire far more reliably than their extracted sentences share a subject.
+_SUPERSEDES_RE = re.compile(
+    r"\b(?i:supersedes|replaces|deprecates|obsoletes)\s+([A-Z]{2,6})[-\s]?0*(\d{1,5})\b"
+)
+_RECORD_ID_RE = re.compile(r"\b([A-Z]{2,6})[-\s]?0*(\d{1,5})\b")
+
 
 class CompanyMemoryService:
     """Durable, source-backed atomic company memory.
@@ -46,6 +58,7 @@ class CompanyMemoryService:
         content: str,
         metadata: dict[str, Any],
         chunk_ids: list[str],
+        historical: bool = False,
     ) -> list[dict[str, Any]]:
         candidates = self._candidates(title, content, source_type, metadata)
         return [
@@ -59,6 +72,7 @@ class CompanyMemoryService:
                 self._scope(project_id, metadata, statement),
                 item_id,
                 chunk_ids,
+                historical=historical,
             )
             for kind, subject, statement, confidence in candidates[:40]
         ]
@@ -75,15 +89,25 @@ class CompanyMemoryService:
         item_id: str = "",
         chunk_ids: list[str] | None = None,
         memory_id: str = "",
+        historical: bool = False,
     ) -> dict[str, Any]:
+        """Store one memory, superseding the current same-kind, same-subject one.
+
+        A `historical` memory comes from a record something newer already
+        supersedes. It is stored as no longer current and never displaces the
+        memory that is, whatever order the two records were ingested in.
+        """
         now = utcnow()
         memory_id = memory_id or new_id("mem")
         workspace = row(
             "SELECT workspace_id FROM workspace_projects WHERE project_id=?", (project_id,)
         )
+        # Only a statement of the same kind can be a newer version of this one.
+        # Subjects are short ("ledger-service"), so without the kind an incident
+        # about a service would retire the record of who owns it.
         previous = row(
-            "SELECT * FROM memory_units WHERE project_id=? AND lower(subject)=lower(?) AND is_latest=1 ORDER BY updated_at DESC LIMIT 1",
-            (project_id, subject),
+            "SELECT * FROM memory_units WHERE project_id=? AND type=? AND lower(subject)=lower(?) AND is_latest=1 ORDER BY updated_at DESC LIMIT 1",
+            (project_id, kind, subject),
         )
         if previous and previous["content"].casefold() == content.casefold():
             existing_sources = json.loads(previous.get("source_ids_json") or "[]")
@@ -97,6 +121,8 @@ class CompanyMemoryService:
                 self.scopes.bind_memory_from_source(project_id, previous["id"], source_id)
             return self.get(previous["id"]) or {}
         relationship = ""
+        if previous and (kind in EVENT_KINDS or historical):
+            previous = None
         if previous and previous["content"].casefold() != content.casefold():
             relationship = self._relationship(previous["content"], content)
         with connect() as conn:
@@ -113,8 +139,8 @@ class CompanyMemoryService:
                     json.dumps(source_ids),
                     confidence,
                     now,
-                    None,
-                    1,
+                    now if historical else None,
+                    0 if historical else 1,
                     now,
                     now,
                 ),
@@ -229,6 +255,81 @@ class CompanyMemoryService:
                 retired.append(memory["id"])
         return retired
 
+    def superseded_by(self, project_id: str, source_id: str, title: str) -> str:
+        """The source of an already-ingested record that supersedes this one, if any.
+
+        Checked before a record's memories are written, so a record that
+        arrives after its replacement is stored as history from the start
+        instead of briefly displacing what is current.
+        """
+        own_keys = _record_keys(title)
+        if not own_keys:
+            return ""
+        for item in rows(
+            """SELECT source_id, content FROM knowledge_items WHERE project_id=? AND source_id<>?
+            AND (lower(content) LIKE '%supersedes%' OR lower(content) LIKE '%replaces%'
+              OR lower(content) LIKE '%deprecates%' OR lower(content) LIKE '%obsoletes%')
+            ORDER BY created_at DESC""",
+            (project_id, source_id),
+        ):
+            if own_keys & {_record_key(*m) for m in _SUPERSEDES_RE.findall(item["content"])}:
+                return str(item["source_id"])
+        return ""
+
+    def apply_supersession(
+        self,
+        project_id: str,
+        source_id: str,
+        content: str,
+        memory_units: list[dict[str, Any]],
+        superseded_by: str = "",
+    ) -> list[str]:
+        """Connect a record to the records it supersedes, or to its replacement.
+
+        A source that says "Supersedes ADR-009" retires ADR-009's current
+        memories. A source that was itself already superseded (its memories
+        were written as history) is linked to the memory that replaced it.
+        Returns the ids of the memories retired.
+        """
+        retired: list[str] = []
+        successor = _first_lasting(memory_units)
+        referenced = {_record_key(*match) for match in _SUPERSEDES_RE.findall(content)}
+        if referenced:
+            for item in rows(
+                "SELECT DISTINCT source_id, source_title FROM knowledge_items WHERE project_id=? AND source_id<>?",
+                (project_id, source_id),
+            ):
+                if referenced & _record_keys(item["source_title"]):
+                    retired += self._supersede_source(project_id, item["source_id"], successor)
+        if superseded_by:
+            newer = _first_lasting(
+                [
+                    unit
+                    for unit in self.list(project_id, latest=True, limit=10_000)
+                    if superseded_by in unit.get("source_ids", [])
+                ]
+            )
+            self._link_updates(project_id, newer, [unit["id"] for unit in memory_units])
+        return retired
+
+    def _supersede_source(self, project_id: str, source_id: str, successor: str) -> list[str]:
+        retired = self.retire_source_memories(project_id, source_id)
+        self._link_updates(project_id, successor, retired)
+        return retired
+
+    def _link_updates(self, project_id: str, successor: str, older: list[str]) -> None:
+        if not successor or not older:
+            return
+        now = utcnow()
+        with connect() as conn:
+            for old_id in older:
+                conn.execute(
+                    "INSERT OR IGNORE INTO memory_relationships VALUES (?,?,?,?,?,?)",
+                    (new_id("mrel"), project_id, successor, old_id, "UPDATES", now),
+                )
+        for old_id in older:
+            self.graph.link("UPDATES", "MemoryUnit", successor, "MemoryUnit", old_id)
+
     def relationships(
         self, project_id: str, relationship: str = "", allowed_team_ids: list[str] | None = None
     ) -> list[dict[str, Any]]:
@@ -333,3 +434,16 @@ class CompanyMemoryService:
             if any(n.get("id") == source_id for n in self.graph.list_nodes("", node_type, 100000)):
                 return node_type
         return "KnowledgeItem" if item_id else "EvidenceSource"
+
+
+def _first_lasting(units: list[dict[str, Any]]) -> str:
+    """The first memory that can stand as a successor; events cannot."""
+    return next((unit["id"] for unit in units if unit.get("type") not in EVENT_KINDS), "")
+
+
+def _record_key(prefix: str, number: str) -> str:
+    return f"{prefix.upper()}-{int(number)}"
+
+
+def _record_keys(text: str) -> set[str]:
+    return {_record_key(*match) for match in _RECORD_ID_RE.findall(text or "")}
