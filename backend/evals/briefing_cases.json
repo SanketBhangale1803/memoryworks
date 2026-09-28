@@ -1,0 +1,183 @@
+{
+  "company": "Northwind Pay (fictional)",
+  "notes": "Documents are written the way real postmortems, ADRs, ownership pages and Slack threads read, not tuned to the extractor. A case passes only if every must_surface source reaches the briefing, no must_not_surface source does, and the approval call matches.",
+  "documents": [
+    {
+      "source_id": "doc:postmortem-2025-11-double-charge",
+      "source_type": "document",
+      "title": "Postmortem: duplicate card charges (Nov 2025)",
+      "content": "On Nov 14, 2,300 customers were charged twice for a single checkout. The retry wrapper in payments-service re-sent card authorization requests after a processor timeout without an idempotency key. The processor had already accepted the first request, so both went through. Every retry of a card authorization must carry the original idempotency key."
+    },
+    {
+      "source_id": "doc:adr-014-ledger-writes",
+      "source_type": "document",
+      "title": "ADR-014: Ledger writes go through ledger-service",
+      "content": "Status: accepted, March 2025. We decided that no service writes to the ledger database directly. All balance changes must use the ledger-service API so that every adjustment is journaled."
+    },
+    {
+      "source_id": "doc:adr-009-redis-sessions",
+      "source_type": "document",
+      "title": "ADR-009: Payment sessions in Redis",
+      "content": "Status: accepted, January 2024. We decided payments-service should store checkout sessions in Redis for low-latency reads."
+    },
+    {
+      "source_id": "doc:adr-021-postgres-sessions",
+      "source_type": "document",
+      "title": "ADR-021: Move payment sessions to PostgreSQL",
+      "content": "Status: accepted, June 2025. Supersedes ADR-009. After Redis evictions dropped live checkout sessions, we decided payments-service must use PostgreSQL for checkout sessions instead of Redis."
+    },
+    {
+      "source_id": "doc:service-ownership",
+      "source_type": "document",
+      "title": "Service ownership",
+      "content": "payments-service is owned by the Payments Core team. ledger-service is owned by the Ledger team. notification-worker is owned by the Growth team. fraud-engine is owned by the Risk team, and changes to it need a Risk reviewer."
+    },
+    {
+      "source_id": "doc:architecture-dependencies",
+      "source_type": "document",
+      "title": "Architecture overview",
+      "content": "checkout-gateway depends on payments-service for card authorization. payments-service depends on ledger-service and fraud-engine. billing-service depends on ledger-service for invoice balances. All services share the primary PostgreSQL cluster pg-main."
+    },
+    {
+      "source_id": "doc:change-freeze-policy",
+      "source_type": "document",
+      "title": "Change management policy",
+      "content": "Changes to payments-service or ledger-service during the holiday freeze (Nov 20 to Jan 5) are prohibited without VP Engineering approval. Database migrations on pg-main must be reviewed by the Ledger team."
+    },
+    {
+      "source_id": "doc:incident-2025-08-notification-retry-storm",
+      "source_type": "document",
+      "title": "Incident: notification-worker retry storm (Aug 2025)",
+      "content": "A bug in the notification-worker retry loop sent 40,000 duplicate marketing emails after an SMTP timeout. The Growth team capped retries at three."
+    },
+    {
+      "source_id": "slack:payments-eng-concurrency",
+      "source_type": "slack",
+      "title": "#payments-eng thread",
+      "content": "Heads up: fraud-engine timeouts spike whenever payments-service raises its worker concurrency above 64, because each worker opens its own fraud-engine connection."
+    },
+    {
+      "source_id": "incident:2026-02-ledger-pool-exhaustion",
+      "source_type": "incident",
+      "title": "Outage: ledger-service connection pool exhaustion (Feb 2026)",
+      "content": "ledger-service failed for 47 minutes after the billing-service month-end backfill opened 400 connections to pg-main. Backfills must run through the throttled batch queue."
+    },
+    {
+      "source_id": "doc:runbook-rotate-processor-key",
+      "source_type": "document",
+      "title": "Runbook: rotate the payments processor API key",
+      "content": "Run `make rotate-processor-key ENV=prod` from the payments-service repo, then restart pods one at a time while watching authorization error rates."
+    }
+  ],
+  "cases": [
+    {
+      "id": "direct-retry",
+      "gap": "baseline",
+      "task": "Add a retry around card authorization in payments-service",
+      "service": "payments-service",
+      "must_surface": ["doc:postmortem-2025-11-double-charge"],
+      "must_not_surface": ["doc:incident-2025-08-notification-retry-storm"],
+      "expect_approval": true
+    },
+    {
+      "id": "no-word-overlap",
+      "gap": "relevance to the action",
+      "task": "Make the checkout pay button safe to double-click",
+      "service": "",
+      "must_surface": ["doc:postmortem-2025-11-double-charge"],
+      "must_not_surface": ["doc:incident-2025-08-notification-retry-storm"],
+      "expect_approval": false
+    },
+    {
+      "id": "unnamed-service-limit",
+      "gap": "relevance to the action",
+      "task": "Raise worker concurrency to 96 to clear the checkout backlog",
+      "service": "",
+      "must_surface": ["slack:payments-eng-concurrency"],
+      "must_not_surface": [],
+      "expect_approval": true
+    },
+    {
+      "id": "superseded-decision",
+      "gap": "what is true now",
+      "task": "Store checkout sessions in Redis for payments-service",
+      "service": "payments-service",
+      "must_surface": ["doc:adr-021-postgres-sessions"],
+      "must_not_surface": ["doc:adr-009-redis-sessions"],
+      "expect_approval": true
+    },
+    {
+      "id": "cross-team-leak",
+      "gap": "scoping",
+      "task": "Tune the retry loop in notification-worker",
+      "service": "notification-worker",
+      "must_surface": ["doc:incident-2025-08-notification-retry-storm"],
+      "must_not_surface": ["doc:postmortem-2025-11-double-charge"],
+      "expect_approval": false
+    },
+    {
+      "id": "blast-radius-migration",
+      "gap": "blast radius",
+      "task": "Migrate the ledger-service schema to add a currency column",
+      "service": "ledger-service",
+      "must_surface": ["doc:architecture-dependencies", "doc:change-freeze-policy"],
+      "must_not_surface": [],
+      "expect_approval": true
+    },
+    {
+      "id": "policy-without-verb",
+      "gap": "policy",
+      "task": "Refactor fee rounding in payments-service before the holidays",
+      "service": "payments-service",
+      "must_surface": ["doc:change-freeze-policy"],
+      "must_not_surface": [],
+      "expect_approval": true
+    },
+    {
+      "id": "ownership",
+      "gap": "ownership",
+      "task": "Change the scoring threshold in fraud-engine",
+      "service": "fraud-engine",
+      "must_surface": ["doc:service-ownership"],
+      "must_not_surface": [],
+      "expect_approval": true
+    },
+    {
+      "id": "no-memory",
+      "gap": "honest absence",
+      "task": "Update the colors on the marketing site",
+      "service": "marketing-site",
+      "must_surface": [],
+      "must_not_surface": ["doc:postmortem-2025-11-double-charge", "doc:change-freeze-policy"],
+      "expect_approval": false,
+      "expect_verdict": "no_memory"
+    },
+    {
+      "id": "incident-source-type",
+      "gap": "ingestion coverage",
+      "task": "Run the month-end backfill in billing-service",
+      "service": "billing-service",
+      "must_surface": ["incident:2026-02-ledger-pool-exhaustion"],
+      "must_not_surface": [],
+      "expect_approval": true
+    },
+    {
+      "id": "procedure",
+      "gap": "baseline",
+      "task": "Rotate the payments processor API key",
+      "service": "payments-service",
+      "must_surface": ["doc:runbook-rotate-processor-key"],
+      "must_not_surface": [],
+      "expect_approval": true
+    },
+    {
+      "id": "decision-on-other-service",
+      "gap": "blast radius",
+      "task": "Write balance adjustments straight to the ledger database from billing-service",
+      "service": "billing-service",
+      "must_surface": ["doc:adr-014-ledger-writes"],
+      "must_not_surface": [],
+      "expect_approval": true
+    }
+  ]
+}
