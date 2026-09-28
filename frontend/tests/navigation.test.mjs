@@ -44,15 +44,39 @@ test("one registry is the only navigation model", () => {
 test("the command menu reaches every registered destination from anywhere", () => {
   const menu = readFileSync(new URL("../components/CommandMenu.tsx", import.meta.url), "utf8");
   const chat = readFileSync(new URL("../components/WorkspaceChat.tsx", import.meta.url), "utf8");
-  const bar = readFileSync(new URL("../components/ChatBackBar.tsx", import.meta.url), "utf8");
+  const frame = readFileSync(new URL("../components/WorkspaceFrame.tsx", import.meta.url), "utf8");
   assert.match(menu, /searchDestinations/);
   assert.match(menu, /event\.metaKey \|\| event\.ctrlKey/);
   assert.match(menu, /key\.toLowerCase\(\) === "k"/);
   // A typed question is answerable from the menu, not just a page name.
   assert.match(menu, /orgmemory\.pending-question/);
-  // Both the chat and every satellite page mount it, so the keystroke never dies.
+  // The chat mounts its own (it answers a typed question in place); the frame
+  // mounts one for every other signed-in page, so the keystroke never dies.
   assert.match(chat, /<CommandMenu/);
-  assert.match(bar, /<CommandMenu/);
+  assert.match(frame, /<CommandMenu/);
+  assert.match(frame, /ownsCommandMenu &&/);
+  // The sidebar's search button opens whichever menu the page mounted.
+  assert.match(menu, /export function openCommandMenu/);
+  assert.match(menu, /addEventListener\(OPEN_EVENT/);
+});
+
+test("every signed-in page shows the whole registry in a sidebar", () => {
+  const frame = readFileSync(new URL("../components/WorkspaceFrame.tsx", import.meta.url), "utf8");
+  const shell = readFileSync(new URL("../components/AppShell.tsx", import.meta.url), "utf8");
+  const map = readFileSync(new URL("../lib/workspaceMap.ts", import.meta.url), "utf8");
+  // The sidebar lists the registry and nothing else, grouped in registry order.
+  assert.match(frame, /DESTINATIONS\.filter/);
+  assert.match(frame, /GROUP_ORDER\.map/);
+  assert.match(frame, /!item\.adminOnly \|\| isAdmin/);
+  assert.match(frame, /aria-current=\{item\.href === current \? "page" : undefined\}/);
+  // A collapsed group never hides the page you are on.
+  assert.match(frame, /!closed \|\| holdsCurrent/);
+  // Chat, the agent console, and every satellite page sit inside the frame.
+  assert.equal(shell.match(/<WorkspaceFrame/g)?.length, 2);
+  // Connecting things is one group, not scattered across Knowledge and Admin.
+  for (const href of ["/connectors", "/integrations", "/ingest", "/jobs", "/keys"]) {
+    assert.match(map, new RegExp(`href: "${href}",[^}]*group: "Integrations"`));
+  }
 });
 
 test("pages render real product concepts", () => {
@@ -124,11 +148,11 @@ test("authenticated entry opens quickly while still showing a securing state", (
 
 test("the OrgMemory vector identity replaces the placeholder mark", () => {
   const logo = readFileSync(new URL("../components/RunbookLogo.tsx", import.meta.url), "utf8");
-  const bar = readFileSync(new URL("../components/ChatBackBar.tsx", import.meta.url), "utf8");
+  const frame = readFileSync(new URL("../components/WorkspaceFrame.tsx", import.meta.url), "utf8");
   assert.match(logo, /runbook-mark/);
   assert.match(logo, />ORGMEMORY</);
-  assert.match(bar, /<RunbookMark \/>/);
-  assert.doesNotMatch(bar, /className="mark"/);
+  assert.match(frame, /<RunbookMark \/>/);
+  assert.doesNotMatch(frame, /className="mark"/);
 });
 
 test("browser API calls use the secure session cookie instead of legacy local storage tokens", () => {

@@ -303,6 +303,14 @@ function AskRow({
 
 /* One listener for the whole app. Every surface that wants the menu renders
    <CommandMenu> and calls this, rather than each re-deriving the shortcut. */
+const OPEN_EVENT = "orgmemory:open-command-menu";
+
+/* Opens whichever menu the current page mounted, from anywhere — the sidebar's
+   search button has no menu of its own to hold. */
+export function openCommandMenu() {
+  window.dispatchEvent(new Event(OPEN_EVENT));
+}
+
 export function useCommandMenu() {
   const [open, setOpen] = useState(false);
   useEffect(() => {
@@ -312,8 +320,13 @@ export function useCommandMenu() {
         setOpen((current) => !current);
       }
     }
+    const onOpen = () => setOpen(true);
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener(OPEN_EVENT, onOpen);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener(OPEN_EVENT, onOpen);
+    };
   }, []);
   return { open, setOpen, close: () => setOpen(false) };
 }

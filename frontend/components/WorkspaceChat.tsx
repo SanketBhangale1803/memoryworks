@@ -6,6 +6,7 @@ import AgentActivityLayer, { WebMCPStatusButton } from "@/components/AgentActivi
 import CommandMenu, { useCommandMenu } from "@/components/CommandMenu";
 import MarkdownAnswer from "@/components/MarkdownAnswer";
 import { RunbookMark } from "@/components/RunbookLogo";
+import { NavToggle } from "@/components/WorkspaceFrame";
 import { useOrgMemoryWebMCP } from "@/hooks/useOrgMemoryWebMCP";
 import { api } from "@/lib/api";
 import type {
@@ -719,25 +720,20 @@ export default function WorkspaceChat({ user }: { user: any }) {
     }
   }
 
-  const initials = (user?.display_name || user?.email || "OM")
-    .split(/\s+/)
-    .map((part: string) => part[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
   const workspace = user?.workspaces?.find((item: any) => item.id === user?.active_workspace_id);
   const noProjects = !projects.length && !loadError;
 
   return (
     <div className="om-home ws-app agentic-workspace" data-webmcp-status={webMCP.status}>
       <header className="ws-bar">
-        <Link href="/workspace" className="ws-id" aria-label="OrgMemory">
-          <RunbookMark />
+        {/* The brand and account live in the sidebar; this bar holds the chat's own controls. */}
+        <div className="page-bar-id">
+          <NavToggle />
           <span>
-            <strong>OrgMemory</strong>
             <small>{workspace?.name || "Company brain"}</small>
+            <strong>Chat</strong>
           </span>
-        </Link>
+        </div>
 
         <div className="ws-controls" ref={picker}>
           <WebMCPStatusButton
@@ -863,13 +859,6 @@ export default function WorkspaceChat({ user }: { user: any }) {
             <span>Jump to…</span>
             <kbd>⌘K</kbd>
           </button>
-          <Link
-            className="ws-avatar"
-            href="/account"
-            title={`${user?.display_name || "Account"} · ${user?.role || "member"}`}
-          >
-            {initials}
-          </Link>
         </div>
       </header>
 

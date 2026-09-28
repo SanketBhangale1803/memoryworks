@@ -9,12 +9,20 @@
  * because the page loses its title.
  */
 
-export type DestinationGroup = "Ask" | "Knowledge" | "Govern" | "Agents" | "Admin";
+export type DestinationGroup =
+  | "Ask"
+  | "Knowledge"
+  | "Integrations"
+  | "Govern"
+  | "Agents"
+  | "Admin";
 
 export type Destination = {
   href: string;
   /* What the title bar shows on the page itself. */
   title: string;
+  /* The shorter name the sidebar uses when the title would wrap. */
+  navLabel?: string;
   /* What it does, in the command menu. Written for someone who has not seen the
      page yet, which rules out restating the title with different words. */
   summary: string;
@@ -63,28 +71,6 @@ export const DESTINATIONS: Destination[] = [
   },
 
   {
-    href: "/ingest",
-    title: "Add knowledge",
-    summary: "Bring in a repository, a document, or a transcript.",
-    group: "Knowledge",
-    keywords: ["upload", "import", "github", "repository", "file", "new"],
-    primary: true,
-  },
-  {
-    href: "/connectors",
-    title: "Connections",
-    summary: "Connect GitHub, Slack, Drive, and the rest of the systems the team already uses.",
-    group: "Knowledge",
-    keywords: ["integrations", "github", "slack", "oauth", "sources"],
-  },
-  {
-    href: "/jobs",
-    title: "Ingestion jobs",
-    summary: "Watch what is currently being read into memory, and what failed.",
-    group: "Knowledge",
-    keywords: ["status", "queue", "sync", "progress"],
-  },
-  {
     href: "/memories",
     title: "Memories",
     summary: "Every atomic fact, decision, policy, owner, and dependency, with its sources.",
@@ -118,6 +104,43 @@ export const DESTINATIONS: Destination[] = [
     summary: "What changed in the sources, and which memories and artifacts it affected.",
     group: "Knowledge",
     keywords: ["diff", "changes", "revisions", "impact"],
+  },
+
+  {
+    href: "/connectors",
+    title: "Sources",
+    summary: "Connect GitHub, Slack, Drive, Notion, and every other system the team already uses.",
+    group: "Integrations",
+    keywords: ["integrations", "github", "slack", "oauth", "sources"],
+  },
+  {
+    href: "/integrations",
+    title: "AI tools & IDEs",
+    summary: "Connect Claude Code, Cursor, VS Code, Claude, or ChatGPT to this workspace over MCP.",
+    group: "Integrations",
+    keywords: ["mcp", "claude", "chatgpt", "cursor", "vscode", "ide", "editor", "oauth", "client"],
+  },
+  {
+    href: "/ingest",
+    title: "Upload & import",
+    summary: "Bring in a repository, a document, a Slack channel, a web page, or a transcript.",
+    group: "Integrations",
+    keywords: ["upload", "import", "github", "repository", "file", "new"],
+    primary: true,
+  },
+  {
+    href: "/jobs",
+    title: "Sync status",
+    summary: "Watch what is currently being read into memory, and what failed.",
+    group: "Integrations",
+    keywords: ["status", "queue", "sync", "progress", "jobs", "ingestion", "failed"],
+  },
+  {
+    href: "/keys",
+    title: "API keys",
+    summary: "Issue and revoke keys for programmatic access.",
+    group: "Integrations",
+    keywords: ["token", "credentials", "api", "sdk"],
   },
 
   {
@@ -181,13 +204,6 @@ export const DESTINATIONS: Destination[] = [
     keywords: ["dry run", "rehearse", "scenario", "test"],
   },
   {
-    href: "/integrations",
-    title: "MCP & integrations",
-    summary: "Connect Claude, ChatGPT, or your own client to this workspace over MCP.",
-    group: "Agents",
-    keywords: ["mcp", "claude", "chatgpt", "oauth", "client", "server"],
-  },
-  {
     href: "/benchmarks",
     title: "Benchmarks",
     summary: "How the retrieval engine scores against the baseline.",
@@ -210,13 +226,6 @@ export const DESTINATIONS: Destination[] = [
     keywords: ["profile", "team", "members", "invite", "role", "logout"],
   },
   {
-    href: "/keys",
-    title: "API keys",
-    summary: "Issue and revoke keys for programmatic access.",
-    group: "Admin",
-    keywords: ["token", "credentials", "api", "sdk"],
-  },
-  {
     href: "/admin",
     title: "Platform admin",
     summary: "Runtime status, importers, and memory maintenance.",
@@ -229,6 +238,7 @@ export const DESTINATIONS: Destination[] = [
 export const GROUP_ORDER: DestinationGroup[] = [
   "Ask",
   "Knowledge",
+  "Integrations",
   "Govern",
   "Agents",
   "Admin",
@@ -237,6 +247,7 @@ export const GROUP_ORDER: DestinationGroup[] = [
 export const GROUP_BLURB: Record<DestinationGroup, string> = {
   Ask: "Get an answer, or hand work to an agent.",
   Knowledge: "What memory holds, and where it came from.",
+  Integrations: "Where knowledge comes from, and where agents reach it.",
   Govern: "What needs a person's judgement.",
   Agents: "The surfaces machines talk to.",
   Admin: "Who you are and how this workspace runs.",
