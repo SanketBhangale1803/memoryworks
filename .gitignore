@@ -41,3 +41,5 @@ artifacts/
 # Launch films (1 GB of rendered video) and private assessment reports.
 presentation/
 reports/
+# Launch videos rendered by /brag-slim.
+brag-output*/

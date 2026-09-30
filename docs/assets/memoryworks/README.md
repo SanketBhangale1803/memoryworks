@@ -1,37 +1,50 @@
 # MemoryWorks identity
 
-The mark is a folded **M**, split into two facing ribbons. The two parts suggest
-stored context meeting action. A narrow central seam keeps the mark open and
-recognizable at small sizes.
+The mark is a glowing **M**: one continuous ribbon that folds over itself, lit
+from within in a blue → violet → pink → peach gradient on black. It was drawn
+as a raster, so it is used as an image, not rebuilt in vector.
 
 Use **MemoryWorks** as the product name and **memoryworks.app** as the address.
-The address is a secondary signature; the core wordmark does not need `.app`.
 
 ## Files
 
-- `memoryworks-mark.svg`: teal and aqua symbol on a transparent background.
-- `memoryworks-mark-ink.svg`: dark monochrome symbol.
-- `memoryworks-mark-white.svg`: white monochrome symbol.
-- `memoryworks-lockup.svg`: outlined dark wordmark with a teal and aqua symbol.
-- `memoryworks-lockup-dark.svg`: outlined light wordmark with a mist and aqua symbol.
-- `memoryworks-icon.svg`: dark rounded app tile.
-- `memoryworks-logo.png`: transparent horizontal logo, 2400 pixels wide.
-- `memoryworks-icon.png`: 1024-pixel app icon.
-- `memoryworks-brand-board.png`: identity presentation and scale checks.
+All live in `frontend/public/memoryworks/`:
 
-All SVG wordmarks are outlined, so they do not require installed fonts. The
-editable source is `build-brand.py`; PNG exports use `render-brand.mjs`.
+| File | Use |
+|---|---|
+| `logo-source.png` | The original 1254 × 1254 artwork on black. The master; everything below is derived from it. |
+| `mark.png` | The mark with transparency (alpha from its own brightness). For dark backgrounds — the public site uses it. |
+| `mark-on-black.png` | The mark on black, square, edges faded to true black. For dark media such as video and social posts. |
+| `app-icon.png`, `app-icon-512.png` | The mark on a black rounded tile. For light backgrounds, the app sidebar, and anywhere an icon is expected. |
+| `apple-icon.png`, `favicon-64.png` | Small tiles. `frontend/app/icon.png` and `apple-icon.png` serve the browser icons. |
 
-## Color and sizing
+`frontend/public/og.png` is the 1200 × 630 social preview; `logo.png`,
+`logo-icon.png`, and `logo.jpg` in `frontend/public/` are the same mark at the
+paths older links used.
 
-Deep teal `#003135`; teal `#024950`; aqua `#0FA4AF`; mist `#AFDDE5`;
-cool white `#F5F9FA`. On dark backgrounds use the mist/aqua or white mark.
-The monochrome mark is the reference for one-color production. These colors
-follow the app's current "Cool and collected" palette.
+## Colour
 
-Keep at least one stem-width of clear space around the mark. Do not add outlines,
-shadows, gradients, or rotate it. The 80-unit master is inspected at 16, 24, 32, and
-64 pixels; use the icon tile for browser and application icons.
+Sampled from the mark: blue `#50A8FC`, violet `#A168FA`, lavender `#EAB8FA`,
+pink `#F485AD`, coral `#FC786D`, peach `#FECB91`, deep violet `#360B78`, navy
+`#0C1F77`.
 
-The wordmark uses Inter Tight, licensed under the SIL Open Font License. The
-font and license are in the launch-film project's assets directory.
+- **Public site** (`frontend/app/site.css`): near-black `#050507`, the full
+  gradient used sparingly — one headline phrase, one border, the light behind
+  the hero.
+- **App** (`frontend/app/globals.css`): light neutrals with a faint violet cast;
+  the accent is violet `#4F2CC7`, the logo's deep violet made dark enough to read
+  on white. Sign-in uses the dark site palette.
+
+## Rules
+
+- Show the mark on black or near-black, or inside its tile. On a light
+  background, always use the tile — the bare mark's dark folds wash out.
+- Keep clear space of at least a quarter of the mark's width around it.
+- Do not recolour, outline, add a second glow, or rotate it.
+
+## The previous mark
+
+The folded, two-ribbon **M** in teal and aqua (`build-brand.py`,
+`render-brand.mjs`, `memoryworks-brand-board.png`, and the brand-kit zip in this
+folder) is superseded. It is kept as a record; its exported files were removed
+from the site.

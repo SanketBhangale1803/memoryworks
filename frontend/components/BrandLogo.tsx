@@ -4,17 +4,18 @@ type BrandLogoProps = {
   inverted?: boolean;
 };
 
+/* The glowing M, on its own dark tile — the form that reads on any background,
+   light app chrome included. The public site uses the bare mark on black
+   (public/memoryworks/mark-on-black.png) instead. */
 export function BrandMark({ className = "" }: { className?: string }) {
   return (
-    <svg
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
       className={`brand-mark ${className}`.trim()}
-      viewBox="0 0 80 80"
-      role="img"
-      aria-label="MemoryWorks"
-    >
-      <path d="M8 66V14H23L37 30V51L23 35V66Z" />
-      <path d="M43 30L57 14H72V66H57V35L43 51Z" />
-    </svg>
+      src="/memoryworks/app-icon-512.png"
+      alt="MemoryWorks"
+      decoding="async"
+    />
   );
 }
 

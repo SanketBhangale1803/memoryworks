@@ -18,7 +18,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "MemoryWorks — The memory layer for engineering organizations",
     description: "MemoryWorks brings together incidents, decisions, dependencies, and owners—with evidence—so people and AI agents can check what matters before they act.",
-    images: [{ url: "/og.png", width: 1200, height: 630, alt: "MemoryWorks company brain" }],
+    images: [{ url: "/og.png", width: 1200, height: 630, alt: "MemoryWorks — the memory layer for engineering organizations" }],
     type: "website",
   },
   twitter: {
@@ -26,10 +26,6 @@ export const metadata: Metadata = {
     title: "MemoryWorks — The memory layer for engineering organizations",
     description: "Source-backed memory for engineering teams and the agents working alongside them.",
     images: ["/og.png"],
-  },
-  icons: {
-    icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
-    shortcut: "/icon.svg",
   },
 };
 

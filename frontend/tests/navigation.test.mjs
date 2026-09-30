@@ -168,7 +168,14 @@ test("pages render real product concepts", () => {
     ["../app/approvals/page.tsx", "Nothing is waiting on you"],
     ["../app/approvals/page.tsx", "Agent changes"],
   ];
-  for (const [path, phrase] of pages) assert.match(read(path), new RegExp(phrase));
+  // Markup inside a sentence (a styled phrase) must not hide the sentence.
+  // Markup inside a sentence (a styled phrase) must not hide the sentence, and
+  // a phrase held in an attribute still counts.
+  for (const [path, phrase] of pages) {
+    const source = read(path);
+    const pattern = new RegExp(phrase);
+    assert.ok(pattern.test(source) || pattern.test(source.replace(/<[^>]+>/g, "")), `${path} should say "${phrase}"`);
+  }
 });
 
 test("public routes stay separate from the workspace", () => {
