@@ -1,6 +1,6 @@
-# OrgMemory Company Brain architecture
+# MemoryWorks Company Brain architecture
 
-OrgMemory implements the core premise of [YC's Company Brain thesis](https://www.ycombinator.com/rfs#company-brain): the missing layer between fragmented company data and reliable AI automation is structured, current, executable organizational knowledge—not another search box.
+MemoryWorks implements the core premise of [YC's Company Brain thesis](https://www.ycombinator.com/rfs#company-brain): the missing layer between fragmented company data and reliable AI automation is structured, current, executable organizational knowledge—not another search box.
 
 ## Closed loop
 
@@ -57,13 +57,13 @@ This separates document history from memory history: a document can change witho
 
 ## Dynamic context
 
-`ContextEnvelope` is the actual context contract between OrgMemory and an AI system. It records the caller, authorized team IDs, task type, target entities, selected current memories, exact evidence IDs, relevant skills, the source version vector, retrieval trace, token budget, and expiry.
+`ContextEnvelope` is the actual context contract between MemoryWorks and an AI system. It records the caller, authorized team IDs, task type, target entities, selected current memories, exact evidence IDs, relevant skills, the source version vector, retrieval trace, token budget, and expiry.
 
 An answer is reproducible because the envelope records both what was selected and which version of each source was current. The retrieval trace explains why HCAG selected the context.
 
 ## Reports and executable skills
 
-A report or brief is an `Artifact` with immutable `ArtifactRevision` records, not an untracked output blob. Each revision points to the memories, sources, and context envelope used to generate it. When a dependency changes, OrgMemory marks the artifact stale and creates an impact record; it never silently rewrites a human-facing report.
+A report or brief is an `Artifact` with immutable `ArtifactRevision` records, not an untracked output blob. Each revision points to the memories, sources, and context envelope used to generate it. When a dependency changes, MemoryWorks marks the artifact stale and creates an impact record; it never silently rewrites a human-facing report.
 
 `SkillSpec` is a versioned, machine-readable compilation of current procedures, policies, conventions, and decisions. It contains triggers, preconditions, steps, tools, policies, approvals, rollback guidance, and evidence. A relevant change marks it stale so an agent cannot unknowingly follow obsolete company practice.
 

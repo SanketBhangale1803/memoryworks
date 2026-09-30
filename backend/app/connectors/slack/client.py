@@ -88,7 +88,7 @@ _SLACK_MANIFEST = ConnectorManifest(
     rate_limit=RateLimitPolicy(requests=45, window_seconds=60, burst=5),
     retry=RetryPolicy(max_attempts=7, base_delay_seconds=2, max_delay_seconds=300),
     data_policy=DataPolicy(
-        residency="OrgMemory workspace region",
+        residency="MemoryWorks workspace region",
         retention="Until source disconnect or workspace retention policy",
     ),
     package="orgmemory.connector.slack",
@@ -418,7 +418,7 @@ class SlackConnector(Connector):
                 )
             if error in {"not_in_channel", "channel_not_found"}:
                 raise ValueError(
-                    "OrgMemory cannot post to that Slack channel. Choose a channel the "
+                    "MemoryWorks cannot post to that Slack channel. Choose a channel the "
                     "connected Slack identity can access."
                 )
             raise ValueError(f"Slack API error: {error}")

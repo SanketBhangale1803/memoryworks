@@ -1,12 +1,12 @@
 # OAuth provider setup
 
-OrgMemory never asks a user to paste a GitHub personal access token or Slack bot
+MemoryWorks never asks a user to paste a GitHub personal access token or Slack bot
 token into the browser. OAuth integrations use provider-hosted authorization code
 flows, server-side code exchange, single-use state, and encrypted workspace storage.
 
 Application sign-in is separate from source connection:
 
-- Google and GitHub identify the person opening OrgMemory.
+- Google and GitHub identify the person opening MemoryWorks.
 - Passwordless email uses a six-digit, ten-minute, one-time code.
 - Connecting GitHub or Slack later grants source access to the active workspace.
 
@@ -16,7 +16,7 @@ Create one GitHub OAuth App under **Settings → Developer settings → OAuth Ap
 
 | Field | Local value | Production value |
 | --- | --- | --- |
-| Application name | `OrgMemory Local` | Your public OrgMemory product name |
+| Application name | `MemoryWorks Local` | Your public MemoryWorks product name |
 | Homepage URL | `http://localhost:3000` | `https://app.your-domain.com` |
 | Authorization callback URL | `http://localhost:8000/api/auth/github/callback` | `https://api.your-domain.com/api/auth/github/callback` |
 
@@ -28,7 +28,7 @@ GITHUB_CLIENT_SECRET=...
 GITHUB_REDIRECT_URI=http://localhost:8000/api/auth/github/callback
 ```
 
-Restart OrgMemory. **Continue with GitHub** requests only `read:user user:email`.
+Restart MemoryWorks. **Continue with GitHub** requests only `read:user user:email`.
 The separate **Connect GitHub** action requests `repo read:org`, which is needed
 by a GitHub OAuth App to discover and clone private repositories. GitHub OAuth
 does not offer read-only source-code scope; the production roadmap should migrate
@@ -95,7 +95,7 @@ Create a Slack app **From an app manifest** and use this local manifest:
 
 ```yaml
 display_information:
-  name: OrgMemory Local
+  name: MemoryWorks Local
 oauth_config:
   redirect_urls:
     - http://localhost:8000/api/auth/slack/callback
@@ -120,8 +120,8 @@ SLACK_CLIENT_SECRET=...
 SLACK_REDIRECT_URI=http://localhost:8000/api/auth/slack/callback
 ```
 
-Restart OrgMemory and select **Connect Slack**. The connecting user chooses the
-workspace on Slack. OrgMemory stores the returned user-scoped token and can list
+Restart MemoryWorks and select **Connect Slack**. The connecting user chooses the
+workspace on Slack. MemoryWorks stores the returned user-scoped token and can list
 the public and private conversations that person is allowed to access. It does
 not gain access to channels the person cannot see.
 

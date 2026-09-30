@@ -1,6 +1,6 @@
 """Pre-action briefings: what this company knows before an agent changes anything.
 
-Every other retrieval surface in OrgMemory answers a *question*. This one answers
+Every other retrieval surface in MemoryWorks answers a *question*. This one answers
 an *intent* — "I am about to do X to service Y" — which is a different shape of
 request and needs a different shape of answer. A question wants the best passage;
 an intent wants the constraints it is about to violate.
@@ -440,7 +440,7 @@ def _headline(
     if verdict == "requires_approval":
         return (
             f"This changes production state{where}. Read the constraints below, then get an "
-            "explicit human decision — OrgMemory will not approve it for you."
+            "explicit human decision — MemoryWorks will not approve it for you."
         )
     if verdict == "proceed_with_context":
         return (

@@ -90,7 +90,7 @@ export default function Account() {
   }
 
   return (
-    <Page eyebrow="Identity" title="Account" description="Your identity, active workspace, and who else belongs here.">
+    <Page title="Account" description="Your identity, active workspace, and who else belongs here.">
       {error && <div className="notice error">{error}</div>}
       {user && (
         <div className="account-layout">

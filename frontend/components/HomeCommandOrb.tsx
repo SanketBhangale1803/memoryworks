@@ -29,7 +29,7 @@ export default function HomeCommandOrb() {
     event.preventDefault();
     const nextQuestion = question.trim();
     if (nextQuestion) {
-      window.sessionStorage.setItem("orgmemory.pending-question", nextQuestion);
+      window.sessionStorage.setItem("memoryworks.pending-question", nextQuestion);
     }
     router.push("/workspace");
   }
@@ -49,11 +49,11 @@ export default function HomeCommandOrb() {
               ask(event);
             }
           }}
-          aria-label="Ask OrgMemory"
-          placeholder="Ask OrgMemory anything…"
+          aria-label="Ask MemoryWorks"
+          placeholder="Ask MemoryWorks anything…"
         />
         <span className="entry-command-key">⌘K</span>
-        <button type="submit" aria-label="Open OrgMemory workspace">
+        <button type="submit" aria-label="Open MemoryWorks workspace">
           <span>{question.trim() ? "Ask" : "Open"}</span>
           <i aria-hidden="true">↗</i>
         </button>

@@ -1,0 +1,149 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="1500" viewBox="0 0 1500 1500" role="img" aria-labelledby="title desc">
+  <title id="title">OrgMemory execution harness</title>
+  <desc id="desc">User instructions feed task routing and passive context retrieval. The main agent orchestrates skills, state, and active memory retrieval, then optionally uses specialists and executes through available tools. Verification produces an outcome and a checkpoint; observed failures feed a scoped repair and regression loop.</desc>
+  <defs>
+    <pattern id="grid" width="28" height="28" patternUnits="userSpaceOnUse"><path d="M28 0H0V28" fill="none" stroke="#ccc8ba" stroke-width=".5" opacity=".38"/></pattern>
+    <marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0 0L9 4.5L0 9" fill="#6f7b80"/></marker>
+    <marker id="tealArrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0 0L9 4.5L0 9" fill="#26716d"/></marker>
+    <style>
+      text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; fill:#253536; }
+      .kicker { font-size:13px; letter-spacing:2.5px; font-weight:700; }
+      .title { font-size:52px; font-weight:650; letter-spacing:-1.8px; }
+      .sub { font-size:19px; fill:#5d6865; }
+      .label { font-size:12px; font-weight:700; letter-spacing:1.7px; fill:#57736f; }
+      .name { font-size:23px; font-weight:600; letter-spacing:-.5px; }
+      .body { font-size:16px; fill:#586560; }
+      .small { font-size:13px; fill:#64706a; }
+      .white { fill:#f5f3e9; }
+      .mutedWhite { fill:#c3d5ce; }
+      .card { fill:#fffdf7; stroke:#cccfc4; stroke-width:1.4; }
+      .line { fill:none; stroke:#6f7b80; stroke-width:1.8; marker-end:url(#arrow); }
+      .optional { fill:none; stroke:#6f7b80; stroke-width:1.8; stroke-dasharray:5 5; marker-end:url(#arrow); }
+      .loop { fill:none; stroke:#26716d; stroke-width:2.2; marker-end:url(#tealArrow); }
+    </style>
+  </defs>
+  <rect width="1500" height="1500" fill="#f3f1e7"/>
+  <rect width="1500" height="1500" fill="url(#grid)"/>
+  <path d="M38 40V1460" stroke="#b88667" opacity=".4"/>
+  <text x="68" y="59" class="kicker">ORGMEMORY / ENGINEERING SYSTEMS</text>
+  <text x="68" y="119" class="title">Execution harness</text>
+  <text x="70" y="153" class="sub">From your request to a verified, resumable result.</text>
+  <rect x="1130" y="49" width="300" height="37" rx="18" fill="#e4e9df"/>
+  <text x="1151" y="73" class="kicker" style="font-size:11px;letter-spacing:1.2px">SKILL + PROTOCOL + CHECKPOINT</text>
+  <text x="1430" y="116" text-anchor="end" class="small">Adapted from your three harness sketches</text>
+  <text x="1430" y="139" text-anchor="end" class="small">Instruction layer • optional host capabilities</text>
+
+  <!-- Instructions split into routing and initial context delivery. -->
+  <rect x="510" y="205" width="480" height="97" rx="15" class="card"/>
+  <text x="535" y="235" class="label">01 / TASK CONTRACT</text>
+  <text x="535" y="267" class="name">User instructions + acceptance criteria</text>
+  <text x="535" y="288" class="small">Authorized scope · current repository · source boundaries</text>
+  <path d="M510 253H265V350" class="line"/>
+  <path d="M990 253H1235V350" class="line"/>
+  <text x="87" y="326" class="small">Classify the work</text>
+  <text x="1057" y="326" class="small">Collect the initial evidence</text>
+
+  <rect x="70" y="350" width="390" height="160" rx="15" class="card"/>
+  <text x="95" y="381" class="label">02 / CAPABILITY-AWARE ROUTING</text>
+  <text x="95" y="415" class="name">Routine or complex?</text>
+  <text x="95" y="444" class="body">Keep the selected model by default.</text>
+  <text x="95" y="469" class="body">Route only through available capabilities.</text>
+  <text x="95" y="493" class="small">Explicit scope · no invented model switch</text>
+
+  <rect x="1040" y="350" width="390" height="160" rx="15" class="card"/>
+  <text x="1065" y="381" class="label">03 / CONTEXT DELIVERY</text>
+  <text x="1065" y="415" class="name">Passive memory retrieval</text>
+  <text x="1065" y="444" class="body">Relevant code, tests, decisions, and history.</text>
+  <text x="1065" y="469" class="body">Scoped evidence and source revisions.</text>
+  <text x="1065" y="493" class="small">Small packet · ~20k tokens is an optional cap</text>
+  <path d="M460 430H540" class="line"/>
+  <path d="M1040 430H960" class="line"/>
+
+  <rect x="540" y="350" width="420" height="196" rx="17" fill="#234b48"/>
+  <text x="565" y="383" class="label mutedWhite">04 / ORCHESTRATION</text>
+  <text x="565" y="424" class="white" style="font-size:32px;font-weight:600">Main agent</text>
+  <text x="565" y="455" class="body mutedWhite">Plan one slice. Resolve unknowns.</text>
+  <text x="565" y="480" class="body mutedWhite">Honor scope. Recheck after changes.</text>
+  <path d="M565 500H935" stroke="#54827a"/>
+  <text x="565" y="527" class="small mutedWhite">scoping → ready → executing → verifying</text>
+
+  <!-- Supporting procedure and state layers feed the main agent. -->
+  <rect x="70" y="563" width="390" height="110" rx="15" class="card"/>
+  <text x="95" y="593" class="label">05 / SKILLS &amp; PROCEDURES</text>
+  <text x="95" y="625" class="name">Repository playbook</text>
+  <text x="95" y="651" class="body">Component map · real checks · product invariants</text>
+  <path d="M460 606H490V481H540" class="line"/>
+
+  <rect x="70" y="706" width="390" height="130" rx="15" class="card"/>
+  <text x="95" y="737" class="label">06 / DURABLE STATE</text>
+  <text x="95" y="769" class="name">Checkpoint &amp; resume</text>
+  <text x="95" y="796" class="body">Intent · revision · evidence · receipts</text>
+  <text x="95" y="819" class="small">Compare current state before resuming.</text>
+  <path d="M460 766H515V522H540" class="line"/>
+
+  <rect x="1040" y="563" width="390" height="110" rx="15" fill="#e8ede4" stroke="#b9c9bb" stroke-width="1.4"/>
+  <text x="1065" y="593" class="label">07 / ACTIVE CONTEXT</text>
+  <text x="1065" y="625" class="name">Retrieve to resolve a gap</text>
+  <text x="1065" y="651" class="body">Local sources or authorized OrgMemory tools</text>
+  <path d="M960 485H1002V591H1040" class="optional"/>
+  <path d="M1040 640H980V523H960" class="optional"/>
+
+  <!-- Specialists are optional; execution belongs to available host tools. -->
+  <path d="M750 546V583" class="optional"/>
+  <rect x="550" y="583" width="400" height="107" rx="15" fill="#edf0e7" stroke="#9baea3" stroke-dasharray="5 4"/>
+  <text x="575" y="612" class="label">08 / OPTIONAL SPECIALISTS</text>
+  <text x="575" y="643" class="name">Bounded task cards</text>
+  <text x="575" y="670" class="body">Backend · UI · connectors · verification</text>
+  <path d="M750 690V726" class="line"/>
+  <rect x="550" y="726" width="400" height="128" rx="15" class="card"/>
+  <text x="575" y="757" class="label">09 / EXECUTION ENVIRONMENT</text>
+  <text x="575" y="789" class="name">Implement the scoped change</text>
+  <text x="575" y="816" class="body">Use actual sandbox and permission controls.</text>
+  <text x="575" y="838" class="small">A worktree isolates files, not credentials or network.</text>
+  <rect x="1040" y="719" width="390" height="135" rx="15" class="card"/>
+  <text x="1065" y="750" class="label">TOOL INTERFACES</text>
+  <text x="1065" y="782" class="name">Discover, then call</text>
+  <text x="1065" y="808" class="body">Shell · file edits · MCP · authorized API</text>
+  <text x="1065" y="832" class="small">Missing capability → supported fallback or blocker</text>
+  <path d="M1040 792H950" class="line"/>
+
+  <path d="M750 854V899" class="line"/>
+  <rect x="550" y="899" width="400" height="132" rx="15" fill="#e8ede4" stroke="#8ca496" stroke-width="1.6"/>
+  <text x="575" y="930" class="label">10 / VERIFICATION &amp; OBSERVABILITY</text>
+  <text x="575" y="963" class="name">Evidence for the result</text>
+  <text x="575" y="990" class="body">Acceptance checks · rendered UI · scoped tests</text>
+  <text x="575" y="1014" class="small">Record actual results, failures, and unverified work.</text>
+
+  <!-- The failure-driven ratchet returns to the procedures layer. -->
+  <rect x="70" y="914" width="390" height="132" rx="15" fill="#efe5d1" stroke="#ccac70" stroke-width="1.4"/>
+  <text x="95" y="945" class="label" style="fill:#8b692e">THE RATCHET LOOP</text>
+  <text x="95" y="978" class="name">Failure → repair → regression</text>
+  <text x="95" y="1005" class="body">Turn demonstrated failures into better checks.</text>
+  <text x="95" y="1029" class="small">Propose broader procedure changes for review.</text>
+  <path d="M550 967H460" class="loop"/>
+  <path d="M105 914H53V617H70" class="loop"/>
+
+  <path d="M950 967H1040" class="line"/>
+  <rect x="1040" y="899" width="390" height="147" rx="15" class="card"/>
+  <text x="1065" y="930" class="label">DELIVERY &amp; OUTCOME MEMORY</text>
+  <text x="1065" y="963" class="name">Verified result + handoff</text>
+  <text x="1065" y="990" class="body">Files · evidence · known outcome · next action</text>
+  <text x="1065" y="1016" class="small">Append an outcome only through an authorized path.</text>
+  <path d="M1240 1046V1090H484V814H460" class="optional"/>
+  <rect x="565" y="1076" width="370" height="27" rx="8" fill="#f3f1e7"/>
+  <text x="750" y="1095" text-anchor="middle" class="small">Save progress so the next session starts informed.</text>
+
+  <path d="M70 1130H1430" stroke="#c6c9be"/>
+  <text x="70" y="1163" class="kicker">WHAT THIS SKILL PROVIDES</text>
+  <text x="70" y="1194" class="body">A reusable execution procedure, a repository map, a recovery protocol, and a checkpoint template.</text>
+  <text x="70" y="1220" class="body">Model routing, delegation, durable storage, and enforcement depend on capabilities actually supplied by the host.</text>
+  <rect x="70" y="1251" width="860" height="49" rx="10" fill="#234b48"/>
+  <text x="90" y="1282" class="white" style="font-family:ui-monospace,SFMono-Regular,monospace;font-size:16px">$orgmemory-harness implement the requested milestone and verify it</text>
+  <path d="M1050 1260H1100" class="line"/><text x="1115" y="1265" class="small">Core flow</text>
+  <path d="M1050 1290H1100" class="optional"/><text x="1115" y="1295" class="small">Conditional / resume</text>
+  <path d="M70 1343H1430" stroke="#c6c9be"/>
+  <text x="70" y="1378" class="kicker">COMPLETE MEANS PROVEN</text>
+  <text x="70" y="1410" class="body">The requested result is available, acceptance checks have evidence, and remaining limitations are explicit.</text>
+  <text x="70" y="1444" class="small">SKILL.md + two focused references + checkpoint.yaml</text>
+  <text x="1430" y="1444" text-anchor="end" class="small">OrgMemory / 09 September 2026</text>
+</svg>

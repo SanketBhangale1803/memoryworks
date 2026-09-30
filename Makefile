@@ -2,10 +2,14 @@ SHELL := /bin/bash
 BACKEND_PY := backend/.venv/bin/python
 MCP_PY := mcp_server/.venv/bin/python
 
-.PHONY: runbook dev backend frontend mcp mcp-http test sdk-test sdk-install lint ci conference-check runtime-check format demo reset docker-up docker-down arcade-init graph-check benchmark
+.PHONY: memoryworks orgmemory runbook dev backend frontend mcp mcp-http test sdk-test sdk-install lint ci conference-check runtime-check format demo reset docker-up docker-down arcade-init graph-check benchmark
 
-runbook:
+memoryworks:
 	docker compose --profile mcp up --build
+
+# Aliases for the product's earlier names, so old instructions still work.
+orgmemory: memoryworks
+runbook: memoryworks
 
 dev: docker-up
 
@@ -33,10 +37,10 @@ frontend: frontend/node_modules
 	cd frontend && npm run dev
 
 mcp: $(MCP_PY)
-	RUNBOOK_API_URL=$${RUNBOOK_API_URL:-http://localhost:8000} RUNBOOK_API_KEY=$${RUNBOOK_API_KEY:-} $(MCP_PY) mcp_server/server.py --transport stdio
+	MEMORYWORKS_API_URL="$${MEMORYWORKS_API_URL:-$${ORGMEMORY_API_URL:-$${RUNBOOK_API_URL:-http://localhost:8000}}}" MEMORYWORKS_API_KEY="$${MEMORYWORKS_API_KEY:-$${ORGMEMORY_API_KEY:-$${RUNBOOK_API_KEY:-}}}" $(MCP_PY) mcp_server/server.py --transport stdio
 
 mcp-http: $(MCP_PY)
-	RUNBOOK_API_URL=$${RUNBOOK_API_URL:-http://localhost:8000} MCP_PUBLIC_URL=$${MCP_PUBLIC_URL:-http://localhost:8001} MCP_OAUTH_ISSUER_URL=$${MCP_OAUTH_ISSUER_URL:-http://localhost:8000} $(MCP_PY) mcp_server/server.py --transport streamable-http --host 0.0.0.0 --port 8001
+	MEMORYWORKS_API_URL="$${MEMORYWORKS_API_URL:-$${ORGMEMORY_API_URL:-$${RUNBOOK_API_URL:-http://localhost:8000}}}" MEMORYWORKS_MCP_PUBLIC_URL="$${MEMORYWORKS_MCP_PUBLIC_URL:-$${ORGMEMORY_MCP_PUBLIC_URL:-$${MCP_PUBLIC_URL:-http://localhost:8001}}}" MEMORYWORKS_MCP_OAUTH_ISSUER_URL="$${MEMORYWORKS_MCP_OAUTH_ISSUER_URL:-$${ORGMEMORY_MCP_OAUTH_ISSUER_URL:-$${MCP_OAUTH_ISSUER_URL:-http://localhost:8000}}}" $(MCP_PY) mcp_server/server.py --transport streamable-http --host 0.0.0.0 --port 8001
 
 test: $(BACKEND_PY) frontend/node_modules
 	$(BACKEND_PY) -m pytest backend

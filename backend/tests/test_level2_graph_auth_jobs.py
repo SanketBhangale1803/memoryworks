@@ -144,7 +144,7 @@ def test_invite_sends_an_invitation_email_when_mail_is_configured(graph, monkeyp
 
     monkeypatch.setattr("app.auth.app_auth.smtplib.SMTP", FakeSMTP)
     monkeypatch.setattr(settings, "smtp_host", "smtp.test")
-    monkeypatch.setattr(settings, "email_from", "OrgMemory <no-reply@orgmemory.test>")
+    monkeypatch.setattr(settings, "email_from", "MemoryWorks <no-reply@orgmemory.test>")
     monkeypatch.setattr(settings, "frontend_url", "https://orgmemory.test")
 
     owner = create_dev_session("owner3@example.com", "Invite Sender")

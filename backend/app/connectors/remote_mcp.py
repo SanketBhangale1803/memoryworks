@@ -277,7 +277,7 @@ class RemoteMCPConnector(Connector):
             {
                 "protocolVersion": "2025-06-18",
                 "capabilities": {},
-                "clientInfo": {"name": "OrgMemory Connector Gateway", "version": "1.0.0"},
+                "clientInfo": {"name": "MemoryWorks Connector Gateway", "version": "1.0.0"},
             },
         )
         self._initialized = True

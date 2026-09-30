@@ -13,17 +13,17 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"),
-  title: "OrgMemory — The memory layer for engineering organizations",
+  title: "MemoryWorks — The memory layer for engineering organizations",
   description: "Every incident, decision, owner, and dependency your engineering org already learned, tied to its source — and briefed to the people and AI agents about to change something, before they change it.",
   openGraph: {
-    title: "OrgMemory — The memory layer for engineering organizations",
-    description: "OrgMemory brings together incidents, decisions, dependencies, owners, and runbooks—with evidence—so people and AI agents can check what matters before they act.",
-    images: [{ url: "/og.png", width: 1200, height: 630, alt: "OrgMemory company brain" }],
+    title: "MemoryWorks — The memory layer for engineering organizations",
+    description: "MemoryWorks brings together incidents, decisions, dependencies, and owners—with evidence—so people and AI agents can check what matters before they act.",
+    images: [{ url: "/og.png", width: 1200, height: 630, alt: "MemoryWorks company brain" }],
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "OrgMemory — The memory layer for engineering organizations",
+    title: "MemoryWorks — The memory layer for engineering organizations",
     description: "Source-backed memory for engineering teams and the agents working alongside them.",
     images: ["/og.png"],
   },

@@ -5,10 +5,10 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "orgmemory-sdk"
 version = "0.1.0"
-description = "Python SDK and CLI for OrgMemory"
+description = "Python SDK and CLI for MemoryWorks"
 readme = "README.md"
 requires-python = ">=3.11"
-authors = [{name = "OrgMemory"}]
+authors = [{name = "MemoryWorks"}]
 license = "MIT"
 dependencies = ["httpx>=0.27,<1"]
 keywords = ["agents", "memory", "context", "knowledge-graph"]

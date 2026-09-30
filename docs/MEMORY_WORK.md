@@ -1,10 +1,10 @@
 # Memory Work
 
-Memory Work is OrgMemory’s bridge from company knowledge to reliable AI execution.
+Memory Work is MemoryWorks’s bridge from company knowledge to reliable AI execution.
 
 ## Product boundary
 
-[OpenWorker](https://github.com/andrewyng/openworker) is a broad, local-first AI coworker: it owns an agent loop, tools, connectors, scheduled automations, and deliverable generation. OrgMemory does not duplicate that runtime. It supplies the missing organizational layer a worker needs before it can act correctly:
+[OpenWorker](https://github.com/andrewyng/openworker) is a broad, local-first AI coworker: it owns an agent loop, tools, connectors, scheduled automations, and deliverable generation. MemoryWorks does not duplicate that runtime. It supplies the missing organizational layer a worker needs before it can act correctly:
 
 - hierarchical team, workspace, project, repo, service, and person scope;
 - current source-backed memories instead of unstructured document dumps;
@@ -16,7 +16,7 @@ Memory Work is OrgMemory’s bridge from company knowledge to reliable AI execut
 The products can be complementary:
 
 ```text
-OrgMemory: What is true, who may know it, and why?
+MemoryWorks: What is true, who may know it, and why?
 Worker:    Which tools should run to achieve the approved outcome?
 ```
 
@@ -26,14 +26,14 @@ No OpenWorker source code is copied or required. The integration boundary is the
 
 1. Select a project and describe an outcome on **Memory Work**.
 2. HCAG activates authorized company context.
-3. OrgMemory creates a revisioned evidence-backed brief.
+3. MemoryWorks creates a revisioned evidence-backed brief.
 4. Knowledge-only work completes immediately.
 5. External writes pause for explicit approval.
 6. Slack work shows the destination and exact editable message at the top of the page.
 7. Approval posts through `chat.postMessage` and stores Slack’s timestamp and permalink.
 8. Other workers can fetch portable packets by API or MCP and report their result evidence.
 
-If no relevant source evidence exists, OrgMemory creates a blocked record and does not fabricate a brief.
+If no relevant source evidence exists, MemoryWorks creates a blocked record and does not fabricate a brief.
 
 ## Portable packet
 
@@ -55,7 +55,7 @@ If no relevant source evidence exists, OrgMemory creates a blocked record and do
   "constraints": [
     "Use only authorized source-backed company context.",
     "Do not perform consequential actions without approval.",
-    "Return the execution result and evidence to OrgMemory."
+    "Return the execution result and evidence to MemoryWorks."
   ]
 }
 ```
@@ -116,5 +116,5 @@ Future connector adapters can push packets directly to OpenWorker-like runtimes.
 
 Slack posting requires the `chat:write` OAuth scope. Connections created before
 this permission was added must be reconnected once from **Add knowledge →
-Connections**. OrgMemory never posts until the exact message and channel are
+Connections**. MemoryWorks never posts until the exact message and channel are
 visible and the user clicks **Approve & post**.

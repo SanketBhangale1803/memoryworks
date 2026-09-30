@@ -76,7 +76,7 @@ _MANIFEST = ConnectorManifest(
     rate_limit=RateLimitPolicy(requests=120, window_seconds=60, burst=5),
     retry=RetryPolicy(max_attempts=6, base_delay_seconds=3, max_delay_seconds=300),
     data_policy=DataPolicy(
-        residency="OrgMemory workspace region",
+        residency="MemoryWorks workspace region",
         retention="Until source disconnect or workspace retention policy",
     ),
     package="orgmemory.connector.teams",

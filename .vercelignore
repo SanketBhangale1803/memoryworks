@@ -1,5 +1,7 @@
 # Large local demo-render outputs are not application source.
 artifacts/
+presentation/
+reports/
 
 # Vercel installs/builds these inside each service.
 frontend/.next/

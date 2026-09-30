@@ -1,6 +1,6 @@
 """Apply a handoff to real code with a headless coding agent, then commit it.
 
-This is the step that turns OrgMemory from something that *explains* into
+This is the step that turns MemoryWorks from something that *explains* into
 something that *acts*. A handoff already contains the task and exactly the
 context needed to do it; this module hands that to `cursor-agent` or `claude`
 running non-interactively in a throwaway clone, captures what changed, and
@@ -227,7 +227,7 @@ def execute(run_id: str, *, push: bool = False) -> dict[str, Any]:
         _git(
             worktree,
             "-c",
-            "user.name=OrgMemory",
+            "user.name=MemoryWorks",
             "-c",
             "user.email=orgmemory@local",
             "commit",
@@ -396,7 +396,7 @@ def _open_pull_request(worktree: Path, task: str, base_branch: str) -> str:
 
 def _commit_message(task: str) -> str:
     subject = " ".join(str(task or "Apply change").split())[:72]
-    return f"{subject}\n\nApplied by OrgMemory from company context."
+    return f"{subject}\n\nApplied by MemoryWorks from company context."
 
 
 def _slug(task: str) -> str:

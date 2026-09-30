@@ -47,7 +47,7 @@ class AuthorityResolver:
                 "intention_vs_reality": intention_vs_reality,
                 "reason": (
                     f"Both beliefs have the same authority tier ({left['authority_tier']}); "
-                    "OrgMemory preserved both and requires human review."
+                    "MemoryWorks preserved both and requires human review."
                 ),
                 "explanation": self._explanation(left, right, intention_vs_reality),
             }

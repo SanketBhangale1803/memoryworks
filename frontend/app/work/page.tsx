@@ -146,7 +146,7 @@ export default function MemoryWorkPage() {
   return <Page
     eyebrow="Company memory → useful work"
     title="Memory Work"
-    description="Give OrgMemory an outcome. It activates source-backed context, prepares the result, and executes only the connector action you explicitly approve."
+    description="Give MemoryWorks an outcome. It activates source-backed context, prepares the result, and executes only the connector action you explicitly approve."
     action={projects.length ? <select aria-label="Active project" value={projectId} onChange={event => setProjectId(event.target.value)}>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select> : undefined}
   >
     {error && <div className="notice error">{error}</div>}
@@ -174,8 +174,8 @@ export default function MemoryWorkPage() {
     <section className={`work-composer ${creating ? "is-creating" : ""}`}>
       <div className="work-composer-copy">
         <div className="memory-live"><i/><span>HCAG context activation</span></div>
-        <h2>Describe the outcome. OrgMemory handles the context.</h2>
-        <p>Describe the result once. OrgMemory selects the current company context and exact source evidence.</p>
+        <h2>Describe the outcome. MemoryWorks handles the context.</h2>
+        <p>Describe the result once. MemoryWorks selects the current company context and exact source evidence.</p>
         <textarea aria-label="Work objective" value={objective} onChange={event => setObjective(event.target.value)} rows={4} placeholder="What should an AI worker get done?"/>
         <div className="work-starters">{STARTERS.map(starter => <button key={starter} type="button" onClick={() => setObjective(starter)}>{starter}</button>)}</div>
         <button className="button work-create-button" disabled={creating || !projectId || objective.trim().length < 3} onClick={createWork}>
@@ -193,7 +193,7 @@ export default function MemoryWorkPage() {
         {!slackStep && <button className="button secondary" onClick={startAnother}>New outcome</button>}
       </header>
 
-      {work.status === "blocked_context" ? <div className="work-context-blocked"><span>?</span><div><strong>Company memory is not sufficient yet</strong><p>OrgMemory stopped before producing work because it could not find evidence for this outcome. Add a relevant source, then try again.</p></div></div> :
+      {work.status === "blocked_context" ? <div className="work-context-blocked"><span>?</span><div><strong>Company memory is not sufficient yet</strong><p>MemoryWorks stopped before producing work because it could not find evidence for this outcome. Add a relevant source, then try again.</p></div></div> :
       actionOnly ? <div className="work-action-only"><span>✓</span><div><small>Action only</small><strong>No company memory was created.</strong><p>This Slack message came only from your instruction. Nothing will be posted until you select a channel and approve the exact message above.</p></div></div> :
       <div className="work-result-grid">
         <div className="work-primary">

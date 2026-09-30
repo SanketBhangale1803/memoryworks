@@ -5,7 +5,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import Page from "@/components/Page";
 import { API, api, formatDate } from "@/lib/api";
 
-/* Sources: every system OrgMemory can learn from, in one grid.
+/* Sources: every system MemoryWorks can learn from, in one grid.
  *
  * The directory and the connectable list used to be two separate sections, so
  * the same provider appeared twice and "can I connect this?" meant reading
@@ -35,7 +35,7 @@ const IMPORT_SOURCE: Record<string, string> = {
   web: "website",
   custom_rest_source: "paste",
 };
-/* Providers that are ways for agents to reach OrgMemory, not sources of memory. */
+/* Providers that are ways for agents to reach MemoryWorks, not sources of memory. */
 const AGENT_SURFACES = new Set(["mcp", "api_sdk_cli", "local_desktop_extension"]);
 /* OAuth sources whose next step after connecting is choosing what to import. */
 const IMPORT_AFTER_CONNECT: Record<string, string> = { github: "github", slack: "slack" };
@@ -225,13 +225,13 @@ export default function Sources() {
     <Page
       eyebrow="Integrations"
       title="Sources"
-      description="Connect the systems your team already works in. OrgMemory reads them with your own permissions and keeps every memory tied to where it came from."
+      description="Connect the systems your team already works in. MemoryWorks reads them with your own permissions and keeps every memory tied to where it came from."
     >
       {justConnected && (
         <div className="notice next-step">
           <div>
             <strong>{connectedLabel} is connected.</strong>
-            <span>Next, choose what OrgMemory should read from it.</span>
+            <span>Next, choose what MemoryWorks should read from it.</span>
           </div>
           <Link
             className="button"
@@ -298,7 +298,7 @@ export default function Sources() {
 
       {coverage?.sources?.length > 0 && (
         <details className="source-more">
-          <summary>What OrgMemory can search from each source</summary>
+          <summary>What MemoryWorks can search from each source</summary>
           <div className="coverage-grid">
             {coverage.sources.map((source: any) => (
               <article key={source.provider}>
@@ -324,7 +324,7 @@ export default function Sources() {
       <details className="source-more">
         <summary>Register a remote MCP server (admins)</summary>
         <p className="subtle">
-          OrgMemory pins its URL, version, OAuth settings, and tool manifest. Private-network and
+          MemoryWorks pins its URL, version, OAuth settings, and tool manifest. Private-network and
           non-HTTPS targets are rejected by the cloud gateway.
         </p>
         <form className="stack" onSubmit={registerCustom}>

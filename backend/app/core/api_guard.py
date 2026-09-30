@@ -81,7 +81,10 @@ class APIGuardMiddleware(BaseHTTPMiddleware):
         if not path.startswith("/api"):
             return await call_next(request)
 
-        # 1. Body-size cap for buffered JSON payloads.
+        # 1. Body-size cap for buffered JSON payloads. A chunked body without a
+        # declared length has no pre-readable size, so instead of buffering it
+        # to count bytes we refuse it here; the streaming ingest endpoints
+        # enforce their own caps while reading.
         declared = request.headers.get("content-length")
         if declared and declared.isdigit():
             size = int(declared)
@@ -92,6 +95,16 @@ class APIGuardMiddleware(BaseHTTPMiddleware):
                     {"detail": "Request body exceeds the allowed size"},
                     status_code=413,
                 )
+        elif request.headers.get(
+            "transfer-encoding", ""
+        ).casefold() == "chunked" and not path.startswith(_BODY_LIMIT_EXEMPT_PREFIXES):
+            return JSONResponse(
+                {
+                    "detail": "Chunked request bodies must declare Content-Length "
+                    "or use the streaming ingest endpoints"
+                },
+                status_code=411,
+            )
 
         # 2. Sliding-window rate limit per principal (or per client IP).
         if settings.api_rate_limit_enabled and path not in RATE_LIMIT_EXEMPT_PATHS:

@@ -1,7 +1,7 @@
 [package]
 name = "orgmemory-desktop"
 version = "0.1.0"
-description = "Thin local bridge for the OrgMemory connector platform"
+description = "Thin local bridge for the MemoryWorks connector platform"
 edition = "2021"
 
 [lib]

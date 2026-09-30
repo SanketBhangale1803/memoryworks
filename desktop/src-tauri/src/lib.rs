@@ -45,5 +45,5 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![store_secret, load_secret, folder_manifest, probe_endpoint])
         .run(tauri::generate_context!())
-        .expect("error while running OrgMemory desktop bridge");
+        .expect("error while running MemoryWorks desktop bridge");
 }

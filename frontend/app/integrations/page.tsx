@@ -69,10 +69,10 @@ export default function AiTools() {
   const localConfig = JSON.stringify(
     {
       mcpServers: {
-        orgmemory: {
+        memoryworks: {
           command: "make",
-          args: ["-C", "/absolute/path/to/orgmemory", "mcp"],
-          env: { RUNBOOK_API_URL: API, RUNBOOK_API_KEY: "om_replace_with_workspace_key" },
+          args: ["-C", "/absolute/path/to/memoryworks", "mcp"],
+          env: { MEMORYWORKS_API_URL: API, MEMORYWORKS_API_KEY: "om_replace_with_workspace_key" },
         },
       },
     },
@@ -99,7 +99,7 @@ export default function AiTools() {
           <span className="badge success">OAuth</span>
         </div>
         <p className="subtle">
-          Add this URL as a custom connector. The client signs in through OrgMemory, so no key is
+          Add this URL as a custom connector. The client signs in through MemoryWorks, so no key is
           pasted anywhere.
         </p>
         <div className="copy-field">
@@ -191,9 +191,6 @@ export default function AiTools() {
             </div>
           </section>
         </div>
-        <p className="subtle">
-          Browser agents get the page-native tool surface instead, on <Link href="/webmcp">WebMCP</Link>.
-        </p>
       </details>
 
       <details className="source-more">

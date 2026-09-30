@@ -51,7 +51,7 @@ export default function Profiles() {
     ["Dependencies", profile?.dependencies],
   ];
 
-  return <Page eyebrow="Org Context" title="Company & Project Profiles" description="Profiles are assembled at request time from current source-backed memories within the caller’s authorized scope—not stored as static summary blobs." action={<select className="project-select" value={project} onChange={event => setProject(event.target.value)}>{projects.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select>}>
+  return <Page title="Company & Project Profiles" description="Profiles are assembled at request time from current source-backed memories within the caller’s authorized scope—not stored as static summary blobs." action={<select className="project-select" value={project} onChange={event => setProject(event.target.value)}>{projects.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select>}>
     {error && <div className="notice error">{error}</div>}
     <section className="panel">
       <div className="panel-head"><div><span className="panel-label">Dynamic project profile</span><h2>{profile?.name || "Select a project"}</h2></div><span>{profile?.sources?.length || 0} sources</span></div>

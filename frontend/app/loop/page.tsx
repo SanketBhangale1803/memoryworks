@@ -252,8 +252,8 @@ export default function OutcomeLoop() {
           that still requires a person on the{" "}
           <Link href="/approvals">approvals</Link> queue.
         </p>
-        <Link className="loop-link" href="/webmcp">
-          See the agent tool surface <span aria-hidden="true">→</span>
+        <Link className="loop-link" href="/integrations">
+          Connect your AI tools <span aria-hidden="true">→</span>
         </Link>
       </footer>
     </div>

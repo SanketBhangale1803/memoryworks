@@ -150,6 +150,61 @@ def test_github_login_callback_redirects_to_authenticated_workspace(graph, monke
     assert response.cookies.get(settings.session_cookie_name)
 
 
+def test_github_sign_in_requests_repository_access(graph, monkeypatch):
+    monkeypatch.setattr(settings, "github_client_id", "github-client")
+    monkeypatch.setattr(settings, "public_base_url", "")
+
+    response = TestClient(app).get("/api/auth/github/start", follow_redirects=False)
+
+    assert response.status_code in {302, 307}
+    scopes = parse_qs(urlparse(response.headers["location"]).query)["scope"][0].split()
+    assert "repo" in scopes and "user:email" in scopes
+
+
+def _sign_in_with_github(monkeypatch, scope: str, external_id: str, email: str):
+    monkeypatch.setattr(settings, "frontend_url", "http://localhost:3000")
+    monkeypatch.setattr(settings, "public_base_url", "")
+    flow = OAuthStateStore().create("github", intent="login", use_pkce=True)
+    monkeypatch.setattr(
+        GitHubConnector,
+        "complete_oauth",
+        lambda self, code, consumed_flow, redirect_uri="": {
+            "token": "github-access-token",
+            "external_id": external_id,
+            "login": "memoryworks-owner",
+            "display_name": "MemoryWorks Owner",
+            "email": email,
+            "avatar_url": "",
+            "scope": scope,
+        },
+    )
+    client = TestClient(app)
+    response = client.get(
+        "/api/auth/github/callback",
+        params={"code": "oauth-code", "state": flow["state"]},
+        follow_redirects=False,
+    )
+    assert response.status_code in {302, 307}
+    token = response.cookies.get(settings.session_cookie_name)
+    connectors = client.get("/api/connectors", headers={"Authorization": f"Bearer {token}"})
+    assert connectors.status_code == 200
+    return next(item for item in connectors.json() if item["provider"] == "github")
+
+
+def test_github_sign_in_with_repo_scope_leaves_github_connected(graph, monkeypatch):
+    github = _sign_in_with_github(
+        monkeypatch, "repo,read:org,read:user,user:email", "github-user-77", "repo@example.com"
+    )
+    assert github["connected"] is True
+
+
+def test_github_sign_in_without_repo_scope_does_not_fake_a_connection(graph, monkeypatch):
+    github = _sign_in_with_github(
+        monkeypatch, "read:user user:email", "github-user-78", "identity@example.com"
+    )
+    assert github["connected"] is False
+
+
 def test_github_connector_callback_exchanges_code_only_in_runtime(graph, monkeypatch):
     monkeypatch.setattr(settings, "frontend_url", "http://localhost:3000")
     monkeypatch.setattr(settings, "public_base_url", "")

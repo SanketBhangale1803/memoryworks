@@ -3,19 +3,17 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, formatDate } from "@/lib/api";
-import type { OrgMemoryRefreshRequest } from "@/lib/webmcp";
+import { orgApi, type OrgPlan } from "@/lib/orgTools";
+import type { MemoryWorksProposal, MemoryWorksRefreshRequest } from "@/lib/webmcp";
 
-/* Decisions stay close to the work. This page shares the chat's chrome and
-   visual language, and every request is decided in the same place it arrives:
-   the workspace itself renders pending approvals inline, so most people never
-   need to travel here at all. */
+/* One inbox for everything that waits on a person.
+ *
+ * Agents and teammates can propose — a new memory, a change across spaces, a
+ * repository refresh, a write to a connected tool — but nothing applies until
+ * someone here decides. Only the kinds that have something in them are shown,
+ * so an empty inbox reads as one calm line instead of four empty boxes. */
 
-type Principal = {
-  id: string;
-  role: string;
-  active_workspace_id: string;
-  display_name?: string;
-};
+type Principal = { id: string; role: string };
 
 const REFRESH_STATES: Record<string, { label: string; tone: "info" | "success" | "danger" | "warning" }> = {
   queued: { label: "queued", tone: "info" },
@@ -23,57 +21,58 @@ const REFRESH_STATES: Record<string, { label: string; tone: "info" | "success" |
   succeeded: { label: "completed", tone: "success" },
   failed: { label: "failed", tone: "danger" },
   denied: { label: "denied", tone: "warning" },
-  pending_approval: { label: "pending approval", tone: "warning" },
+  pending_approval: { label: "waiting", tone: "warning" },
 };
 
 export default function Approvals() {
   const [principal, setPrincipal] = useState<Principal>();
-  const [requests, setRequests] = useState<OrgMemoryRefreshRequest[]>([]);
+  const [requests, setRequests] = useState<MemoryWorksRefreshRequest[]>([]);
+  const [proposals, setProposals] = useState<MemoryWorksProposal[]>([]);
+  const [plans, setPlans] = useState<OrgPlan[]>([]);
   const [connectorCalls, setConnectorCalls] = useState<any[]>([]);
-  const [actions, setActions] = useState<any[]>([]);
+  const [loaded, setLoaded] = useState(false);
   const [busyId, setBusyId] = useState("");
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
 
   const load = useCallback(() => {
     return Promise.all([
-      api<OrgMemoryRefreshRequest[]>("/api/repository-refresh-requests")
-        .then((items) => {
-          setRequests(items);
-        })
-        .catch(() => undefined),
+      api<MemoryWorksRefreshRequest[]>("/api/repository-refresh-requests").then(setRequests).catch(() => undefined),
+      api<MemoryWorksProposal[]>("/api/memory/proposals").then(setProposals).catch(() => undefined),
+      orgApi.plans("pending_approval").then((result) => setPlans(result.plans || [])).catch(() => undefined),
       api<any[]>("/api/connector-tool-calls").then(setConnectorCalls).catch(() => undefined),
-      api<any[]>("/api/actions").then(setActions).catch(() => undefined),
-    ]);
+    ]).finally(() => setLoaded(true));
   }, []);
 
   useEffect(() => {
     api<Principal>("/api/auth/me").then(setPrincipal).catch(() => undefined);
     load();
-    // The queue stays live without a refresh: an agent-resolved approval from a
-    // WebMCP session disappears from this list within seconds.
+    // Stays live without a refresh: something an agent proposes, or another
+    // admin decides, shows up here within seconds.
     const timer = window.setInterval(load, 8000);
     return () => window.clearInterval(timer);
   }, [load]);
 
-  const pending = useMemo(() => requests.filter((item) => item.status === "pending_approval"), [requests]);
   const isAdmin = principal?.role === "owner" || principal?.role === "admin";
+  const waitingProposals = useMemo(() => proposals.filter((item) => item.status === "pending_approval"), [proposals]);
+  const waitingCalls = useMemo(() => connectorCalls.filter((item) => item.status === "pending_approval"), [connectorCalls]);
+  const recentRequests = useMemo(
+    () => requests.filter((item) => item.status === "pending_approval" || item.status === "running" || item.status === "queued"),
+    [requests],
+  );
+  const waiting =
+    waitingProposals.length +
+    plans.length +
+    requests.filter((item) => item.status === "pending_approval").length +
+    waitingCalls.length;
 
-  async function resolveRefresh(id: string, approved: boolean, who?: string) {
+  async function decide(id: string, work: () => Promise<string>) {
     setBusyId(id);
     setNote("");
     setError("");
     try {
-      const result = await api<OrgMemoryRefreshRequest>(
-        `/api/repository-refresh-requests/${encodeURIComponent(id)}/resolve`,
-        { method: "POST", body: JSON.stringify({ approved }) },
-      );
-      setRequests((current) => current.map((item) => (item.id === result.id ? result : item)));
-      setNote(
-        approved
-          ? `Approved — refreshing ${result.repository}. Memory updates when it lands.`
-          : `Denied ${who ? `${who}'s request` : "the request"}.`,
-      );
+      setNote(await work());
+      await load();
     } catch (exc: any) {
       setError(exc.message);
     } finally {
@@ -81,76 +80,137 @@ export default function Approvals() {
     }
   }
 
-  async function resolveAction(id: string, approved: boolean) {
-    setBusyId(id);
-    setNote("");
-    setError("");
-    try {
-      const result: any = await api(`/api/actions/${approved ? "approve" : "deny"}`, {
-        method: "POST",
-        body: JSON.stringify({ action_id: id, resolved_by: "current-user" }),
-      });
-      setActions((current) => current.map((item) => (item.id === id ? result : item)));
-      setNote(`Runbook action ${result.status}.`);
-    } catch (exc: any) {
-      setError(exc.message);
-    } finally {
-      setBusyId("");
-    }
-  }
-
-  async function resolveConnector(id: string, approved: boolean) {
-    setBusyId(id);
-    setNote("");
-    setError("");
-    try {
-      const result: any = await api(`/api/connector-tool-calls/${id}/resolve`, {
+  const resolveProposal = (proposal: MemoryWorksProposal, approved: boolean) =>
+    decide(proposal.id, async () => {
+      await api(`/api/memory/proposals/${encodeURIComponent(proposal.id)}/resolve`, {
         method: "POST",
         body: JSON.stringify({ approved }),
       });
-      setConnectorCalls((current) =>
-        current.map((item) => (item.id === id ? { ...item, ...result, id } : item)),
+      return approved
+        ? `“${proposal.subject}” is now part of company memory.`
+        : `“${proposal.subject}” was declined. Nothing was saved.`;
+    });
+
+  const resolvePlan = (plan: OrgPlan, approved: boolean) =>
+    decide(plan.id, async () => {
+      if (approved) await orgApi.approvePlan(plan.id);
+      else await orgApi.rejectPlan(plan.id);
+      return approved ? "Changes applied." : "Changes declined. Nothing was changed.";
+    });
+
+  const resolveRefresh = (request: MemoryWorksRefreshRequest, approved: boolean) =>
+    decide(request.id, async () => {
+      const result = await api<MemoryWorksRefreshRequest>(
+        `/api/repository-refresh-requests/${encodeURIComponent(request.id)}/resolve`,
+        { method: "POST", body: JSON.stringify({ approved }) },
       );
-      setNote(approved ? `Approved; connector call ${result.status}.` : "Connector call denied.");
-    } catch (exc: any) {
-      setError(exc.message);
-    } finally {
-      setBusyId("");
-    }
-  }
+      return approved
+        ? `Refreshing ${result.repository}. Memory updates when it finishes.`
+        : `Declined ${request.requested_by_name ? `${request.requested_by_name}'s request` : "the request"}.`;
+    });
+
+  const resolveConnector = (call: any, approved: boolean) =>
+    decide(call.id, async () => {
+      const result: any = await api(`/api/connector-tool-calls/${call.id}/resolve`, {
+        method: "POST",
+        body: JSON.stringify({ approved }),
+      });
+      return approved ? `Approved — the ${call.provider} call ${result.status}.` : "Declined.";
+    });
+
+  const actions = (id: string, onApprove: () => void, onDecline: () => void, approveLabel = "Approve") =>
+    isAdmin ? (
+      <div className="ap-row-actions">
+        <button className="button" disabled={busyId === id} onClick={onApprove}>
+          {approveLabel}
+        </button>
+        <button className="button secondary" disabled={busyId === id} onClick={onDecline}>
+          Decline
+        </button>
+      </div>
+    ) : (
+      <span className="badge">With an admin</span>
+    );
 
   return (
     <div className="ap-wrap">
       <header className="ap-head">
         <div>
-          <h1>Approvals</h1>
-          <p>
-            Requests wait here for a human decision. Workspace admins can also decide them inline
-            from the <Link href="/workspace">workspace</Link>.
-          </p>
+          <h1>{waiting ? `${waiting} waiting on you` : "Approvals"}</h1>
+          <p>Agents and teammates can propose. Nothing changes until a person here decides.</p>
         </div>
-        {pending.length > 0 && (
-          <span className="ap-count">
-            {pending.length} waiting
-          </span>
-        )}
       </header>
 
       {note && <div className="notice">{note}</div>}
       {error && <div className="notice error">{error}</div>}
 
-      <section className="ap-card">
-        <div className="ap-card-head">
-          <div>
-            <span className="panel-label">WebMCP proposal</span>
-            <h2>Repository refresh requests</h2>
-          </div>
-          <span className={`badge ${pending.length ? "warning" : ""}`}>
-            Human approval required
+      {loaded && !waiting && !recentRequests.length && (
+        <div className="ap-empty ap-all-clear">
+          <strong>Nothing is waiting on you.</strong>
+          <span>
+            When the agent proposes a change or someone asks for a refresh, it appears here — and
+            in <Link href="/workspace">the chat</Link> where it came from.
           </span>
         </div>
-        {requests.length ? (
-          requests.map((request) => {
+      )}
+
+      {waitingProposals.length > 0 && (
+        <section className="ap-card">
+          <div className="ap-card-head">
+            <h2>New memories</h2>
+            <span className="subtle">Knowledge someone wants the company to remember</span>
+          </div>
+          {waitingProposals.map((proposal) => (
+            <article className="ap-row" key={proposal.id}>
+              <div className="ap-row-main">
+                <div className="ap-row-body">
+                  <strong>{proposal.subject}</strong>
+                  <p>&ldquo;{proposal.content}&rdquo;</p>
+                  <small className="subtle">
+                    {proposal.kind} · proposed by {proposal.requested_by_name || "an agent"} in{" "}
+                    {proposal.project_name || proposal.project_id}
+                    {proposal.reason ? ` · ${proposal.reason}` : ""}
+                  </small>
+                </div>
+              </div>
+              {actions(proposal.id, () => void resolveProposal(proposal, true), () => void resolveProposal(proposal, false))}
+            </article>
+          ))}
+        </section>
+      )}
+
+      {plans.length > 0 && (
+        <section className="ap-card">
+          <div className="ap-card-head">
+            <h2>Agent changes</h2>
+            <span className="subtle">Changes the agent drafted while working</span>
+          </div>
+          {plans.map((plan) => (
+            <article className="ap-row" key={plan.id}>
+              <div className="ap-row-main">
+                <div className="ap-row-body">
+                  <strong>{plan.summary}</strong>
+                  <ul className="ap-ops">
+                    {plan.operations.map((operation, index) => (
+                      <li key={index}>{String(operation.preview || operation.op)}</li>
+                    ))}
+                  </ul>
+                  {plan.created_at && <small className="subtle">Drafted {formatDate(plan.created_at)}</small>}
+                </div>
+              </div>
+              {actions(plan.id, () => void resolvePlan(plan, true), () => void resolvePlan(plan, false), "Apply changes")}
+            </article>
+          ))}
+        </section>
+      )}
+
+      {recentRequests.length > 0 && (
+        <section className="ap-card">
+          <div className="ap-card-head">
+            <h2>Repository refreshes</h2>
+            <span className="subtle">Re-reading a repository so memory matches the code</span>
+          </div>
+          {recentRequests.map((request) => {
             const state = REFRESH_STATES[request.status] || REFRESH_STATES.pending_approval;
             const canResolve =
               request.status === "pending_approval" &&
@@ -161,152 +221,56 @@ export default function Approvals() {
                   <div className="ap-row-body">
                     <strong>{request.project_name || request.repository}</strong>
                     <p>
-                      <em>{request.requested_by_name || "A teammate"}</em>
-                      {request.requested_by_email ? ` (${request.requested_by_email})` : ""} ·{" "}
-                      &ldquo;{request.reason}&rdquo; · requested {formatDate(request.requested_at)}
+                      {request.requested_by_name || "A teammate"}
+                      {request.reason ? ` · “${request.reason}”` : ""} · {formatDate(request.requested_at)}
                     </p>
-                    {request.result?.files_scanned !== undefined && (
-                      <small className="subtle">
-                        {request.result.files_scanned} files scanned ·{" "}
-                        {request.result.incremental?.sources_changed || 0} sources changed
-                      </small>
-                    )}
                     {request.error && <div className="notice error">{request.error}</div>}
                   </div>
                   <span className={`badge ${state.tone}`}>{state.label}</span>
                 </div>
-                {(canResolve || busyId === request.id) && (
+                {canResolve && (
                   <div className="ap-row-actions">
-                    <button
-                      className="button"
-                      disabled={busyId === request.id}
-                      onClick={() => void resolveRefresh(request.id, true)}
-                    >
+                    <button className="button" disabled={busyId === request.id} onClick={() => void resolveRefresh(request, true)}>
                       Approve &amp; refresh
                     </button>
-                    <button
-                      className="button danger"
-                      disabled={busyId === request.id}
-                      onClick={() => void resolveRefresh(request.id, false, request.requested_by_name)}
-                    >
-                      Deny
+                    <button className="button secondary" disabled={busyId === request.id} onClick={() => void resolveRefresh(request, false)}>
+                      Decline
                     </button>
                   </div>
                 )}
               </article>
             );
-          })
-        ) : (
-          <div className="ap-empty">No repository refresh requests are waiting for approval.</div>
-        )}
-      </section>
+          })}
+        </section>
+      )}
 
-      <section className="ap-card">
-        <div className="ap-card-head">
-          <div>
-            <span className="panel-label">Connector gateway</span>
-            <h2>External write requests</h2>
+      {waitingCalls.length > 0 && (
+        <section className="ap-card">
+          <div className="ap-card-head">
+            <h2>Writes to connected tools</h2>
+            <span className="subtle">Values are hidden until approved</span>
           </div>
-          <span className="badge warning">Explicit approval</span>
-        </div>
-        {connectorCalls.length ? (
-          connectorCalls.map((call) => (
+          {waitingCalls.map((call) => (
             <article className="ap-row" key={call.id}>
               <div className="ap-row-main">
                 <div className="ap-row-body">
                   <strong>
-                    {call.provider}.{call.tool_name}
+                    {call.provider} · {String(call.tool_name).replace(/_/g, " ")}
                   </strong>
                   <p>
-                    Keys: {(call.arguments?.declared_keys || []).join(", ") || "none"} · values
-                    redacted · requested {formatDate(call.requested_at)}
+                    Fields: {(call.arguments?.declared_keys || []).join(", ") || "none"} · requested{" "}
+                    {formatDate(call.requested_at)}
                   </p>
-                  <code>{call.idempotency_key}</code>
-                  {call.error && <div className="notice error">{call.error}</div>}
                 </div>
-                <span className="row">
-                  <span className={`badge ${["high", "critical"].includes(call.risk_level) ? "danger" : "warning"}`}>
-                    {call.risk_level}
-                  </span>
-                  <span className={`badge ${call.status === "succeeded" ? "success" : call.status === "failed" ? "danger" : "info"}`}>
-                    {String(call.status).replace(/_/g, " ")}
-                  </span>
+                <span className={`badge ${["high", "critical"].includes(call.risk_level) ? "danger" : "warning"}`}>
+                  {call.risk_level} risk
                 </span>
               </div>
-              {call.status === "pending_approval" && (
-                <div className="ap-row-actions">
-                  <button
-                    className="button"
-                    disabled={busyId === call.id}
-                    onClick={() => void resolveConnector(call.id, true)}
-                  >
-                    Approve &amp; execute
-                  </button>
-                  <button
-                    className="button danger"
-                    disabled={busyId === call.id}
-                    onClick={() => void resolveConnector(call.id, false)}
-                  >
-                    Deny
-                  </button>
-                </div>
-              )}
+              {actions(call.id, () => void resolveConnector(call, true), () => void resolveConnector(call, false), "Approve & run")}
             </article>
-          ))
-        ) : (
-          <div className="ap-empty">No connector writes are waiting for approval.</div>
-        )}
-      </section>
-
-      <section className="ap-card">
-        <div className="ap-card-head">
-          <div>
-            <span className="panel-label">Internal policy</span>
-            <h2>Runbook actions</h2>
-          </div>
-        </div>
-        {actions.length ? (
-          actions.map((item) => (
-            <article className="ap-row" key={item.id}>
-              <div className="ap-row-main">
-                <div className="ap-row-body">
-                  <strong>{item.summary}</strong>
-                  <p>
-                    {item.reason} · requested {formatDate(item.requested_at)}
-                  </p>
-                  {item.command_preview && <code>{item.command_preview}</code>}
-                </div>
-                <span className="row">
-                  <span className={`badge ${item.risk_score >= 80 ? "danger" : "warning"}`}>
-                    {item.risk_score}/100
-                  </span>
-                  <span className="badge">{item.status}</span>
-                </span>
-              </div>
-              {item.status === "pending" && (
-                <div className="ap-row-actions">
-                  <button
-                    className="button"
-                    disabled={busyId === item.id}
-                    onClick={() => void resolveAction(item.id, true)}
-                  >
-                    Approve
-                  </button>
-                  <button
-                    className="button danger"
-                    disabled={busyId === item.id}
-                    onClick={() => void resolveAction(item.id, false)}
-                  >
-                    Deny
-                  </button>
-                </div>
-              )}
-            </article>
-          ))
-        ) : (
-          <div className="ap-empty">No runbook actions have been proposed.</div>
-        )}
-      </section>
+          ))}
+        </section>
+      )}
     </div>
   );
 }

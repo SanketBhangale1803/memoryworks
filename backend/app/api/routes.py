@@ -56,7 +56,7 @@ from app.auth.app_auth import (
 from app.auth.mcp_oauth import principal_from_mcp_token, register_mcp_client
 from app.auth.security import frontend_redirect, oauth_redirect_uri
 from app.company_context import CompanyContextService
-from app.connectors.application import OrgMemorySyncApplier
+from app.connectors.application import MemoryWorksSyncApplier
 from app.connectors.base import WebhookRequest
 from app.connectors.github import GitHubConnector
 from app.connectors.runtime import ConnectorRuntime
@@ -199,7 +199,7 @@ change_intelligence = ChangeIntelligenceService(graph)
 memory_work = MemoryWorkService(retrieval, company_brain, audit)
 connector_runtime = ConnectorRuntime(audit=audit)
 connector_sync = SyncEngine(
-    OrgMemorySyncApplier(ingestion, graph),
+    MemoryWorksSyncApplier(ingestion, graph),
     registry=connector_runtime.registry,
     audit=audit,
 )
@@ -443,7 +443,7 @@ def _visible_project_ids(principal: dict) -> set[str] | None:
 def health():
     return {
         "status": "ok",
-        "product": "OrgMemory",
+        "product": "MemoryWorks",
         "semantic_index": hcag.backfill_status,
     }
 
@@ -1077,7 +1077,7 @@ def _github_webhook_project(repository: str) -> dict:
     ):
         if GitHubConnector.slug(str(project.get("repository") or "")) == repository:
             return project
-    raise HTTPException(404, "No OrgMemory project is connected to this GitHub repository")
+    raise HTTPException(404, "No MemoryWorks project is connected to this GitHub repository")
 
 
 def _process_github_webhook_event(event_id: str, payload: dict, workspace_id: str) -> None:
@@ -1838,7 +1838,7 @@ def outcome_training_export(
     """The labelled corpus this workspace has accumulated.
 
     Scoped to the caller's workspace: an outcome record is the most
-    company-specific data OrgMemory holds and never crosses that boundary.
+    company-specific data MemoryWorks holds and never crosses that boundary.
     """
     principal = _authorize_workspace(authorization)
     if project_id:
@@ -3836,10 +3836,13 @@ def github_auth_start(request: Request):
         flow = OAuthStateStore().create(
             "github", intent="login", use_pkce=settings.github_oauth_use_pkce
         )
+        # Sign-in asks for repository access in the same consent screen, so a
+        # person who signs in with GitHub never meets a second "Connect GitHub"
+        # step before they can pick a repository.
         return RedirectResponse(
             GitHubConnector().oauth_url(
                 flow,
-                scopes="read:user user:email",
+                scopes=" ".join(GitHubConnector.manifest.oauth.scopes),
                 redirect_uri=oauth_redirect_uri(
                     request, settings.github_redirect_uri, "/api/auth/github/callback"
                 ),
@@ -3942,6 +3945,7 @@ def github_auth_callback(
                 f"{identity['login']}'s workspace",
             )
             _seed_public_demo_for(session)
+            _connect_github_from_sign_in(session, identity)
             response = RedirectResponse(frontend_redirect(request, "/workspace"))
             _set_session_cookie(response, session["token"])
             return response
@@ -3954,6 +3958,49 @@ def github_auth_callback(
         query = urlencode({"error": str(exc)})
         destination = "connectors" if flow and flow.get("intent") == "connect" else "login"
         return RedirectResponse(frontend_redirect(request, f"/{destination}?{query}"))
+
+
+def _connect_github_from_sign_in(session: dict, identity: dict) -> None:
+    """Keep the sign-in grant as this person's GitHub connection.
+
+    Sign-in already asked GitHub for repository access, so throwing the token
+    away and sending them through a second authorization to reach the same
+    repositories is pure friction. The grant is stored exactly as the connector
+    flow stores it: per workspace and per user, encrypted by the vault.
+
+    A token that came back without repository scope (the person narrowed it,
+    or an older OAuth App) is not stored — the connector page would then show
+    GitHub as connected while every repository call failed. Storage failures
+    never block sign-in; the connector page remains the way to retry.
+    """
+    granted = set(str(identity.get("scope") or "").replace(",", " ").split())
+    if "repo" not in granted:
+        return
+    principal = session.get("user") or {}
+    workspace_id = str(principal.get("active_workspace_id") or "")
+    user_id = str(principal.get("id") or "")
+    if not workspace_id or not user_id:
+        return
+    try:
+        connector_runtime.vault(principal).save(
+            "github",
+            str(identity["external_id"]),
+            str(identity.get("login") or identity.get("display_name") or identity["external_id"]),
+            str(identity["token"]),
+            {
+                "login": identity.get("login", ""),
+                "avatar_url": identity.get("avatar_url", ""),
+                "scope": identity.get("scope", ""),
+            },
+        )
+        audit.record(
+            "connector.connected",
+            "Connected GitHub during sign-in",
+            actor=user_id,
+            payload={"provider": "github", "workspace_id": workspace_id, "via": "sign_in"},
+        )
+    except Exception:  # noqa: BLE001 - sign-in must succeed even if this does not
+        logger.exception("Storing the GitHub sign-in grant as a connection failed")
 
 
 @router.get("/connectors/{provider}/auth/callback")

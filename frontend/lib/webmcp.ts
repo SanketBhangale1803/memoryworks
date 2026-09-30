@@ -1,6 +1,6 @@
 import { ORG_TOOLS } from "@/lib/orgTools";
 
-export const ORGMEMORY_WEBMCP_TOOLS = [
+export const MEMORYWORKS_TOOLS = [
   "list_orgmemory_spaces",
   "ask_orgmemory",
   "get_orgmemory_briefing",
@@ -10,7 +10,6 @@ export const ORGMEMORY_WEBMCP_TOOLS = [
   "get_orgmemory_memory",
   "get_orgmemory_related_memories",
   "get_orgmemory_incidents",
-  "get_orgmemory_runbook",
   "get_orgmemory_service_context",
   "get_orgmemory_dependencies",
   "get_orgmemory_decisions",
@@ -43,7 +42,7 @@ export const ORGMEMORY_WEBMCP_TOOLS = [
   "update_orgmemory_task",
 ] as const;
 
-export type WebMCPToolName = (typeof ORGMEMORY_WEBMCP_TOOLS)[number];
+export type WebMCPToolName = (typeof MEMORYWORKS_TOOLS)[number];
 
 /* Closed vocabulary, mirroring the backend ledger. Reward is derived from these,
    so an agent inventing a sixth value would quietly corrupt the corpus. */
@@ -71,25 +70,25 @@ export const ORGMEMORY_PROPOSABLE_KINDS = [
   "open_question",
 ] as const;
 
-export type OrgMemorySpace = {
+export type MemoryWorksSpace = {
   id: string;
   name: string;
   repository?: string;
 };
 
-export type OrgMemoryEvidence = {
+export type MemoryWorksEvidence = {
   source_title: string;
   source_type: string;
   source_url?: string;
 };
 
-export type OrgMemoryWebMCPAnswer = {
+export type MemoryWorksAnswer = {
   answer: string;
   answer_sufficient: boolean;
   answer_scope: string;
   resolved_subject?: string;
   searched_sources?: number;
-  evidence: OrgMemoryEvidence[];
+  evidence: MemoryWorksEvidence[];
   likely_cause?: string;
   confidence?: number;
   trust_score?: {
@@ -97,7 +96,7 @@ export type OrgMemoryWebMCPAnswer = {
     reason?: string;
     contradictions?: unknown[];
   };
-  memory_units?: OrgMemoryUnit[];
+  memory_units?: MemoryWorksUnit[];
   related_entities?: string[];
   updates?: unknown[];
   conflicts?: unknown[];
@@ -121,7 +120,7 @@ export type OrgMemoryWebMCPAnswer = {
 /* One cited memory inside a pre-action briefing. `why_it_matters` is written by
    the server rather than the agent: the point of a briefing is that the reason a
    record is in front of you is not the reader's guess. */
-export type OrgMemoryBriefingCitation = {
+export type MemoryWorksBriefingCitation = {
   memory_id: string;
   type: string;
   subject: string;
@@ -135,7 +134,7 @@ export type OrgMemoryBriefingCitation = {
   why_it_matters: string;
 };
 
-export type OrgMemoryBriefingPrecedent = {
+export type MemoryWorksBriefingPrecedent = {
   skill_id?: string;
   name?: string;
   trigger?: string;
@@ -144,7 +143,7 @@ export type OrgMemoryBriefingPrecedent = {
   confidence?: number;
 };
 
-export type OrgMemoryBriefing = {
+export type MemoryWorksBriefing = {
   briefing_id?: string | null;
   task: string;
   service?: string | null;
@@ -154,26 +153,26 @@ export type OrgMemoryBriefing = {
   verdict: "no_memory" | "proceed" | "proceed_with_context" | "requires_approval";
   headline: string;
   consequential_action?: string | null;
-  must_read: OrgMemoryBriefingCitation[];
-  constraints: OrgMemoryBriefingCitation[];
-  prior_incidents: OrgMemoryBriefingCitation[];
-  blast_radius: OrgMemoryBriefingCitation[];
-  procedures: OrgMemoryBriefingCitation[];
-  precedents: OrgMemoryBriefingPrecedent[];
+  must_read: MemoryWorksBriefingCitation[];
+  constraints: MemoryWorksBriefingCitation[];
+  prior_incidents: MemoryWorksBriefingCitation[];
+  blast_radius: MemoryWorksBriefingCitation[];
+  procedures: MemoryWorksBriefingCitation[];
+  precedents: MemoryWorksBriefingPrecedent[];
   requires_approval: string[];
   safe_actions: string[];
   open_questions: string[];
   memory_count: number;
 };
 
-export type OrgMemoryBriefingInput = {
+export type MemoryWorksBriefingInput = {
   task: string;
   service?: string;
   projectId?: string;
   surface?: string;
 };
 
-export type OrgMemoryOutcomeInput = {
+export type MemoryWorksOutcomeInput = {
   briefingId: string;
   action: string;
   outcome: "succeeded" | "failed" | "partial" | "abandoned" | "unknown";
@@ -182,14 +181,14 @@ export type OrgMemoryOutcomeInput = {
   reason?: string;
 };
 
-export type OrgMemoryOutcomeReceipt = {
+export type MemoryWorksOutcomeReceipt = {
   briefing_id: string;
   action: { id: string; action_type: string };
   outcome: { id: string; outcome: string; reward: number };
   recorded: boolean;
 };
 
-export type OrgMemoryChangeSet = {
+export type MemoryWorksChangeSet = {
   id: string;
   source_id: string;
   actor?: string;
@@ -203,12 +202,12 @@ export type OrgMemoryChangeSet = {
   affected_skills?: unknown[];
 };
 
-export type OrgMemoryRefreshRequestResult = {
+export type MemoryWorksRefreshRequestResult = {
   files_scanned?: number;
   incremental?: { sources_changed?: number };
 };
 
-export type OrgMemoryRefreshRequest = {
+export type MemoryWorksRefreshRequest = {
   id: string;
   project_id: string;
   project_name?: string;
@@ -225,7 +224,7 @@ export type OrgMemoryRefreshRequest = {
   requested_by_id?: string;
   requested_by_name?: string;
   requested_by_email?: string;
-  result?: OrgMemoryRefreshRequestResult;
+  result?: MemoryWorksRefreshRequestResult;
   error?: string;
 };
 
@@ -244,7 +243,7 @@ export type WebMCPActivity = {
   permission: "read-only" | "ledger-append" | "approval-required" | "admin-decision";
 };
 
-export type OrgMemoryUnit = {
+export type MemoryWorksUnit = {
   id: string;
   project_id: string;
   project_name?: string;
@@ -266,42 +265,28 @@ export type OrgMemoryUnit = {
   score?: number;
 };
 
-export type OrgMemoryRelatedEntry = {
+export type MemoryWorksRelatedEntry = {
   relationship: string;
   linked_at?: string;
-  memory: OrgMemoryUnit;
+  memory: MemoryWorksUnit;
 };
 
-export type OrgMemoryRunbook = {
-  id: string;
-  project_id: string;
-  project_name?: string;
-  key?: string;
-  title?: string;
-  trigger?: string;
-  steps?: string[];
-  procedures?: string[];
-  status?: string;
-  version?: number;
-  updated_at?: string;
-};
-
-export type OrgMemoryServiceContextEntry = {
+export type MemoryWorksServiceContextEntry = {
   project_id: string;
   project_name: string;
   profile: {
     name?: string;
-    current_facts?: OrgMemoryUnit[];
-    decisions?: OrgMemoryUnit[];
-    incidents?: OrgMemoryUnit[];
-    dependencies?: OrgMemoryUnit[];
-    owners?: OrgMemoryUnit[];
-    procedures?: OrgMemoryUnit[];
-    policies?: OrgMemoryUnit[];
+    current_facts?: MemoryWorksUnit[];
+    decisions?: MemoryWorksUnit[];
+    incidents?: MemoryWorksUnit[];
+    dependencies?: MemoryWorksUnit[];
+    owners?: MemoryWorksUnit[];
+    procedures?: MemoryWorksUnit[];
+    policies?: MemoryWorksUnit[];
   };
 };
 
-export type OrgMemoryProposalInput = {
+export type MemoryWorksProposalInput = {
   projectId: string;
   kind: string;
   subject: string;
@@ -310,7 +295,7 @@ export type OrgMemoryProposalInput = {
   reason?: string;
 };
 
-export type OrgMemoryProposal = {
+export type MemoryWorksProposal = {
   id: string;
   project_id: string;
   project_name?: string;
@@ -328,42 +313,41 @@ export type OrgMemoryProposal = {
 };
 
 type RegistrationOptions = {
-  spaces: OrgMemorySpace[];
+  spaces: MemoryWorksSpace[];
   getActiveProjectId: () => string;
   ask: (
     question: string,
     projectId: string,
     scope: "workspace" | "project",
-  ) => Promise<OrgMemoryWebMCPAnswer>;
-  inspectChanges: (projectId: string, limit: number) => Promise<OrgMemoryChangeSet[]>;
-  brief: (input: OrgMemoryBriefingInput) => Promise<OrgMemoryBriefing>;
-  recordOutcome: (input: OrgMemoryOutcomeInput) => Promise<OrgMemoryOutcomeReceipt>;
+  ) => Promise<MemoryWorksAnswer>;
+  inspectChanges: (projectId: string, limit: number) => Promise<MemoryWorksChangeSet[]>;
+  brief: (input: MemoryWorksBriefingInput) => Promise<MemoryWorksBriefing>;
+  recordOutcome: (input: MemoryWorksOutcomeInput) => Promise<MemoryWorksOutcomeReceipt>;
   searchMemory: (
     projectId: string,
     query: string,
     type?: string,
     limit?: number,
-  ) => Promise<OrgMemoryUnit[]>;
-  getMemory: (memoryId: string) => Promise<OrgMemoryUnit>;
-  getRelatedMemories: (memoryId: string) => Promise<OrgMemoryRelatedEntry[]>;
-  listIncidents: (projectId: string, service?: string) => Promise<OrgMemoryUnit[]>;
-  findRunbooks: (service: string, issue?: string) => Promise<OrgMemoryRunbook[]>;
-  getServiceContext: (service: string) => Promise<OrgMemoryServiceContextEntry[]>;
-  listDecisions: (projectId: string, limit?: number) => Promise<OrgMemoryUnit[]>;
-  proposeMemory: (input: OrgMemoryProposalInput) => Promise<OrgMemoryProposal>;
-  listProposals?: () => Promise<OrgMemoryProposal[]>;
+  ) => Promise<MemoryWorksUnit[]>;
+  getMemory: (memoryId: string) => Promise<MemoryWorksUnit>;
+  getRelatedMemories: (memoryId: string) => Promise<MemoryWorksRelatedEntry[]>;
+  listIncidents: (projectId: string, service?: string) => Promise<MemoryWorksUnit[]>;
+  getServiceContext: (service: string) => Promise<MemoryWorksServiceContextEntry[]>;
+  listDecisions: (projectId: string, limit?: number) => Promise<MemoryWorksUnit[]>;
+  proposeMemory: (input: MemoryWorksProposalInput) => Promise<MemoryWorksProposal>;
+  listProposals?: () => Promise<MemoryWorksProposal[]>;
   canResolveProposals?: boolean;
-  resolveProposal?: (proposalId: string, approved: boolean) => Promise<OrgMemoryProposal>;
+  resolveProposal?: (proposalId: string, approved: boolean) => Promise<MemoryWorksProposal>;
   proposeRepositoryRefresh: (
     projectId: string,
     reason: string,
-  ) => Promise<OrgMemoryRefreshRequest>;
-  listApprovals?: (projectId: string) => Promise<OrgMemoryRefreshRequest[]>;
+  ) => Promise<MemoryWorksRefreshRequest>;
+  listApprovals?: (projectId: string) => Promise<MemoryWorksRefreshRequest[]>;
   canResolveApprovals?: boolean;
   resolveApproval?: (
     requestId: string,
     approved: boolean,
-  ) => Promise<OrgMemoryRefreshRequest>;
+  ) => Promise<MemoryWorksRefreshRequest>;
   onActivity?: (activity: WebMCPActivity) => void;
 };
 
@@ -414,7 +398,7 @@ function stringInput(input: Record<string, unknown>, key: string): string {
 
 /* Optional project selection with the same authorization check as the required
    variant: an id an agent invented must never reach a scoped API call. */
-function optionalProjectId(input: Record<string, unknown>, spaces: OrgMemorySpace[]): string {
+function optionalProjectId(input: Record<string, unknown>, spaces: MemoryWorksSpace[]): string {
   const requested = stringInput(input, "project_id");
   if (requested && !spaces.some((space) => space.id === requested)) {
     throw new Error(
@@ -429,7 +413,7 @@ function boundedLimit(input: Record<string, unknown>, fallback: number): number 
   return Math.max(1, Math.min(50, Math.trunc(requested)));
 }
 
-function compactUnit(unit: OrgMemoryUnit) {
+function compactUnit(unit: MemoryWorksUnit) {
   return {
     memory_id: unit.id,
     project_id: unit.project_id,
@@ -447,9 +431,9 @@ function compactUnit(unit: OrgMemoryUnit) {
 
 function projectFor(
   input: Record<string, unknown>,
-  spaces: OrgMemorySpace[],
+  spaces: MemoryWorksSpace[],
   activeProjectId: string,
-): OrgMemorySpace {
+): MemoryWorksSpace {
   const requested = stringInput(input, "project_id") || activeProjectId;
   const project = spaces.find((space) => space.id === requested);
   if (!project) {
@@ -560,7 +544,7 @@ function resultMetadata(value: unknown): Pick<WebMCPActivity, "resultCount" | "r
  * Provider. The page owns execution, so every call reuses its secure session
  * cookie and the same authorization checks as a human action in the UI.
  */
-export async function registerOrgMemoryWebMCP(
+export async function registerMemoryWorksTools(
   options: RegistrationOptions,
 ): Promise<WebMCPRegistration> {
   if (typeof document === "undefined" || !document.modelContext) {
@@ -575,9 +559,9 @@ export async function registerOrgMemoryWebMCP(
     modelContext.registerTool(
       {
         name: "list_orgmemory_spaces",
-        title: "List OrgMemory spaces",
+        title: "List MemoryWorks spaces",
         description:
-          "List the company-memory projects the signed-in person can access. Call this before choosing a project for another OrgMemory tool.",
+          "List the company-memory projects the signed-in person can access. Call this before choosing a project for another MemoryWorks tool.",
         inputSchema: {
           type: "object",
           properties: {},
@@ -596,7 +580,7 @@ export async function registerOrgMemoryWebMCP(
               })),
             };
             return toolResult(
-              `${payload.spaces.length} authorized OrgMemory space${payload.spaces.length === 1 ? "" : "s"} available.`,
+              `${payload.spaces.length} authorized MemoryWorks space${payload.spaces.length === 1 ? "" : "s"} available.`,
               payload,
             );
           }),
@@ -608,7 +592,7 @@ export async function registerOrgMemoryWebMCP(
         name: "ask_orgmemory",
         title: "Ask company memory",
         description:
-          "Ask a question against current, permission-scoped company memory. The answer is shown in the OrgMemory workspace and returned with its source citations.",
+          "Ask a question against current, permission-scoped company memory. The answer is shown in the MemoryWorks workspace and returned with its source citations.",
         inputSchema: {
           type: "object",
           properties: {
@@ -686,7 +670,7 @@ export async function registerOrgMemoryWebMCP(
         name: "get_orgmemory_briefing",
         title: "Brief me before I act",
         description:
-          "Call this BEFORE changing anything — on this site or any other. Describe what you are about to do and OrgMemory returns what this company already knows about it: decisions that constrain the change, incidents that started the same way, the components a change here reaches, the established procedure if one exists, and whether a person has to approve first. Returns a briefing_id; report back with record_orgmemory_outcome once you know whether it worked.",
+          "Call this BEFORE changing anything — on this site or any other. Describe what you are about to do and MemoryWorks returns what this company already knows about it: decisions that constrain the change, incidents that started the same way, the components a change here reaches, the established procedure if one exists, and whether a person has to approve first. Returns a briefing_id; report back with record_orgmemory_outcome once you know whether it worked.",
         inputSchema: {
           type: "object",
           properties: {
@@ -804,7 +788,7 @@ export async function registerOrgMemoryWebMCP(
             const receipt = await options.recordOutcome({
               briefingId,
               action,
-              outcome: outcome as OrgMemoryOutcomeInput["outcome"],
+              outcome: outcome as MemoryWorksOutcomeInput["outcome"],
               target: stringInput(input, "target") || undefined,
               surface: stringInput(input, "surface") || undefined,
               reason: stringInput(input, "reason") || undefined,
@@ -966,7 +950,7 @@ export async function registerOrgMemoryWebMCP(
           properties: {
             memory_id: {
               type: "string",
-              description: "A memory_id from search_orgmemory or another OrgMemory tool.",
+              description: "A memory_id from search_orgmemory or another MemoryWorks tool.",
             },
           },
           required: ["memory_id"],
@@ -998,7 +982,7 @@ export async function registerOrgMemoryWebMCP(
           properties: {
             memory_id: {
               type: "string",
-              description: "A memory_id from search_orgmemory or another OrgMemory tool.",
+              description: "A memory_id from search_orgmemory or another MemoryWorks tool.",
             },
           },
           required: ["memory_id"],
@@ -1073,70 +1057,6 @@ export async function registerOrgMemoryWebMCP(
                 : service
                   ? `No previous incidents remembered for ${service}.`
                   : "No incidents are remembered yet.",
-              payload,
-            );
-          }),
-      },
-      registration,
-    ),
-    modelContext.registerTool(
-      {
-        name: "get_orgmemory_runbook",
-        title: "Get a runbook",
-        description:
-          "Retrieve the remembered runbook for a service and optional issue, including trigger, steps, and procedures. Use this before proposing any remediation.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            service: {
-              type: "string",
-              description: "Service name such as payments.",
-            },
-            issue: {
-              type: "string",
-              description: "Optional issue keyword such as timeouts or connection-pool exhaustion.",
-            },
-            project_id: {
-              type: "string",
-              description:
-                "Optional project ID from list_orgmemory_spaces. Defaults to all authorized spaces.",
-            },
-          },
-          required: ["service"],
-          additionalProperties: false,
-        },
-        annotations: READ_ONLY,
-        execute: (input) =>
-          tracked("get_orgmemory_runbook", options.onActivity, input, async () => {
-            const service = stringInput(input, "service");
-            if (!service) throw new Error("service is required");
-            const issue = stringInput(input, "issue");
-            optionalProjectId(input, options.spaces);
-            const runbooks = await options.findRunbooks(service, issue || undefined);
-            const payload = {
-              service,
-              issue: issue || undefined,
-              runbook_count: runbooks.length,
-              runbooks: runbooks.map((runbook) => ({
-                runbook_id: runbook.id,
-                project_id: runbook.project_id,
-                project_name: runbook.project_name,
-                key: runbook.key,
-                title: runbook.title,
-                trigger: runbook.trigger,
-                steps: runbook.steps,
-                procedures: runbook.procedures,
-                version: runbook.version,
-                status: runbook.status,
-              })),
-            };
-            return toolResult(
-              runbooks.length
-                ? `${runbooks.length} runbook${runbooks.length === 1 ? "" : "s"} found for ${service}: ${runbooks
-                    .map((runbook) => runbook.title || runbook.key || runbook.id)
-                    .slice(0, 3)
-                    .join("; ")}.`
-                : `No runbook is remembered for ${service}${issue ? ` and ${issue}` : ""}.`,
               payload,
             );
           }),
@@ -1304,7 +1224,7 @@ export async function registerOrgMemoryWebMCP(
         name: "propose_repository_refresh",
         title: "Propose repository refresh",
         description:
-          "Create an approval-required request to refresh an authorized GitHub repository when its OrgMemory evidence is stale or incomplete. This tool never refreshes the repository itself; a person must approve it in OrgMemory first.",
+          "Create an approval-required request to refresh an authorized GitHub repository when its MemoryWorks evidence is stale or incomplete. This tool never refreshes the repository itself; a person must approve it in MemoryWorks first.",
         inputSchema: {
           type: "object",
           properties: {
@@ -1342,7 +1262,7 @@ export async function registerOrgMemoryWebMCP(
               reason: request.reason,
               status: request.status,
               next_step:
-                "A person must approve or deny this request in OrgMemory before any repository refresh runs.",
+                "A person must approve or deny this request in MemoryWorks before any repository refresh runs.",
             };
             return toolResult(
               `Repository refresh request for ${project.name} is ${request.status}. No refresh has run yet; it requires human approval.`,
@@ -1357,7 +1277,7 @@ export async function registerOrgMemoryWebMCP(
         name: "list_orgmemory_approvals",
         title: "List pending approvals",
         description:
-          "List repository refresh requests that are waiting for a human approval decision in the authorized OrgMemory projects, including who requested each one and why.",
+          "List repository refresh requests that are waiting for a human approval decision in the authorized MemoryWorks projects, including who requested each one and why.",
         inputSchema: {
           type: "object",
           properties: {
@@ -1418,7 +1338,7 @@ export async function registerOrgMemoryWebMCP(
                 ? `${pending.length} approval${pending.length === 1 ? "" : "s"} waiting, including ${pending
                     .slice(0, 3)
                     .map((request) => request.repository)
-                    .join(", ")}.${options.canResolveApprovals ? " Use resolve_orgmemory_approval to record a decision." : " An OrgMemory admin must record the decision."}`
+                    .join(", ")}.${options.canResolveApprovals ? " Use resolve_orgmemory_approval to record a decision." : " An MemoryWorks admin must record the decision."}`
                 : "No approvals are waiting for a human decision.",
               payload,
             );
@@ -1432,7 +1352,7 @@ export async function registerOrgMemoryWebMCP(
         name: "resolve_orgmemory_approval",
         title: "Approve or deny a pending request",
         description:
-          "Record a human approval decision on a pending OrgMemory repository refresh request. Approving queues the server-side GitHub ingest; denying closes it. This tool must only be used when the signed-in person has actually decided.",
+          "Record a human approval decision on a pending MemoryWorks repository refresh request. Approving queues the server-side GitHub ingest; denying closes it. This tool must only be used when the signed-in person has actually decided.",
         inputSchema: {
           type: "object",
           properties: {
@@ -1547,7 +1467,7 @@ export async function registerOrgMemoryWebMCP(
             reason: stringInput(input, "reason") || undefined,
           });
           return toolResult(
-            `Proposal queued as pending_approval. Nothing has been saved to company memory yet; a person must approve it in OrgMemory.`,
+            `Proposal queued as pending_approval. Nothing has been saved to company memory yet; a person must approve it in MemoryWorks.`,
             {
               proposal_id: proposal.id,
               project_id: proposal.project_id,
@@ -1556,7 +1476,7 @@ export async function registerOrgMemoryWebMCP(
               status: proposal.status,
               requested_by: proposal.requested_by_name,
               next_step:
-                "A person must approve or deny this proposal in OrgMemory before it becomes company memory.",
+                "A person must approve or deny this proposal in MemoryWorks before it becomes company memory.",
             },
           );
         }),
@@ -1568,7 +1488,7 @@ export async function registerOrgMemoryWebMCP(
       name: "propose_orgmemory_incident",
       title: "Propose an incident record for approval",
       description:
-        "Propose recording an incident into company memory once its diagnosis is verified (confirmed by monitoring, logs, or a person). Nothing is saved by this tool: the proposal waits for explicit human approval in OrgMemory.",
+        "Propose recording an incident into company memory once its diagnosis is verified (confirmed by monitoring, logs, or a person). Nothing is saved by this tool: the proposal waits for explicit human approval in MemoryWorks.",
       inputSchema: {
         type: "object",
         properties: {
@@ -1625,7 +1545,7 @@ export async function registerOrgMemoryWebMCP(
               status: proposal.status,
               requested_by: proposal.requested_by_name,
               next_step:
-                "A person must approve or deny this proposal in OrgMemory before it becomes an incident memory.",
+                "A person must approve or deny this proposal in MemoryWorks before it becomes an incident memory.",
             },
           );
         }),
@@ -1637,7 +1557,7 @@ export async function registerOrgMemoryWebMCP(
       name: "propose_orgmemory_decision",
       title: "Propose a decision record for approval",
       description:
-        "Propose recording an architecture or operational decision into company memory once it is actually decided (not merely recommended). Nothing is saved by this tool: the proposal waits for explicit human approval in OrgMemory.",
+        "Propose recording an architecture or operational decision into company memory once it is actually decided (not merely recommended). Nothing is saved by this tool: the proposal waits for explicit human approval in MemoryWorks.",
       inputSchema: {
         type: "object",
         properties: {
@@ -1694,7 +1614,7 @@ export async function registerOrgMemoryWebMCP(
               status: proposal.status,
               requested_by: proposal.requested_by_name,
               next_step:
-                "A person must approve or deny this proposal in OrgMemory before it becomes a decision memory.",
+                "A person must approve or deny this proposal in MemoryWorks before it becomes a decision memory.",
             },
           );
         }),
@@ -1760,7 +1680,7 @@ export async function registerOrgMemoryWebMCP(
         name: "resolve_orgmemory_proposal",
         title: "Approve or deny a memory proposal",
         description:
-          "Record a human approval decision on a pending OrgMemory memory proposal. Approving persists the memory into company memory; denying closes it. This tool must only be used when the signed-in person has actually decided.",
+          "Record a human approval decision on a pending MemoryWorks memory proposal. Approving persists the memory into company memory; denying closes it. This tool must only be used when the signed-in person has actually decided.",
         inputSchema: {
           type: "object",
           properties: {

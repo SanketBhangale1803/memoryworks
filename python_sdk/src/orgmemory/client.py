@@ -1,4 +1,4 @@
-"""Synchronous and asynchronous OrgMemory API clients."""
+"""Synchronous and asynchronous MemoryWorks API clients."""
 
 from __future__ import annotations
 
@@ -8,16 +8,24 @@ from typing import Any, TypeVar
 
 import httpx
 
-from .exceptions import OrgMemoryAPIError
-from .models import AskResponse, ContextEnvelope
+from .exceptions import MemoryWorksAPIError
+from .models import (
+    AskResponse,
+    BriefingOutcomeReceipt,
+    BriefingResponse,
+    ContextEnvelope,
+    OutcomeLabel,
+)
 
 Json = dict[str, Any] | list[Any]
-ClientT = TypeVar("ClientT", bound="OrgMemory")
-AsyncClientT = TypeVar("AsyncClientT", bound="AsyncOrgMemory")
+ClientT = TypeVar("ClientT", bound="MemoryWorks")
+AsyncClientT = TypeVar("AsyncClientT", bound="AsyncMemoryWorks")
 
 
 def _base_url(value: str | None) -> str:
-    return (value or os.getenv("ORGMEMORY_API_URL") or "http://localhost:8000").rstrip("/")
+    return (value or os.getenv("ORGMEMORY_API_URL") or "http://localhost:8000").rstrip(
+        "/"
+    )
 
 
 def _api_key(value: str | None) -> str:
@@ -41,15 +49,19 @@ def _decode(response: httpx.Response) -> Any:
         payload = response.text
     if response.is_error:
         if isinstance(payload, dict):
-            message = str(payload.get("detail") or payload.get("message") or response.reason_phrase)
+            message = str(
+                payload.get("detail")
+                or payload.get("message")
+                or response.reason_phrase
+            )
         else:
             message = str(payload or response.reason_phrase)
-        raise OrgMemoryAPIError(response.status_code, message, payload)
+        raise MemoryWorksAPIError(response.status_code, message, payload)
     return payload
 
 
-class OrgMemory:
-    """Synchronous OrgMemory client.
+class MemoryWorks:
+    """Synchronous MemoryWorks client.
 
     The client owns its HTTP connection and can be used as a context manager.
     """
@@ -158,6 +170,54 @@ class OrgMemory:
         )
         return AskResponse.from_dict(payload)
 
+    def get_briefing(
+        self,
+        task: str,
+        *,
+        service: str = "",
+        project_id: str = "",
+        surface: str = "sdk",
+    ) -> BriefingResponse:
+        """Return deterministic, cited context before a consequential action."""
+        payload = self._request(
+            "POST",
+            "/api/briefings",
+            json={
+                "task": task,
+                "service": service,
+                "project_id": project_id,
+                "surface": surface,
+            },
+        )
+        return BriefingResponse.from_dict(payload)
+
+    def record_briefing_outcome(
+        self,
+        briefing_id: str,
+        action: str,
+        *,
+        outcome: OutcomeLabel = "unknown",
+        target: str = "",
+        surface: str = "sdk",
+        reason: str = "",
+        detail: dict[str, Any] | None = None,
+    ) -> BriefingOutcomeReceipt:
+        """Append the action and observed outcome for a served briefing."""
+        payload = self._request(
+            "POST",
+            "/api/briefings/outcome",
+            json={
+                "briefing_id": briefing_id,
+                "action": action,
+                "outcome": outcome,
+                "target": target,
+                "surface": surface,
+                "reason": reason,
+                "detail": detail or {},
+            },
+        )
+        return BriefingOutcomeReceipt.from_dict(payload)
+
     def list_memories(
         self,
         project_id: str,
@@ -197,7 +257,9 @@ class OrgMemory:
         )
 
     def context_envelope(self, envelope_id: str) -> ContextEnvelope:
-        return ContextEnvelope.from_dict(self._request("GET", f"/api/memory/context/{envelope_id}"))
+        return ContextEnvelope.from_dict(
+            self._request("GET", f"/api/memory/context/{envelope_id}")
+        )
 
     def swarm_run(self, run_id: str) -> dict[str, Any]:
         return self._request("GET", f"/api/memory/swarm/{run_id}")
@@ -225,8 +287,8 @@ class OrgMemory:
         return self._request("GET", f"/api/work/{work_id}")
 
 
-class AsyncOrgMemory:
-    """Asynchronous OrgMemory client."""
+class AsyncMemoryWorks:
+    """Asynchronous MemoryWorks client."""
 
     def __init__(
         self,
@@ -331,6 +393,54 @@ class AsyncOrgMemory:
             },
         )
         return AskResponse.from_dict(payload)
+
+    async def get_briefing(
+        self,
+        task: str,
+        *,
+        service: str = "",
+        project_id: str = "",
+        surface: str = "sdk",
+    ) -> BriefingResponse:
+        """Return deterministic, cited context before a consequential action."""
+        payload = await self._request(
+            "POST",
+            "/api/briefings",
+            json={
+                "task": task,
+                "service": service,
+                "project_id": project_id,
+                "surface": surface,
+            },
+        )
+        return BriefingResponse.from_dict(payload)
+
+    async def record_briefing_outcome(
+        self,
+        briefing_id: str,
+        action: str,
+        *,
+        outcome: OutcomeLabel = "unknown",
+        target: str = "",
+        surface: str = "sdk",
+        reason: str = "",
+        detail: dict[str, Any] | None = None,
+    ) -> BriefingOutcomeReceipt:
+        """Append the action and observed outcome for a served briefing."""
+        payload = await self._request(
+            "POST",
+            "/api/briefings/outcome",
+            json={
+                "briefing_id": briefing_id,
+                "action": action,
+                "outcome": outcome,
+                "target": target,
+                "surface": surface,
+                "reason": reason,
+                "detail": detail or {},
+            },
+        )
+        return BriefingOutcomeReceipt.from_dict(payload)
 
     async def list_memories(
         self,

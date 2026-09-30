@@ -378,7 +378,7 @@ def _ensure_public_demo_membership(user_id: str, role: str = "owner") -> str:
             updated_at=excluded.updated_at""",
             (
                 PUBLIC_DEMO_WORKSPACE_ID,
-                "OrgMemory public demo",
+                "MemoryWorks public demo",
                 PUBLIC_DEMO_WORKSPACE_SLUG,
                 now,
                 now,
@@ -760,11 +760,11 @@ def _hash_email_code(email: str, code: str) -> str:
 
 def _send_login_code(email: str, code: str) -> None:
     message = EmailMessage()
-    message["Subject"] = f"{code} is your OrgMemory sign-in code"
+    message["Subject"] = f"{code} is your MemoryWorks sign-in code"
     message["From"] = settings.email_from
     message["To"] = email
     message.set_content(
-        "Use this one-time code to sign in to OrgMemory:\n\n"
+        "Use this one-time code to sign in to MemoryWorks:\n\n"
         f"{code}\n\n"
         f"It expires in {settings.email_code_ttl_minutes} minutes. "
         "If you did not request it, you can ignore this email."
@@ -794,7 +794,7 @@ def send_invite_email(
     if not settings.smtp_host or not settings.email_from:
         return {"sent": False, "reason": "smtp_not_configured"}
     message = EmailMessage()
-    message["Subject"] = f"You've been added to {workspace_name} on OrgMemory"
+    message["Subject"] = f"You've been added to {workspace_name} on MemoryWorks"
     message["From"] = settings.email_from
     message["To"] = email
     added_by = f"{inviter} added you to" if inviter else "You were added to"

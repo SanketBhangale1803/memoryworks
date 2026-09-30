@@ -22,7 +22,7 @@ from app.core.config import settings
 
 from .documents import ExtractedDocument, extract_document
 
-USER_AGENT = "OrgMemoryIngest/1.0 (+https://orgmemory.vercel.app)"
+USER_AGENT = "MemoryWorksIngest/1.0 (+https://orgmemory.vercel.app)"
 MAX_FETCH_BYTES = 10 * 1024 * 1024
 MAX_REDIRECTS = 5
 FETCH_TIMEOUT_SECONDS = 25.0

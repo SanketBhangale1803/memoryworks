@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import RunbookLogo from "@/components/RunbookLogo";
+import BrandLogo from "@/components/BrandLogo";
 
 export default function HomeNav() {
   const [stuck, setStuck] = useState(false);
@@ -17,7 +17,7 @@ export default function HomeNav() {
   return (
     <header className={`home-nav ${stuck ? "stuck" : ""}`}>
       <div>
-        <Link href="/" aria-label="OrgMemory home"><RunbookLogo /></Link>
+        <Link href="/" aria-label="MemoryWorks home"><BrandLogo /></Link>
         <nav aria-label="Product">
           <Link href="#connect">Connect</Link>
           <Link href="#swarm">Subagents</Link>

@@ -76,7 +76,7 @@ def rest_manifest_from_registration(record: dict[str, Any]) -> ConnectorManifest
         rate_limit=RateLimitPolicy(120, 60, 5),
         retry=RetryPolicy(max_attempts=5, base_delay_seconds=5, max_delay_seconds=300),
         data_policy=DataPolicy(
-            residency="OrgMemory workspace region",
+            residency="MemoryWorks workspace region",
             retention="Until source disconnect or workspace retention policy",
         ),
         package=f"rest:{record['server_url']}",
@@ -214,7 +214,7 @@ class RestPullConnector(Connector):
     def _headers(self) -> dict[str, str]:
         headers = {
             "Accept": "application/json",
-            "User-Agent": "OrgMemoryIngest/1.0",
+            "User-Agent": "MemoryWorksIngest/1.0",
         }
         try:
             oauth_payload = json.loads(self.record.get("oauth_json") or "{}")

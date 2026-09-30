@@ -1,6 +1,6 @@
 # Context activation swarm
 
-OrgMemory retrieves answer context through a small ecosystem of independent
+MemoryWorks retrieves answer context through a small ecosystem of independent
 specialists. The swarm does not generate facts. It activates source-backed
 evidence, critiques the combined result, and gives downstream reasoning one
 authorized, token-bounded context.

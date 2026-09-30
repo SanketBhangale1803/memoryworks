@@ -1,6 +1,6 @@
 # Free production deployment on Oracle Cloud
 
-This deployment keeps the whole OrgMemory control plane on one Oracle Cloud
+This deployment keeps the whole MemoryWorks control plane on one Oracle Cloud
 Always Free Ampere A1 VM: Caddy/TLS, Next.js, FastAPI, the remote Streamable
 HTTP MCP service, SQLite durable state, and persistent ArcadeDB graph storage.
 OCI Vault protects delegated OAuth grants with the VM's instance principal.
@@ -26,7 +26,7 @@ In the Oracle Cloud Console, use the tenancy's **home region**:
    `Allow dynamic-group orgmemory-vm to use keys in compartment id <COMPARTMENT_OCID> where target.key.id = '<KEY_OCID>'`
 
 The policy is what lets the container use the VM's short-lived instance
-identity. No shared OCI credential is placed in OrgMemory.
+identity. No shared OCI credential is placed in MemoryWorks.
 
 ## 2. Install Docker and clone
 

@@ -24,6 +24,9 @@ services:
     env_file: ${ORGMEMORY_ENV_FILE:-.env.production}
     environment:
       ENVIRONMENT: production
+      # The runner is not sandboxed; production stays fail-closed unless the
+      # deployment explicitly opts into the isolated-executor profile.
+      ORGMEMORY_EXECUTION_ENABLED: "false"
       API_URL: https://api.${PUBLIC_DOMAIN:?set PUBLIC_DOMAIN}
       FRONTEND_URL: https://app.${PUBLIC_DOMAIN:?set PUBLIC_DOMAIN}
       APP_BASE_URL: https://app.${PUBLIC_DOMAIN:?set PUBLIC_DOMAIN}

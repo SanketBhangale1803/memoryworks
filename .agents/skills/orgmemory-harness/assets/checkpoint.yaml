@@ -1,0 +1,60 @@
+# Adapt into data/harness-runs/<unique-run-id>/checkpoint.yaml.
+# A template for the agent to maintain, not a runtime configuration loader.
+schema_version: 1
+run_id: null
+updated_at: null
+status: scoping
+task:
+  request: null
+  acceptance_conditions: []
+  authorized_scope: []
+  out_of_scope: []
+repository:
+  absolute_path: null
+  branch: null
+  base_head: null
+  verified_head: null
+  relevant_diff_fingerprint: null
+  preexisting_changes: []
+  owned_paths: []
+capabilities: {}
+routing:
+  task_class: null
+  current_model: null
+  decision: keep_current_model
+  reason: null
+context:
+  source_refs: []
+  confirmed_facts: []
+  decisions: []
+  open_questions: []
+  memory_budget_tokens: null
+  last_compacted_at: null
+orgmemory:
+  workspace_id: null
+  project_id: null
+  service: null
+  briefing_id: null
+  verdict: null
+  memory_refs: []
+  retrieval_health: unverified
+  approval_ref: null
+  approved_action_revision: null
+  outcome_label: unknown
+  outcome_sync: not_attempted
+  receipt_refs: []
+plan: []
+specialists: []
+verification: []
+# Each verification: command, cwd, exit_code, checked_revision_or_diff,
+# result_summary, artifact_refs, observed_at; never secrets or full raw logs.
+failures: []
+# Each failure: observed_symptom, evidence_ref, supported_cause,
+# attempted_repair, regression_evidence, recurrence_count.
+artifacts: []
+blocker: null
+next_action: null
+completion:
+  acceptance_evidence: []
+  unverified_items: []
+  result_summary: null

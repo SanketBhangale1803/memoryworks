@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { RunbookMark } from "@/components/RunbookLogo";
+import { BrandMark } from "@/components/BrandLogo";
 import { api } from "@/lib/api";
 
 type Model = {
@@ -51,7 +51,7 @@ const scenarios: Record<string, Scenario> = {
         to V2, but PR #128 only updated staging — so the two environments disagree.
       </>
     ),
-    cites: ["GitHub · PR #128", "Slack · #payments", "Runbook · checkout"],
+    cites: ["GitHub · PR #128", "Slack · #payments", "Postmortem · checkout"],
     act: "Update the production config reference, run the checkout smoke test, and post the result back to the incident thread.",
     grounded: "94% grounded",
   },
@@ -71,11 +71,11 @@ const scenarios: Record<string, Scenario> = {
     answer: (
       <>
         Billing belongs to the Payments Platform team, with Maya Chen as escalation owner. The
-        current billing runbook says to check ledger lag and webhook delivery before restarting
+        current billing playbook says to check ledger lag and webhook delivery before restarting
         anything — a restart clears the queue and hides the cause.
       </>
     ),
-    cites: ["Service catalog", "Runbook · billing", "Decision · ownership"],
+    cites: ["Service catalog", "Playbook · billing", "Decision · ownership"],
     act: "Open the current billing checklist, gather the two safe diagnostics, and notify the recorded owner with cited context.",
     grounded: "96% grounded",
   },
@@ -85,7 +85,7 @@ const unknownScenario: Scenario = {
   answer: (
     <>
       This public preview cannot see inside your company. In a connected workspace, the same
-      question would search only the sources you are permitted to read, and OrgMemory would
+      question would search only the sources you are permitted to read, and MemoryWorks would
       withhold an answer entirely rather than guess from thin evidence.
     </>
   ),
@@ -166,11 +166,11 @@ export default function HomeChat() {
 
   return (
     <>
-      <section className="home-chat" aria-label="Ask the OrgMemory company brain">
+      <section className="home-chat" aria-label="Ask the MemoryWorks company brain">
         <header className="chat-bar">
           <div className="chat-bar-id">
-            <RunbookMark />
-            <strong>OrgMemory</strong>
+            <BrandMark />
+            <strong>MemoryWorks</strong>
             <small>Company brain</small>
           </div>
 
@@ -218,7 +218,7 @@ export default function HomeChat() {
             <div className="chat-rest">
               <span className="chat-rest-mark" aria-hidden="true">
                 <i /><i /><i />
-                <RunbookMark />
+                <BrandMark />
               </span>
               <strong>Ask your company anything.</strong>
               <p>
@@ -264,7 +264,7 @@ export default function HomeChat() {
               {settled && (
                 <div className="chat-answer">
                   <div className="answer-head">
-                    <span><RunbookMark /> OrgMemory</span>
+                    <span><BrandMark /> MemoryWorks</span>
                     <span className="answer-grounded">
                       <i />
                       {scenario.grounded} · {activeModel?.label}
@@ -300,7 +300,7 @@ export default function HomeChat() {
                   ask(draft);
                 }
               }}
-              aria-label="Ask OrgMemory a question"
+              aria-label="Ask MemoryWorks a question"
             />
             <button
               className="chat-send"

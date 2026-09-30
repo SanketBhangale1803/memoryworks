@@ -192,7 +192,7 @@ def test_openai_compatible_and_gemini_requests_use_current_provider_contracts(gr
     assert calls[0]["url"] == "https://openrouter.ai/api/v1/chat/completions"
     assert calls[0]["json"]["model"] == "z-ai/glm-5.3-flash"
     assert calls[0]["headers"]["HTTP-Referer"] == settings.frontend_url
-    assert calls[0]["headers"]["X-OpenRouter-Title"] == "OrgMemory"
+    assert calls[0]["headers"]["X-OpenRouter-Title"] == "MemoryWorks"
     assert calls[0]["headers"]["Authorization"] == "Bearer openrouter-secret"
     assert "temperature" not in calls[0]["json"]
     assert kimi and kimi[0]["answer"] == "compatible"

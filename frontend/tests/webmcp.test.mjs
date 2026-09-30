@@ -5,7 +5,7 @@ import ts from "typescript";
 
 const webmcp = readFileSync(new URL("../lib/webmcp.ts", import.meta.url), "utf8");
 const hook = readFileSync(
-  new URL("../hooks/useOrgMemoryWebMCP.ts", import.meta.url),
+  new URL("../hooks/useMemoryWorksTools.ts", import.meta.url),
   "utf8",
 );
 const chat = readFileSync(
@@ -13,14 +13,9 @@ const chat = readFileSync(
   "utf8",
 );
 const types = readFileSync(new URL("../types/webmcp.d.ts", import.meta.url), "utf8");
-const activityLayer = readFileSync(
-  new URL("../components/AgentActivityLayer.tsx", import.meta.url),
-  "utf8",
-);
-const console_ = readFileSync(
-  new URL("../components/AgentOperations.tsx", import.meta.url),
-  "utf8",
-);
+const tools = readFileSync(new URL("../hooks/useWorkspaceTools.ts", import.meta.url), "utf8");
+const agentTurn = readFileSync(new URL("../components/AgentTurn.tsx", import.meta.url), "utf8");
+const approvals = readFileSync(new URL("../app/approvals/page.tsx", import.meta.url), "utf8");
 const orgTools = readFileSync(new URL("../lib/orgTools.ts", import.meta.url), "utf8");
 const catalog = readFileSync(new URL("../lib/webmcpCatalog.ts", import.meta.url), "utf8");
 
@@ -45,8 +40,8 @@ const orgToolsUrl = dataModule(
       "const api = async () => ({ spaces: [], plans: [], results: [] }); const API = '';",
     )
     .replace(
-      /import \{[^}]*\} from "@\/lib\/demoOrgMemory";/m,
-      "const WEBMCP_DEMO_MODE = false; const demoOrgRequest = async () => ({}); const demoAgentSession = async () => ({}); const demoFollowups = async () => ({ suggestions: [] });",
+      /import \{[^}]*\} from "@\/lib\/demoMemory";/m,
+      "const OFFLINE_DEMO_MODE = false; const demoOrgRequest = async () => ({}); const demoAgentSession = async () => ({}); const demoFollowups = async () => ({ suggestions: [] });",
     ),
 );
 const webmcpStandalone = webmcp.replace('"@/lib/orgTools"', JSON.stringify(orgToolsUrl));
@@ -69,7 +64,6 @@ test("the authenticated workspace registers browser-native WebMCP tools", () => 
     "get_orgmemory_memory",
     "get_orgmemory_related_memories",
     "get_orgmemory_incidents",
-    "get_orgmemory_runbook",
     "get_orgmemory_service_context",
     "get_orgmemory_dependencies",
     "get_orgmemory_decisions",
@@ -123,21 +117,16 @@ test("WebMCP activity is sourced from real tool execution and persisted as a bou
   assert.match(hook, /orgmemory\.webmcp-activity/);
   assert.match(hook, /CustomEvent\("orgmemory:webmcp-activity"/);
   assert.match(hook, /slice\(-24\)/);
-  assert.match(activityLayer, /Show Agent Activity/);
-  assert.match(activityLayer, /Follow Orb/);
-  assert.match(activityLayer, /Developer details/);
-  assert.doesNotMatch(activityLayer, /setInterval|Math\.random/);
 });
 
-test("the agent console calls the registered tools rather than replaying a script", () => {
-  // The console must go through the same handler map the page hands to WebMCP.
-  // A second, friendlier code path just for the demo is the failure mode here.
-  assert.match(console_, /ORG_TOOLS\[tool\]/);
-  assert.match(console_, /await spec\.run\(args\)/);
-  assert.match(console_, /Math\.round\(performance\.now\(\) - started\)/);
-  assert.doesNotMatch(console_, /Math\.random/);
-  // Durations shown must be measured, never invented.
-  assert.doesNotMatch(console_, /ms: \d{2,}/);
+test("Agent mode shows the steps the agent really took", () => {
+  // Steps come from the streamed session, not a script, and durations are the
+  // server's measurements — never invented on the page.
+  assert.match(chat, /orgApi\.askStream\(question, spaceIds\(\)/);
+  assert.match(agentTurn, /ms: step\.duration_ms \|\| 0/);
+  assert.doesNotMatch(agentTurn, /Math\.random|setInterval/);
+  // A proposed change stops at a person, in the conversation that made it.
+  assert.match(agentTurn, /plan\.status === "pending_approval"/);
 });
 
 test("organizational operations are registered as real tools, with writes gated", () => {
@@ -154,7 +143,7 @@ test("organizational operations are registered as real tools, with writes gated"
     "propose_orgmemory_changes",
   ]) {
     assert.match(orgTools, new RegExp(`name: "${tool}"`));
-    assert.ok(runtime.ORGMEMORY_WEBMCP_TOOLS.includes(tool), `${tool} missing from the name list`);
+    assert.ok(runtime.MEMORYWORKS_TOOLS.includes(tool), `${tool} missing from the name list`);
   }
   // Nothing may approve its own plan: approval is a person, not a tool.
   assert.doesNotMatch(orgTools, /name: "approve_/);
@@ -167,8 +156,9 @@ test("the tool catalog stays derived from the executable definitions", () => {
 
 test("browser-agent questions reuse the secure API and update the visible conversation", () => {
   assert.match(chat, /surface: "web" \| "webmcp"/);
-  assert.match(chat, /ask\(question, projectId, "webmcp", requestedScope\)/);
-  assert.match(chat, /setTurns\(\(current\) => \[\.\.\.current, \{ question \}\]\)/);
+  assert.match(chat, /askMemory\(question, projectId, "webmcp", requestedScope\)/);
+  // The agent's question lands in the same chat history a person sees.
+  assert.match(chat, /beginTurn\(question, "ask", target, turnScope\)/);
   assert.match(webmcp, /source citations/);
   assert.match(webmcp, /options\.ask\(question, project\.id, scope\)/);
   assert.match(webmcp, /likely_cause: answer\.likely_cause/);
@@ -176,29 +166,21 @@ test("browser-agent questions reuse the secure API and update the visible conver
   assert.match(webmcp, /safe_actions: answer\.safe_actions/);
   assert.match(webmcp, /approval_required: answer\.approval_required/);
   assert.match(webmcp, /retrieval_trace: answer\.retrieval_trace/);
-  assert.match(chat, /data-webmcp-status=\{webMCP\.status\}/);
-  assert.match(chat, /browser-native WebMCP tools are available/);
+  // Registered quietly: the page never advertises the transport to a person.
+  assert.match(chat, /useWorkspaceTools\(/);
+  assert.doesNotMatch(chat, /WebMCP/);
 });
 
-test("workspace controls surface approvals inline with a real, role-aware decision path", () => {
-  // The rail polls the same authorized endpoint the approvals page uses and
-  // renders decisions next to the conversation; a browser agent resolving an
-  // approval mirrors into the exact state the rail reads.
-  assert.match(chat, /WorkspaceControlRail/);
-  assert.match(chat, /ws-rail/);
-  assert.match(chat, /\/api\/repository-refresh-requests/);
-  assert.match(
-    chat,
-    /repository-refresh-requests\/\$\{encodeURIComponent\(requestId\)\}\/resolve/,
-  );
-  assert.match(chat, /Approve/);
-  assert.match(chat, /Mirror the agent's decision into the same state the human inbox reads\./);
-  // The control rail is discoverable before the first request exists and makes
-  // the distinct admin and employee states visible.
-  assert.match(chat, /New refresh requests appear here for an inline decision/);
-  assert.match(chat, /Your refresh requests appear here until an admin decides/);
-  assert.match(chat, /Add person/);
-  assert.match(chat, /canResolveApprovals: isAdmin/);
+test("approvals are decided on one authorized path, by a person or an agent", () => {
+  // The browser tools resolve through the same endpoint the Approvals inbox
+  // uses, and only admins are handed the decision tools at all.
+  assert.match(tools, /repository-refresh-requests\/\$\{encodeURIComponent\(requestId\)\}\/resolve/);
+  assert.match(tools, /canResolveApprovals: isAdmin/);
+  assert.match(tools, /canResolveProposals: isAdmin/);
+  assert.match(approvals, /\/api\/repository-refresh-requests/);
+  assert.match(approvals, /\/api\/memory\/proposals/);
+  assert.match(approvals, /orgApi\.approvePlan/);
+  assert.match(approvals, /With an admin/);
 });
 
 test("employees cannot receive the browser-agent approval-decision tools", async () => {
@@ -213,7 +195,7 @@ test("employees cannot receive the browser-agent approval-decision tools", async
     },
   };
   try {
-    const registration = await runtime.registerOrgMemoryWebMCP({
+    const registration = await runtime.registerMemoryWorksTools({
       spaces: [{ id: "prj_demo", name: "Demo", repository: "acme/demo" }],
       getActiveProjectId: () => "prj_demo",
       async ask() { return { answer: "ok", answer_sufficient: true, answer_scope: "project", evidence: [] }; },
@@ -224,7 +206,6 @@ test("employees cannot receive the browser-agent approval-decision tools", async
       async getMemory() { throw new Error("not found"); },
       async getRelatedMemories() { return []; },
       async listIncidents() { return []; },
-      async findRunbooks() { return []; },
       async getServiceContext() { return []; },
       async listDecisions() { return []; },
       async proposeMemory() { throw new Error("should not be called in this test"); },
@@ -235,7 +216,7 @@ test("employees cannot receive the browser-agent approval-decision tools", async
       canResolveApprovals: false,
     });
     // Everything except the two human-decision tools, which are admin-only.
-    assert.equal(registration.toolCount, runtime.ORGMEMORY_WEBMCP_TOOLS.length - 2);
+    assert.equal(registration.toolCount, runtime.MEMORYWORKS_TOOLS.length - 2);
     assert.equal(registered.has("resolve_orgmemory_approval"), false);
     assert.equal(registered.has("resolve_orgmemory_proposal"), false);
     registration.dispose();
@@ -247,8 +228,8 @@ test("employees cannot receive the browser-agent approval-decision tools", async
 test("WebMCP validates project access before calling scoped backend endpoints", () => {
   assert.match(webmcp, /spaces\.find\(\(space\) => space\.id === requested\)/);
   assert.match(webmcp, /Choose a project_id returned by list_orgmemory_spaces/);
-  assert.match(chat, /encodeURIComponent\(projectId\)/);
-  assert.match(chat, /credentials: "include"|from "@\/lib\/api"/);
+  assert.match(tools, /encodeURIComponent\(projectId\)/);
+  assert.match(tools, /from "@\/lib\/api"/);
 });
 
 test("the real WebMCP implementation registers, invokes, and unregisters all tools", async () => {
@@ -279,7 +260,7 @@ test("the real WebMCP implementation registers, invokes, and unregisters all too
     ...overrides,
   });
   try {
-    const registration = await runtime.registerOrgMemoryWebMCP({
+    const registration = await runtime.registerMemoryWorksTools({
       spaces: [{ id: "prj_demo", name: "Demo", repository: "acme/demo" }],
       getActiveProjectId: () => "prj_demo",
       async ask(question, projectId, scope) {
@@ -357,19 +338,6 @@ test("the real WebMCP implementation registers, invokes, and unregisters all too
       async listIncidents(projectId, service) {
         calls.push({ kind: "incidents", projectId, service });
         return [unit({ type: "incident", subject: "payments outage" })];
-      },
-      async findRunbooks(service, issue) {
-        calls.push({ kind: "runbooks", service, issue });
-        return [
-          {
-            id: "rb_1",
-            project_id: "prj_demo",
-            key: "payments-pool",
-            title: "Payments pool exhaustion",
-            trigger: "pool saturation",
-            steps: ["check pool"],
-          },
-        ];
       },
       async getServiceContext(service) {
         calls.push({ kind: "service", service });
@@ -475,15 +443,15 @@ test("the real WebMCP implementation registers, invokes, and unregisters all too
     });
 
     assert.equal(registration.supported, true);
-    assert.equal(registration.toolCount, runtime.ORGMEMORY_WEBMCP_TOOLS.length);
+    assert.equal(registration.toolCount, runtime.MEMORYWORKS_TOOLS.length);
     // The exported list is the documented surface; registration order is an
     // implementation detail, so the two are compared as sets.
     assert.deepEqual(
       [...registered.keys()].sort(),
-      [...runtime.ORGMEMORY_WEBMCP_TOOLS].sort(),
+      [...runtime.MEMORYWORKS_TOOLS].sort(),
     );
     // The original memory-tool family must all still be there.
-    assert.deepEqual([...registered.keys()].slice(0, 21).sort(), [
+    assert.deepEqual([...registered.keys()].slice(0, 20).sort(), [
       "ask_orgmemory",
       "get_orgmemory_briefing",
       "get_orgmemory_decisions",
@@ -491,8 +459,7 @@ test("the real WebMCP implementation registers, invokes, and unregisters all too
       "get_orgmemory_incidents",
       "get_orgmemory_memory",
       "get_orgmemory_related_memories",
-      "get_orgmemory_runbook",
-      "get_orgmemory_service_context",
+        "get_orgmemory_service_context",
       "inspect_orgmemory_changes",
       "list_orgmemory_approvals",
       "list_orgmemory_proposals",
@@ -569,11 +536,6 @@ test("the real WebMCP implementation registers, invokes, and unregisters all too
       .get("get_orgmemory_incidents")
       .execute({ service: "payments" });
     assert.equal(incidents.structuredContent.incident_count, 1);
-
-    const runbook = await registered
-      .get("get_orgmemory_runbook")
-      .execute({ service: "payments", issue: "pool" });
-    assert.equal(runbook.structuredContent.runbook_count, 1);
 
     const context = await registered
       .get("get_orgmemory_service_context")
@@ -656,13 +618,12 @@ test("the real WebMCP implementation registers, invokes, and unregisters all too
     );
 
     assert.deepEqual(
-      calls.filter((call) => call.kind === "search" || call.kind === "get" || call.kind === "related" || call.kind === "incidents" || call.kind === "runbooks" || call.kind === "service" || call.kind === "decisions" || call.kind === "propose" || call.kind === "listProposals" || call.kind === "resolveProposal"),
+      calls.filter((call) => call.kind === "search" || call.kind === "get" || call.kind === "related" || call.kind === "incidents" || call.kind === "service" || call.kind === "decisions" || call.kind === "propose" || call.kind === "listProposals" || call.kind === "resolveProposal"),
       [
         { kind: "search", projectId: "", query: "payments", type: "incident", limit: 10 },
         { kind: "get", memoryId: "mem_1" },
         { kind: "related", memoryId: "mem_1" },
         { kind: "incidents", projectId: "", service: "payments" },
-        { kind: "runbooks", service: "payments", issue: "pool" },
         { kind: "service", service: "payments" },
         { kind: "decisions", projectId: "", limit: 10 },
         {
@@ -713,10 +674,6 @@ test("the real WebMCP implementation registers, invokes, and unregisters all too
     await assert.rejects(
       registered.get("search_orgmemory").execute({ query: "", type: "" }),
       /Provide a query or a memory type/,
-    );
-    await assert.rejects(
-      registered.get("get_orgmemory_runbook").execute({ service: "" }),
-      /service is required/,
     );
 
     registration.dispose();

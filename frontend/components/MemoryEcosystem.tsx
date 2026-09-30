@@ -1,4 +1,4 @@
-import { RunbookMark } from "@/components/RunbookLogo";
+import { BrandMark } from "@/components/BrandLogo";
 
 const particles = Array.from({ length: 14 }, (_, index) => index);
 
@@ -21,7 +21,7 @@ export default function MemoryEcosystem() {
       <div className="swarm-core">
         <div className="swarm-aura" aria-hidden="true"><i /><i /><i /></div>
         <div className="swarm-nucleus">
-          <RunbookMark />
+          <BrandMark />
           <small>context</small>
           <strong>SWARM</strong>
         </div>

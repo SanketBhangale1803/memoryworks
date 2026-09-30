@@ -38,6 +38,13 @@ def signed_in(monkeypatch):
     monkeypatch.setattr("app.execution.runner.is_signed_in", lambda name: True)
 
 
+@pytest.fixture(autouse=True)
+def execution_opt_in(monkeypatch):
+    """These tests exercise the runner itself, so they opt in explicitly;
+    the product default is disabled."""
+    monkeypatch.setattr(settings, "org_memory_execution_enabled", True)
+
+
 @pytest.fixture
 def origin(tmp_path):
     """A real git repository to clone, so git behaviour is never mocked."""

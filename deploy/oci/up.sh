@@ -27,7 +27,7 @@ docker compose --env-file .env.production -f compose.production.yml up -d --buil
 echo "Waiting for public HTTPS health check..."
 for _ in $(seq 1 60); do
   if curl -fsS "https://api.${PUBLIC_DOMAIN}/api/health" >/dev/null; then
-    echo "OrgMemory is live at https://app.${PUBLIC_DOMAIN}"
+    echo "MemoryWorks is live at https://app.${PUBLIC_DOMAIN}"
     echo "Remote MCP is live at https://mcp.${PUBLIC_DOMAIN}/mcp"
     exit 0
   fi

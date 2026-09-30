@@ -1,4 +1,4 @@
-"""Command-line interface for OrgMemory."""
+"""Command-line interface for MemoryWorks."""
 
 from __future__ import annotations
 
@@ -12,8 +12,8 @@ from typing import Any
 
 import httpx
 
-from .client import OrgMemory
-from .exceptions import OrgMemoryError
+from .client import MemoryWorks
+from .exceptions import MemoryWorksError
 from .models import AskResponse
 
 
@@ -34,7 +34,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--api-url",
         default=os.getenv("ORGMEMORY_API_URL", "http://localhost:8000"),
-        help="OrgMemory API URL (default: ORGMEMORY_API_URL or localhost).",
+        help="MemoryWorks API URL (default: ORGMEMORY_API_URL or localhost).",
     )
     parser.add_argument(
         "--api-key",
@@ -44,7 +44,7 @@ def build_parser() -> argparse.ArgumentParser:
     _json_flag(parser)
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    health = subparsers.add_parser("health", help="Check the OrgMemory API.")
+    health = subparsers.add_parser("health", help="Check the MemoryWorks API.")
     _json_flag(health)
 
     projects = subparsers.add_parser("projects", help="List visible projects.")
@@ -73,7 +73,7 @@ def build_parser() -> argparse.ArgumentParser:
     ask.add_argument(
         "--model",
         choices=["gpt", "claude", "gemini", "grok", "kimi"],
-        help="Model provider used after OrgMemory compiles grounded context.",
+        help="Model provider used after MemoryWorks compiles grounded context.",
     )
     _json_flag(ask)
 
@@ -147,7 +147,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _request(client: OrgMemory, args: argparse.Namespace) -> Any:
+def _request(client: MemoryWorks, args: argparse.Namespace) -> Any:
     if args.command == "health":
         return client.health()
     if args.command == "projects":
@@ -254,9 +254,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
-        with OrgMemory(base_url=args.api_url, api_key=args.api_key) as client:
+        with MemoryWorks(base_url=args.api_url, api_key=args.api_key) as client:
             result = _request(client, args)
-    except (OrgMemoryError, httpx.RequestError, OSError, UnicodeError) as exc:
+    except (MemoryWorksError, httpx.RequestError, OSError, UnicodeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 

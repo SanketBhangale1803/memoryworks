@@ -473,6 +473,16 @@ class RepositoryIngestor:
         return total, 0
 
     def _checkout(self, source: str, project_id: str) -> tuple[Path, bool]:
+        # Production accepts only remote repository URLs. A local path would
+        # let any readable directory — including host mounts — become ingested
+        # source content. Development keeps local checkouts for the ingest cache.
+        if settings.environment.casefold() == "production" and not source.startswith(
+            ("http://", "https://", "git@")
+        ):
+            raise ValueError(
+                "Local repository paths are rejected in production; "
+                "ingest from a remote repository URL"
+            )
         expanded = Path(source).expanduser()
         if expanded.exists() and expanded.is_dir():
             return expanded.resolve(), False

@@ -6,7 +6,7 @@ withholds. That is right for "why is checkout failing" and wrong for "hello" or
 than careful. This module handles the two cases where withholding is the wrong
 answer, and nothing else:
 
-* **assistant** — greetings, thanks, and questions about OrgMemory itself. Answered
+* **assistant** — greetings, thanks, and questions about MemoryWorks itself. Answered
   deterministically so they work with no model key configured.
 * **general knowledge** — questions that are not about this company at all, used
   only after company retrieval has already come back empty.
@@ -100,7 +100,7 @@ ASSISTANT_CAUSE = "Not applicable — this is a conversational reply, not a memo
 GENERAL_CAUSE = "Not applicable — this answer comes from general knowledge, not company memory."
 
 _INTRO = (
-    "I'm OrgMemory — your company's brain. I read the systems your company already "
+    "I'm MemoryWorks — your company's brain. I read the systems your company already "
     "works in (code, conversations, documents, and decisions), keep what is current, "
     "and answer questions from that memory with the sources attached."
 )
@@ -165,7 +165,7 @@ def general_knowledge_answer(
     caller falls back to the honest "not enough company memory" response.
     """
     prompt = (
-        "You are OrgMemory, a company brain. The question below is NOT about the "
+        "You are MemoryWorks, a company brain. The question below is NOT about the "
         "user's company, and company memory holds nothing relevant to it. Answer it "
         "from your own general knowledge, accurately and concisely. Do not invent "
         "anything about the user's company, their code, or their team. If you are "
@@ -217,7 +217,7 @@ def _reply(answer: str) -> dict[str, Any]:
         "trust_score": {
             "score": 1.0,
             "level": "assistant",
-            "reason": "Conversational reply about OrgMemory itself.",
+            "reason": "Conversational reply about MemoryWorks itself.",
             "factors": {},
             "contradictions": [],
         },

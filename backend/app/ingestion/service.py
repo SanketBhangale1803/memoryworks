@@ -383,11 +383,11 @@ class IngestionService:
             raise ValueError("Project not found")
         if source_type not in SUPPORTED_SOURCE_TYPES:
             raise ValueError(
-                "Unsupported memory source. OrgMemory accepts repository evidence, "
+                "Unsupported memory source. MemoryWorks accepts repository evidence, "
                 "uploaded documents, and Slack messages."
             )
         if source_id.startswith("file:prj_") and not source_id.startswith(f"file:{project_id}:"):
-            raise ValueError("Repository file belongs to a different OrgMemory project")
+            raise ValueError("Repository file belongs to a different MemoryWorks project")
         if source_type not in REPOSITORY_SOURCE_TYPES:
             return
         project_slug = self._repository_slug(str(project.get("repository") or ""))

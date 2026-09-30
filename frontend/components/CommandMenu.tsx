@@ -93,7 +93,7 @@ export default function CommandMenu({
         return;
       }
       try {
-        window.sessionStorage.setItem("orgmemory.pending-question", row.question);
+        window.sessionStorage.setItem("memoryworks.pending-question", row.question);
       } catch {
         /* The question is a convenience; navigation must happen regardless. */
       }
@@ -303,7 +303,7 @@ function AskRow({
 
 /* One listener for the whole app. Every surface that wants the menu renders
    <CommandMenu> and calls this, rather than each re-deriving the shortcut. */
-const OPEN_EVENT = "orgmemory:open-command-menu";
+const OPEN_EVENT = "memoryworks:open-command-menu";
 
 /* Opens whichever menu the current page mounted, from anywhere — the sidebar's
    search button has no menu of its own to hold. */

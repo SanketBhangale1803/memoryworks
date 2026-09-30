@@ -52,7 +52,7 @@ HIGH_RISK_TERMS = {
 class MemoryWorkService:
     """Turn company memory into a portable, approval-aware work packet.
 
-    OrgMemory owns context, evidence, and policy. A connected worker owns the
+    MemoryWorks owns context, evidence, and policy. A connected worker owns the
     actual tool loop and reports its result back through ``complete_step``.
     """
 
@@ -270,7 +270,7 @@ class MemoryWorkService:
                 4,
                 "verification",
                 "Verify outcome and remember the result",
-                "The worker reports its result and evidence so OrgMemory can retain the outcome.",
+                "The worker reports its result and evidence so MemoryWorks can retain the outcome.",
                 "waiting",
                 connector=connector,
             )
@@ -325,6 +325,7 @@ class MemoryWorkService:
             raise ValueError("This is not an approval-gated Slack step")
         if step["status"] not in {"pending_approval", "approved", "failed"}:
             raise ValueError("Slack step is not awaiting approval")
+        self._reject_self_approval(work_id, resolved_by)
         prepared = decode(step).get("input") or {}
         exact_message = (message or prepared.get("message") or "").strip()
         channel_id = channel_id.strip()
@@ -436,7 +437,7 @@ class MemoryWorkService:
         work = row("SELECT project_id FROM memory_work WHERE id=?", (work_id,)) or {}
         self.audit.record(
             "memory_work.slack_posted",
-            "Posted an approved OrgMemory message to Slack",
+            "Posted an approved MemoryWorks message to Slack",
             work.get("project_id"),
             resolved_by,
             {
@@ -463,6 +464,18 @@ class MemoryWorkService:
         item = row("SELECT * FROM memory_work WHERE id=?", (work_id,))
         return self._hydrate(item, include_context=True) if item else None
 
+    @staticmethod
+    def _reject_self_approval(work_id: str, resolved_by: str) -> None:
+        """The requester of an external action cannot approve it.
+
+        Containment compares the stored requester label with the approving
+        identity; server-derived principal IDs replace this in the
+        authorization workstream.
+        """
+        work = row("SELECT requested_by FROM memory_work WHERE id=?", (work_id,))
+        if work and resolved_by and (work["requested_by"] or "") == resolved_by:
+            raise ValueError("The principal that requested this work cannot approve it")
+
     def resolve_step(
         self, work_id: str, step_id: str, approved: bool, resolved_by: str
     ) -> dict[str, Any]:
@@ -474,6 +487,7 @@ class MemoryWorkService:
             raise ValueError("Work step not found")
         if not step["approval_required"] or step["status"] != "pending_approval":
             raise ValueError("Work step is not awaiting approval")
+        self._reject_self_approval(work_id, resolved_by)
         step_status = "approved" if approved else "denied"
         work_status = "ready_for_worker" if approved else "completed_draft_only"
         now = utcnow()
@@ -567,7 +581,7 @@ class MemoryWorkService:
             "## Worker contract\n\n"
             "- Use only the supplied context envelope and authorized connectors.\n"
             "- Ask for approval before any external write or command.\n"
-            "- Report the final result and exact evidence back to OrgMemory.\n"
+            "- Report the final result and exact evidence back to MemoryWorks.\n"
         )
         return self.brain.save_artifact(
             project_id,
@@ -624,7 +638,7 @@ class MemoryWorkService:
                 "constraints": [
                     "Use only authorized source-backed company context.",
                     "Do not perform consequential actions without approval.",
-                    "Return the execution result and evidence to OrgMemory.",
+                    "Return the execution result and evidence to MemoryWorks.",
                 ],
             }
         return payload
@@ -791,7 +805,7 @@ class MemoryWorkService:
         summary = "\n".join(f"• {claim}" for claim in claims)
         if not summary:
             summary = (
-                "• OrgMemory did not find enough current company memory to summarize "
+                "• MemoryWorks did not find enough current company memory to summarize "
                 "this update confidently."
             )
         gaps = ""
@@ -825,7 +839,7 @@ class MemoryWorkService:
             sources.append(f"• <{url}|{title}>" if url else f"• {title}")
         source_block = "\n".join(sources) if sources else "• No source link available"
         return (
-            "*OrgMemory project update*\n\n"
+            "*MemoryWorks project update*\n\n"
             f"{summary}"
             f"{gaps}\n\n"
             "*Source evidence*\n"

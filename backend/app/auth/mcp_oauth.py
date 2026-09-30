@@ -300,7 +300,7 @@ def exchange_mcp_token(
             )
     else:
         # Service/client-credential grants are intentionally unsupported: every
-        # MCP identity must resolve to a delegated OrgMemory user.
+        # MCP identity must resolve to a delegated MemoryWorks user.
         raise HTTPException(400, "unsupported_grant_type")
 
     access_token, expires_in = issue_access_token(

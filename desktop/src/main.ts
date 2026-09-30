@@ -35,18 +35,18 @@ async function refresh() {
     const jobs = await cloud("/api/connector-sync-jobs");
     const approvals = await cloud("/api/connector-tool-calls?status=pending_approval");
     status.textContent = `Signed in as ${me.email} · ${jobs.filter((job: any) => ["queued", "running", "retrying"].includes(job.status)).length} sync jobs · ${approvals.length} approvals`;
-    if (approvals.length) await notify("OrgMemory approval required", `${approvals.length} connector action${approvals.length === 1 ? "" : "s"} waiting.`);
+    if (approvals.length) await notify("MemoryWorks approval required", `${approvals.length} connector action${approvals.length === 1 ? "" : "s"} waiting.`);
   } catch (error) { status.textContent = error instanceof Error ? error.message : String(error); }
 }
 
 document.querySelector<HTMLElement>("#app")!.innerHTML = `
-  <header><div class="mark">OM</div><div><strong>OrgMemory Bridge</strong><span>Thin local access. Cloud intelligence.</span></div></header>
+  <header><div class="mark">OM</div><div><strong>MemoryWorks Bridge</strong><span>Thin local access. Cloud intelligence.</span></div></header>
   <section><h1>Local connector bridge</h1><p id="status">Not signed in</p><div class="actions"><button id="signin">Save session</button><button id="folder">Choose folder</button><button id="mcp">Start local MCP</button></div></section>
   <section class="grid"><article><small>Folders & apps</small><strong id="folder-path">No folder shared</strong><p>Only paths you explicitly choose are exposed to the local extension.</p></article><article><small>Private network</small><label><input id="endpoint" placeholder="http://service.internal/health"/><button id="probe">Test</button></label><p id="probe-result">Runs from this device, never from the cloud gateway.</p></article></section>
   <footer><span>Tokens: OS keychain</span><span>Updates: signed</span><span>Writes: cloud approval</span></footer>`;
 
 document.querySelector("#signin")!.addEventListener("click", async () => {
-  const token = window.prompt("Paste a revocable OrgMemory session or workspace key. It will be stored in the OS keychain.");
+  const token = window.prompt("Paste a revocable MemoryWorks session or workspace key. It will be stored in the OS keychain.");
   if (!token) return;
   await invoke("store_secret", { service: "orgmemory", account: "session", secret: token.trim() });
   await refresh();
@@ -74,7 +74,7 @@ document.querySelector("#probe")!.addEventListener("click", async () => {
 });
 
 check().then(async (update) => {
-  if (update && window.confirm(`Install signed OrgMemory update ${update.version}?`)) await update.downloadAndInstall();
+  if (update && window.confirm(`Install signed MemoryWorks update ${update.version}?`)) await update.downloadAndInstall();
 }).catch(() => undefined);
 refresh();
 window.setInterval(refresh, 30_000);

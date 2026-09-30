@@ -1,16 +1,51 @@
 from __future__ import annotations
 
+import os
+import warnings
 from pathlib import Path
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ROOT = Path(__file__).resolve().parents[3]
 
 
-class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=ROOT / ".env", extra="ignore")
+LEGACY_ENVIRONMENT_NAMES = {
+    "RUNBOOK_EMBEDDING_PROVIDER": "ORGMEMORY_EMBEDDING_PROVIDER",
+    "RUNBOOK_EMBEDDING_MODEL": "ORGMEMORY_EMBEDDING_MODEL",
+    "RUNBOOK_OPENAI_EMBEDDING_MODEL": "ORGMEMORY_OPENAI_EMBEDDING_MODEL",
+    "RUNBOOK_RERANKER_PROVIDER": "ORGMEMORY_RERANKER_PROVIDER",
+    "RUNBOOK_RERANKER_MODEL": "ORGMEMORY_RERANKER_MODEL",
+    "RUNBOOK_EMBEDDING_CACHE_DIR": "ORGMEMORY_EMBEDDING_CACHE_DIR",
+    "RUNBOOK_SEMANTIC_CANDIDATE_LIMIT": "ORGMEMORY_SEMANTIC_CANDIDATE_LIMIT",
+    "RUNBOOK_EMBEDDING_BATCH_SIZE": "ORGMEMORY_EMBEDDING_BATCH_SIZE",
+    "RUNBOOK_MODEL_THREADS": "ORGMEMORY_MODEL_THREADS",
+    "RUNBOOK_DEMO_MODE": "ORGMEMORY_DEMO_MODE",
+    "MCP_PUBLIC_URL": "ORGMEMORY_MCP_PUBLIC_URL",
+    "MCP_OAUTH_ISSUER_URL": "ORGMEMORY_MCP_OAUTH_ISSUER_URL",
+    "MCP_OAUTH_ACCESS_TOKEN_MINUTES": "ORGMEMORY_MCP_OAUTH_ACCESS_TOKEN_MINUTES",
+    "MCP_OAUTH_REFRESH_TOKEN_DAYS": "ORGMEMORY_MCP_OAUTH_REFRESH_TOKEN_DAYS",
+    "MCP_OAUTH_ENABLE_DCR": "ORGMEMORY_MCP_OAUTH_ENABLE_DCR",
+}
 
-    app_name: str = "OrgMemory"
+
+def _warn_for_legacy_environment() -> None:
+    for legacy, replacement in LEGACY_ENVIRONMENT_NAMES.items():
+        if legacy in os.environ and replacement not in os.environ:
+            warnings.warn(
+                f"{legacy} is deprecated; use {replacement}",
+                FutureWarning,
+                stacklevel=2,
+            )
+
+
+_warn_for_legacy_environment()
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=ROOT / ".env", extra="ignore", populate_by_name=True)
+
+    app_name: str = "MemoryWorks"
     environment: str = "development"
     log_level: str = "INFO"
     api_url: str = "http://localhost:8000"
@@ -19,6 +54,7 @@ class Settings(BaseSettings):
     # OAuth and redirect layer derives it from the incoming request's
     # forwarded headers, so a hosted deployment needs no baked-in domain.
     public_base_url: str = ""
+    # Persisted storage names remain stable during the product-name migration.
     sqlite_path: Path = ROOT / "data" / "runbook.db"
     generated_runbooks_dir: Path = ROOT / "generated_runbooks"
     repo_cache_dir: Path = ROOT / "data" / "repos"
@@ -61,20 +97,89 @@ class Settings(BaseSettings):
     # Autonomous execution. `executor` picks which headless coding agent applies
     # a handoff. Pushing is a separate switch because committing to a throwaway
     # local clone is reversible and publishing to a shared remote is not.
+    # Disabled by default: the runner is not sandboxed, so enabling it outside
+    # the isolated-executor profile is a deliberate, explicit decision.
     org_memory_executor: str = "cursor"
-    org_memory_execution_enabled: bool = True
+    org_memory_execution_enabled: bool = False
+    # Containment opt-in for deployments that provide their own disposable,
+    # resource-limited worker. Normal production startup refuses execution
+    # without it.
+    org_memory_execution_isolated_profile: bool = False
     org_memory_execution_timeout_seconds: int = 900
     org_memory_execution_allow_push: bool = False
     org_memory_execution_branch_prefix: str = "orgmemory/"
-    runbook_embedding_provider: str = "deterministic"
-    runbook_embedding_model: str = "BAAI/bge-small-en-v1.5"
-    runbook_openai_embedding_model: str = "text-embedding-3-large"
-    runbook_reranker_provider: str = "deterministic"
-    runbook_reranker_model: str = "Xenova/ms-marco-MiniLM-L-6-v2"
-    runbook_embedding_cache_dir: Path = ROOT / "data" / "models"
-    runbook_semantic_candidate_limit: int = 48
-    runbook_embedding_batch_size: int = 16
-    runbook_model_threads: int = 2
+    runbook_embedding_provider: str = Field(
+        default="deterministic",
+        validation_alias=AliasChoices(
+            "ORGMEMORY_EMBEDDING_PROVIDER",
+            "RUNBOOK_EMBEDDING_PROVIDER",
+            "runbook_embedding_provider",
+        ),
+    )
+    runbook_embedding_model: str = Field(
+        default="BAAI/bge-small-en-v1.5",
+        validation_alias=AliasChoices(
+            "ORGMEMORY_EMBEDDING_MODEL",
+            "RUNBOOK_EMBEDDING_MODEL",
+            "runbook_embedding_model",
+        ),
+    )
+    runbook_openai_embedding_model: str = Field(
+        default="text-embedding-3-large",
+        validation_alias=AliasChoices(
+            "ORGMEMORY_OPENAI_EMBEDDING_MODEL",
+            "RUNBOOK_OPENAI_EMBEDDING_MODEL",
+            "runbook_openai_embedding_model",
+        ),
+    )
+    runbook_reranker_provider: str = Field(
+        default="deterministic",
+        validation_alias=AliasChoices(
+            "ORGMEMORY_RERANKER_PROVIDER",
+            "RUNBOOK_RERANKER_PROVIDER",
+            "runbook_reranker_provider",
+        ),
+    )
+    runbook_reranker_model: str = Field(
+        default="Xenova/ms-marco-MiniLM-L-6-v2",
+        validation_alias=AliasChoices(
+            "ORGMEMORY_RERANKER_MODEL",
+            "RUNBOOK_RERANKER_MODEL",
+            "runbook_reranker_model",
+        ),
+    )
+    runbook_embedding_cache_dir: Path = Field(
+        default=ROOT / "data" / "models",
+        validation_alias=AliasChoices(
+            "ORGMEMORY_EMBEDDING_CACHE_DIR",
+            "RUNBOOK_EMBEDDING_CACHE_DIR",
+            "runbook_embedding_cache_dir",
+        ),
+    )
+    runbook_semantic_candidate_limit: int = Field(
+        default=48,
+        validation_alias=AliasChoices(
+            "ORGMEMORY_SEMANTIC_CANDIDATE_LIMIT",
+            "RUNBOOK_SEMANTIC_CANDIDATE_LIMIT",
+            "runbook_semantic_candidate_limit",
+        ),
+    )
+    runbook_embedding_batch_size: int = Field(
+        default=16,
+        validation_alias=AliasChoices(
+            "ORGMEMORY_EMBEDDING_BATCH_SIZE",
+            "RUNBOOK_EMBEDDING_BATCH_SIZE",
+            "runbook_embedding_batch_size",
+        ),
+    )
+    runbook_model_threads: int = Field(
+        default=2,
+        validation_alias=AliasChoices(
+            "ORGMEMORY_MODEL_THREADS",
+            "RUNBOOK_MODEL_THREADS",
+            "runbook_model_threads",
+        ),
+    )
     assertion_auto_verify_enabled: bool = True
     assertion_auto_verify_days: int = 7
 
@@ -112,11 +217,44 @@ class Settings(BaseSettings):
     api_rate_limit_per_minute: int = 600
     api_rate_limit_public_per_minute: int = 120
 
-    mcp_public_url: str = "http://localhost:8001"
-    mcp_oauth_issuer_url: str = "http://localhost:8000"
-    mcp_oauth_access_token_minutes: int = 60
-    mcp_oauth_refresh_token_days: int = 30
-    mcp_oauth_enable_dcr: bool = False
+    mcp_public_url: str = Field(
+        default="http://localhost:8001",
+        validation_alias=AliasChoices(
+            "ORGMEMORY_MCP_PUBLIC_URL", "MCP_PUBLIC_URL", "mcp_public_url"
+        ),
+    )
+    mcp_oauth_issuer_url: str = Field(
+        default="http://localhost:8000",
+        validation_alias=AliasChoices(
+            "ORGMEMORY_MCP_OAUTH_ISSUER_URL",
+            "MCP_OAUTH_ISSUER_URL",
+            "mcp_oauth_issuer_url",
+        ),
+    )
+    mcp_oauth_access_token_minutes: int = Field(
+        default=60,
+        validation_alias=AliasChoices(
+            "ORGMEMORY_MCP_OAUTH_ACCESS_TOKEN_MINUTES",
+            "MCP_OAUTH_ACCESS_TOKEN_MINUTES",
+            "mcp_oauth_access_token_minutes",
+        ),
+    )
+    mcp_oauth_refresh_token_days: int = Field(
+        default=30,
+        validation_alias=AliasChoices(
+            "ORGMEMORY_MCP_OAUTH_REFRESH_TOKEN_DAYS",
+            "MCP_OAUTH_REFRESH_TOKEN_DAYS",
+            "mcp_oauth_refresh_token_days",
+        ),
+    )
+    mcp_oauth_enable_dcr: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "ORGMEMORY_MCP_OAUTH_ENABLE_DCR",
+            "MCP_OAUTH_ENABLE_DCR",
+            "mcp_oauth_enable_dcr",
+        ),
+    )
 
     google_client_id: str = ""
     google_client_secret: str = ""
@@ -134,17 +272,29 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     smtp_starttls: bool = True
     nextauth_secret: str = ""
-    jwt_secret: str = "runbook-local-dev-secret"
+    jwt_secret: str = "orgmemory-local-dev-secret"
     app_base_url: str = "http://localhost:3000"
     auth_dev_mode: bool = True
     # Credential-free, isolated access for the hosted challenge demo. Unlike
     # AUTH_DEV_MODE, this profile still runs with production cookie/security
     # behavior and refuses to start if connectors or execution are enabled.
     public_demo_mode: bool = False
-    session_cookie_name: str = "runbook_session"
+    session_cookie_name: str = Field(
+        default="orgmemory_session",
+        validation_alias=AliasChoices(
+            "ORGMEMORY_SESSION_COOKIE_NAME",
+            "SESSION_COOKIE_NAME",
+            "session_cookie_name",
+        ),
+    )
     session_cookie_domain: str = ""
 
-    runbook_demo_mode: bool = False
+    runbook_demo_mode: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "ORGMEMORY_DEMO_MODE", "RUNBOOK_DEMO_MODE", "runbook_demo_mode"
+        ),
+    )
     allow_local_command_execution: bool = False
     org_memory_enable_actions: bool = False
     org_memory_enable_procedures: bool = False
@@ -172,7 +322,7 @@ class Settings(BaseSettings):
             if self.graph_backend.casefold() != "memory":
                 faults.append("GRAPH_BACKEND must be memory in the public demo")
             if not self.runbook_demo_mode:
-                faults.append("RUNBOOK_DEMO_MODE must be true in the public demo")
+                faults.append("ORGMEMORY_DEMO_MODE must be true in the public demo")
             if self.allow_local_command_execution or self.org_memory_execution_enabled:
                 faults.append("All command and agent execution must be disabled in the public demo")
             if self.connector_sync_worker_enabled or self.connector_custom_mcp_enabled:
@@ -183,7 +333,7 @@ class Settings(BaseSettings):
                 )
             if not self.frontend_url.startswith("https://"):
                 faults.append("FRONTEND_URL must use HTTPS")
-            if self.jwt_secret == "runbook-local-dev-secret" or len(self.jwt_secret) < 32:
+            if self.jwt_secret == "orgmemory-local-dev-secret" or len(self.jwt_secret) < 32:
                 faults.append("JWT_SECRET must be a non-default secret of at least 32 characters")
             if not self.mcp_public_url.startswith("https://"):
                 faults.append("MCP_PUBLIC_URL must use HTTPS")
@@ -194,12 +344,22 @@ class Settings(BaseSettings):
             return
         if self.auth_dev_mode:
             faults.append("AUTH_DEV_MODE must be false")
-        if self.jwt_secret == "runbook-local-dev-secret" or len(self.jwt_secret) < 32:
+        if self.jwt_secret == "orgmemory-local-dev-secret" or len(self.jwt_secret) < 32:
             faults.append("JWT_SECRET must be a non-default secret of at least 32 characters")
         if self.runbook_demo_mode:
-            faults.append("RUNBOOK_DEMO_MODE must be false")
+            faults.append("ORGMEMORY_DEMO_MODE must be false")
         if self.allow_local_command_execution:
             faults.append("ALLOW_LOCAL_COMMAND_EXECUTION must remain false")
+        if self.org_memory_execution_enabled and not self.org_memory_execution_isolated_profile:
+            faults.append(
+                "Autonomous execution must stay disabled in production unless "
+                "ORGMEMORY_EXECUTION_ISOLATED_PROFILE is explicitly true"
+            )
+        if self.graph_backend.casefold() != "memory" and self.arcadedb_password in {
+            "",
+            "runbook_dev_password",
+        }:
+            faults.append("ARCADEDB_PASSWORD must be set to a non-default value")
         if not self.frontend_url.startswith("https://"):
             faults.append("FRONTEND_URL must use HTTPS")
         if not (
@@ -216,7 +376,7 @@ class Settings(BaseSettings):
                 "must be configured"
             )
         if self.runbook_embedding_provider.casefold() == "deterministic":
-            faults.append("RUNBOOK_EMBEDDING_PROVIDER must use fastembed or openai")
+            faults.append("ORGMEMORY_EMBEDDING_PROVIDER must use fastembed or openai")
         vault_provider = self.connector_vault_provider.casefold()
         if vault_provider not in {"aws-kms", "oci-kms"} or not self.connector_kms_key_id:
             faults.append(

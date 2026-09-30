@@ -1,6 +1,6 @@
-# OrgMemory Python SDK
+# MemoryWorks Python SDK
 
-Typed Python access to OrgMemory's source-backed organizational memory, plus the
+Typed Python access to MemoryWorks's source-backed organizational memory, plus the
 `orgmemory` command-line interface.
 
 ## Install
@@ -14,9 +14,9 @@ python -m pip install -e ./python_sdk
 ## Python
 
 ```python
-from orgmemory import OrgMemory
+from orgmemory import MemoryWorks
 
-memory = OrgMemory(
+memory = MemoryWorks(
     base_url="http://localhost:8000",
     api_key="om_live_...",
 )
@@ -29,10 +29,28 @@ context = memory.ask(
 
 print(context.answer)
 print(context.compiled_context)
+
+briefing = memory.get_briefing(
+    task="Change the checkout deployment workflow",
+    service="checkout",
+    project_id="prj_platform",
+    surface="ci-agent",
+)
+
+# Apply the briefing's constraints and use your own approval system when its
+# verdict is requires_approval. Then close the durable outcome loop.
+receipt = memory.record_briefing_outcome(
+    briefing_id=briefing.briefing_id,
+    action="deployment_workflow_changed",
+    outcome="succeeded",
+    target=".github/workflows/deploy.yml",
+    surface="ci-agent",
+)
+print(receipt.status)
 ```
 
 The client also reads `ORGMEMORY_API_URL` and `ORGMEMORY_API_KEY`. Use
-`AsyncOrgMemory` in asynchronous applications.
+`AsyncMemoryWorks` in asynchronous applications.
 
 ## CLI
 

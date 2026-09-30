@@ -166,7 +166,7 @@ def _openai_compatible(provider: ModelProvider, prompt: str) -> str:
         headers.update(
             {
                 "HTTP-Referer": settings.frontend_url,
-                "X-OpenRouter-Title": "OrgMemory",
+                "X-OpenRouter-Title": "MemoryWorks",
             }
         )
     response = httpx.post(

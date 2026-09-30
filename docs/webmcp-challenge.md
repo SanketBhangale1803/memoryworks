@@ -1,6 +1,6 @@
 # WebMCP Challenge implementation record
 
-OrgMemory existed before the WebMCP Challenge. This record separates the stable
+MemoryWorks existed before the WebMCP Challenge. This record separates the stable
 product baseline from the browser-native work added during the challenge.
 
 ## Pre-challenge baseline
@@ -13,7 +13,7 @@ product baseline from the browser-native work added during the challenge.
   Black, TypeScript, the Next.js production build, Docker health, and ArcadeDB
   graph checks passed.
 
-Before the challenge, OrgMemory already provided source-backed organizational
+Before the challenge, MemoryWorks already provided source-backed organizational
 memory, permission-scoped retrieval, an authenticated Next.js workspace, REST
 and Python clients, and a separate HTTP/stdio MCP server. That MCP server did
 not expose tools from the web page through `document.modelContext`.
@@ -96,10 +96,10 @@ Browser agent hears: "Why is the payments service failing again?"
 
 The `/webmcp` page walks this exact flow against a live workspace, including
 the explicit human approval of the proposed incident, and doubles as the
-explanation surface for what OrgMemory is for.
+explanation surface for what MemoryWorks is for.
 
 The implementation remains in `frontend/lib/webmcp.ts`, with lifecycle
-management in `frontend/hooks/useOrgMemoryWebMCP.ts`, the human-agent
+management in `frontend/hooks/useMemoryWorksWebMCP.ts`, the human-agent
 interaction surfaces in `frontend/components/WorkspaceChat.tsx` (proposals now
 ride the same inline inbox as refresh requests), and the demo in
 `frontend/components/WebMCPDemo.tsx`.
@@ -252,18 +252,18 @@ immediately, because the page loses its title.
 
 ## Judge walkthrough
 
-Open the live OrgMemory workspace in ChatGPT's in-app browser or Chrome with
+Open the live MemoryWorks workspace in ChatGPT's in-app browser or Chrome with
 WebMCP enabled, then ask the browser agent:
 
-1. "What OrgMemory spaces can I access?"
-2. "Using OrgMemory, what previous incidents do you remember for the payments
+1. "What MemoryWorks spaces can I access?"
+2. "Using MemoryWorks, what previous incidents do you remember for the payments
    service?" — the agent should call `get_orgmemory_incidents` and report the
    remembered incidents with their evidence counts.
 3. "Before proposing a fix, get the service context and dependencies for
    payments, and check what was already decided." — the agent should combine
    `get_orgmemory_service_context`, `get_orgmemory_dependencies`, and
    `get_orgmemory_decisions` instead of clicking through the UI.
-4. "Ask OrgMemory what I should know before editing this service."
+4. "Ask MemoryWorks what I should know before editing this service."
 5. Record verified knowledge: "Propose an incident memory saying the diagnosis
    was confirmed as connection-pool exhaustion." The agent must report a pending
    proposal — nothing is saved — and the proposal appears inline in the
@@ -280,5 +280,5 @@ incident for you to approve.
 
 The agent should discover the page tools, use the project IDs returned by
 `list_orgmemory_spaces`, and place source-backed answers in both its response
-and the visible OrgMemory conversation. The write-capable tools must never
+and the visible MemoryWorks conversation. The write-capable tools must never
 bypass the human approval boundary.

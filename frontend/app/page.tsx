@@ -1,91 +1,50 @@
 import Link from "next/link";
 import HomeCommandOrb from "@/components/HomeCommandOrb";
-import { RunbookMark } from "@/components/RunbookLogo";
+import TraceField from "@/components/TraceField";
+import MemoryPhotoStudy from "@/components/MemoryPhotoStudy";
 import { ORG_READ_TOOLS, ORG_TOOL_NAMES, ORG_WRITE_TOOLS } from "@/lib/orgTools";
+import "./trace.css";
 
-/* The landing page names the vertical in the first two lines.
-   "Organizational memory" describes a category and sells to nobody. Engineering
-   organizations are who this is actually built for — the nouns throughout the
-   product are services, incidents, deploys, owners, and decisions — and saying
-   so is what separates a product from a demo of a technique. */
+function Mark() { return <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M2 26V6h7v14h7V6h7v14h7v6H16v-6H9v6Z" fill="currentColor" /></svg>; }
 
 export default function HomePage() {
-  return (
-    <main className="orgmemory-entry">
-      <header className="entry-nav">
-        <Link href="/" className="entry-brand" aria-label="OrgMemory home">
-          <RunbookMark />
-          <span>OrgMemory</span>
-        </Link>
-        <nav aria-label="Public navigation">
-          <Link href="/webmcp">WebMCP</Link>
-          <Link href="/docs">Docs</Link>
-          <Link href="/login" className="entry-login">Log in</Link>
-        </nav>
-      </header>
+  return <main className="trace-home" id="top">
+    <a className="trace-skip" href="#main-content">Skip to content</a>
+    <header className="trace-nav">
+      <Link href="/" className="trace-brand" aria-label="MemoryWorks home"><Mark />memoryworks</Link>
+      <nav aria-label="Public navigation"><a href="#how">The approach</a><Link href="/docs">Docs ↗</Link></nav>
+      <Link href="/login" className="trace-login">Log in <span>↗</span></Link>
+    </header>
 
-      <section className="entry-hero">
-        <div className="entry-signal">
-          <i />
-          The memory layer for engineering organizations
+    <section className="trace-hero" id="main-content" data-memory-stage="0">
+      <div className="trace-hero-label"><span className="trace-cross">✳</span><span>The memory layer for engineering organizations</span><span>01 / A LIVING RECORD</span></div>
+      <div className="trace-hero-composition">
+        <div className="trace-hero-content">
+          <h1>Memory leaves<br />a <em>trace.</em></h1>
+          <div className="trace-hero-bottom"><div><h2>Give every engineering change its full company context.</h2><p>Incidents, decisions, owners, and dependencies. MemoryWorks connects what your team knows to the people and AI agents about to act.</p><Link href="/login" className="trace-button">Open workspace <span>↗</span></Link><a className="trace-text-link" href="#how">Follow the trace ↓</a></div></div>
+          <div className="trace-hero-footnote"><span>SCATTER / CONNECT / RECALL</span><span aria-hidden="true">↳</span></div>
         </div>
-        <h1>Give every engineering change its full company context.</h1>
-        <p>
-          OrgMemory brings together incidents, decisions, dependencies, owners, and runbooks—with
-          evidence—so people and AI agents can check what matters before they act.
-        </p>
-        <HomeCommandOrb />
-        <Link href="/webmcp" className="entry-webmcp-status">
-          <span><i /> WebMCP ready</span>
-          {/* Counts must match what the authenticated page actually registers
-              (ORG_TOOLS — the same source /webmcp reports); the marketing
-              catalog is a larger superset and would overstate the live surface. */}
-          <small>{ORG_TOOL_NAMES.length} tools · {ORG_READ_TOOLS.length} read-only · {ORG_WRITE_TOOLS.length} human-governed</small>
-          <b aria-hidden="true">→</b>
-        </Link>
-      </section>
+        <MemoryPhotoStudy />
+      </div>
+    </section>
 
-      <section className="entry-proof" aria-label="How OrgMemory works">
-        <article>
-          <span>01 / remember</span>
-          <h2>Incidents, decisions, and owners stay tied to evidence.</h2>
-          <p>
-            Code, postmortems, threads, and docs become one time-aware memory graph. Every
-            promoted fact cites a source; anything uncertain stays a searchable chunk.
-          </p>
-        </article>
-        <article>
-          <span>02 / brief</span>
-          <h2>Agents get briefed before they act, not after.</h2>
-          <p>
-            An agent about to touch a service asks what this company knows first, and gets back
-            the decisions that constrain it, the incidents that started the same way, and the
-            blast radius — anywhere on the web, through WebMCP.
-          </p>
-        </article>
-        <article>
-          <span>03 / govern</span>
-          <h2>Agents investigate. People authorize.</h2>
-          <p>
-            Reads move at machine speed. Anything that would change company memory enters a
-            scoped approval queue and waits for a person. Capability is never authorization.
-          </p>
-        </article>
-        <article>
-          <span>04 / compound</span>
-          <h2>Every answer is scored by what happened next.</h2>
-          <p>
-            Context served, action taken, outcome observed. The record of which context actually
-            produced correct action is the one asset a better model cannot copy.
-          </p>
-        </article>
-      </section>
+    <div className="trace-context-strip" aria-label="From sources to useful company context"><span>GitHub / Slack / Files</span><span aria-hidden="true">↳</span><strong>What your team knows.<br />Ready for what comes next.</strong><a href="#how">See the connections ↓</a></div>
 
-      <footer className="entry-footer">
-        <span>OrgMemory</span>
-        <p>Source-backed memory for every teammate and agent.</p>
-        <div><Link href="/docs">Documentation</Link><Link href="/login">Enter workspace</Link></div>
-      </footer>
-    </main>
-  );
+    <div className="trace-narrative" id="how">
+      <aside className="trace-visual"><TraceField /></aside>
+      <div className="trace-chapters">
+        <section className="trace-chapter" data-memory-stage="0"><span className="trace-kicker">01 / GATHER THE FRAGMENTS</span><h2>The answer is<br />already somewhere.</h2><p>In the incident report. In a decision buried in a thread. In the person who remembers why.</p><p>Bring code, postmortems, conversations, and docs into one time-aware memory graph.</p><div className="trace-source-list"><span>GitHub <b>↘</b></span><span>Slack <b>↘</b></span><span>Files &amp; exports <b>↘</b></span></div><small>Incidents, decisions, and owners stay tied to evidence.</small></section>
+        <section className="trace-chapter" data-memory-stage="1"><span className="trace-kicker">02 / MAKE THE CONNECTION</span><h2>Keep the knowledge.<br />Keep the why.</h2><p>A fact becomes useful when you can see where it came from and what it affects. Promoted facts cite their sources; uncertain information stays searchable.</p><div className="trace-evidence"><span>DECISION</span><strong>Retry policy</strong><span>↳ SOURCE</span><strong>Incident postmortem</strong><span>↳ RELATIONSHIP</span><strong>Service · owner · dependency</strong></div><small>Illustrative relationships, not live workspace data.</small></section>
+        <section className="trace-chapter" data-memory-stage="2"><span className="trace-kicker">03 / RECALL WHAT MATTERS</span><h2>A better place<br />to begin.</h2><p>Agents get briefed before they act. Retrieve the relevant decisions, constraints, prior incidents, and dependencies before changing a service.</p><p>Context served, action taken, outcome observed. Record what happened so the next decision has more to work with.</p><Link href="/docs" className="trace-text-link">Explore source-backed briefings ↗</Link><div className="trace-agents">For people. And the agents alongside them.<br /><strong>Cursor / Claude / Codex / VS Code</strong></div></section>
+      </div>
+    </div>
+
+    <section className="trace-photo-section">
+      <figure className="trace-photo"><svg viewBox="0 0 1200 700" role="img" aria-label="Sunlight traces a path through a dense forest, rendered in black and ivory."><defs><filter id="two-ink-photo" colorInterpolationFilters="sRGB"><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncR type="discrete" tableValues="0 1"/><feFuncG type="discrete" tableValues="0 1"/><feFuncB type="discrete" tableValues="0 1"/></feComponentTransfer><feColorMatrix type="matrix" values=".9176 0 0 0 .03137 0 .9059 0 0 .03137 0 0 .8784 0 .03137 0 0 0 1 0"/></filter></defs><image href="/memoryworks/forest.jpg" width="1200" height="700" preserveAspectRatio="xMidYMid slice" filter="url(#two-ink-photo)"/></svg><figcaption><span>FIELD NOTE / 001</span><span>Nothing grows in isolation.</span><a href="https://images.unsplash.com/photo-1441974231531-c6227db76b6e" aria-label="Photography source on Unsplash">Photography / Unsplash ↗</a></figcaption></figure>
+      <div className="trace-photo-copy"><span className="trace-kicker">CONNECTED, WITH INTENTION</span><h2>More context.<br />Human control.</h2><p>Agents investigate. People authorize. Changes to company memory enter a scoped approval queue for a person to review.</p><Link href="/login" className="trace-text-link">See it in your workspace ↗</Link><p className="trace-tool-count">{ORG_TOOL_NAMES.length} agent tools / {ORG_READ_TOOLS.length} read-only / {ORG_WRITE_TOOLS.length} human-governed</p></div>
+    </section>
+
+    <section className="trace-ask"><div><span className="trace-kicker">START WITH A QUESTION</span><h2>What does your<br />team already know?</h2><p>Bring a question into your workspace. Follow the evidence from there.</p></div><HomeCommandOrb /></section>
+    <footer className="trace-footer"><div><Link href="/" className="trace-brand"><Mark />memoryworks</Link><p>Source-backed memory.<br />For whatever comes next.</p></div><div><Link href="/docs">Documentation ↗</Link><Link href="/login">Enter workspace ↗</Link></div><a href="#top" className="trace-back">Back to the beginning ↑</a><div className="trace-footer-wordmark" aria-hidden="true">memoryworks<span>↳</span></div><div className="trace-footer-bottom"><span>MEMORY LEAVES A TRACE.</span><span>KEEP WHAT MATTERS. ↳</span></div></footer>
+  </main>;
 }

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import Page from "@/components/Page";
 import GitHubIcon from "@/components/icons/GitHubIcon";
-import { api } from "@/lib/api";
+import { API, api } from "@/lib/api";
 
 type SourceKind = "paste" | "github" | "slack" | "website" | "files";
 
@@ -24,7 +24,6 @@ export default function Ingest() {
   const [repositories, setRepositories] = useState<any[]>([]);
   const [channels, setChannels] = useState<any[]>([]);
   const [connections, setConnections] = useState<any[]>([]);
-  const [catalog, setCatalog] = useState<any[]>([]);
   const [teams, setTeams] = useState<any[]>([]);
   const [project, setProject] = useState("__new__");
   const [newProject, setNewProject] = useState("Company memory");
@@ -61,7 +60,6 @@ export default function Ingest() {
       if (items[0]) setProject(items[0].id);
     });
     api<any[]>("/api/connectors").then(setConnections);
-    api<any[]>("/api/connectors/catalog").then(setCatalog).catch(() => undefined);
     api<{result?: {repositories?: any[]}}>("/api/connectors/github/tools/list_repositories", {
       method: "POST",
       body: JSON.stringify({arguments: {}}),
@@ -179,7 +177,7 @@ export default function Ingest() {
           : Boolean(channel && (project !== "__new__" || newProject.trim()));
   const memoryCount = result?.memory_units_created ?? result?.memory_unit_ids?.length ?? 0;
 
-  return <Page eyebrow="Integrations" title="Upload & import" description="Choose a source. OrgMemory handles chunking, memory extraction, relationships, and indexing automatically.">
+  return <Page title="Add knowledge" description="Pick what MemoryWorks should remember. It reads it, links it, and keeps it tied to the source.">
     <section className="memory-builder">
       <div className="builder-progress" aria-label="Memory creation progress">
         <span className="active"><i>1</i>Choose</span><b/><span className={busy || result ? "active" : ""}><i>2</i>Remember</span><b/><span className={result ? "active" : ""}><i>3</i>Ask</span>
@@ -194,11 +192,6 @@ export default function Ingest() {
           </button>)}
         </div>
 
-        <div className="ingest-ecosystem-strip">
-          <div><strong>Company-wide source map</strong><span>Live sources can be selected above. Upcoming adapters remain visible without pretending they are connected.</span></div>
-          <div>{catalog.filter(item => item.role !== "delivery").map(item => <span key={item.provider} className={item.status}><i>{item.label.split(/\s+/).map((part:string)=>part[0]).join("").slice(0,2)}</i>{item.label}<em>{item.status === "live" ? "live" : item.status === "next" ? "next" : "planned"}</em></span>)}</div>
-          <Link href="/connectors">Manage sources →</Link>
-        </div>
 
         <div className="builder-card">
           {kind === "paste" && <div className="quick-memory-form">
@@ -209,7 +202,7 @@ export default function Ingest() {
 
           {kind === "website" && <div className="quick-memory-form">
             <div className="builder-title"><span className="source-hero-icon">🌐</span><div><h2>Ingest a website</h2><p>Public pages and hosted documents (PDF, DOCX, and more) are fetched, converted to text, and indexed with a link back to the source.</p></div></div>
-            <input autoFocus aria-label="Website URL" value={websiteUrl} onChange={event => setWebsiteUrl(event.target.value)} placeholder="https://company.example.com/runbook or https://docs.example.com/architecture.pdf" />
+            <input autoFocus aria-label="Website URL" value={websiteUrl} onChange={event => setWebsiteUrl(event.target.value)} placeholder="https://company.example.com/handbook or https://docs.example.com/architecture.pdf" />
             <p className="privacy-note"><i/> Public URLs only. Private addresses are refused; redirects are validated on every hop.</p>
           </div>}
 
@@ -223,8 +216,8 @@ export default function Ingest() {
           </div>}
 
           {kind === "github" && <div className="quick-memory-form">
-            <div className="builder-title"><span className="source-hero-icon"><GitHubIcon size={27}/></span><div><h2>Choose a repository</h2><p>OrgMemory reads the repository and builds its project memory automatically.</p></div></div>
-            {!connected("github") ? <div className="builder-connect"><strong>Connect GitHub once</strong><p>Authorize the repositories you want OrgMemory to remember.</p><Link className="button" href="/connectors">Connect GitHub →</Link></div> : <><select aria-label="GitHub repository" value={repo} onChange={event => {setRepo(event.target.value);const match=repositories.find(item=>item.clone_url===event.target.value);setRepoName(match?.full_name || match?.name || "");}}><option value="">Select a repository…</option>{repositories.map(item => <option key={item.id} value={item.clone_url}>{item.full_name}{item.private ? " · Private" : ""}</option>)}</select><p className="privacy-note"><i/> Private repositories supported. Existing source permissions are preserved.</p>
+            <div className="builder-title"><span className="source-hero-icon"><GitHubIcon size={27}/></span><div><h2>Choose a repository</h2><p>MemoryWorks reads the repository and builds its project memory automatically.</p></div></div>
+            {!connected("github") ? <div className="builder-connect"><strong>Give MemoryWorks access to your repositories</strong><p>Authorize once, then pick repositories right here. Private repositories are supported.</p><a className="button" href={`${API}/api/connectors/github/auth/start`}>Continue with GitHub →</a></div> : <><select aria-label="GitHub repository" value={repo} onChange={event => {setRepo(event.target.value);const match=repositories.find(item=>item.clone_url===event.target.value);setRepoName(match?.full_name || match?.name || "");}}><option value="">Select a repository…</option>{repositories.map(item => <option key={item.id} value={item.clone_url}>{item.full_name}{item.private ? " · Private" : ""}</option>)}</select><p className="privacy-note"><i/> Private repositories supported. Existing source permissions are preserved.</p>
               <div className="bulk-index">
                 <div>
                   <strong>Or index everything you have access to</strong>
@@ -242,7 +235,7 @@ export default function Ingest() {
 
           {kind === "slack" && <div className="quick-memory-form">
             <div className="builder-title"><span className="source-hero-icon slack">SL</span><div><h2>Choose a Slack channel</h2><p>Remember team decisions and conventions with links back to each message.</p></div></div>
-            {!connected("slack") ? <div className="builder-connect"><strong>Connect Slack once</strong><p>Choose which channels OrgMemory may read.</p><Link className="button" href="/connectors">Connect Slack →</Link></div> : <select aria-label="Slack channel" value={channel} onChange={event => setChannel(event.target.value)}>{channels.map(item => <option key={item.id} value={item.id}>#{item.name}{item.is_private ? " · Private" : ""}</option>)}</select>}
+            {!connected("slack") ? <div className="builder-connect"><strong>Connect Slack once</strong><p>Choose which channels MemoryWorks may read.</p><a className="button" href={`${API}/api/connectors/slack/auth/start`}>Connect Slack →</a></div> : <select aria-label="Slack channel" value={channel} onChange={event => setChannel(event.target.value)}>{channels.map(item => <option key={item.id} value={item.id}>#{item.name}{item.is_private ? " · Private" : ""}</option>)}</select>}
           </div>}
 
           {kind !== "github" && <div className="builder-project-row"><label>Save to</label><select value={project} onChange={event => setProject(event.target.value)}><option value="__new__">New memory space</option>{projects.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select>{project === "__new__" && <input aria-label="New memory space name" value={newProject} onChange={event => setNewProject(event.target.value)} />}</div>}
@@ -255,13 +248,12 @@ export default function Ingest() {
       </> : <section className="memory-success">
         <div className="success-rings"><i/><i/><i/><span>✓</span></div>
         <span className="panel-label">Memory is ready</span>
-        <h2>OrgMemory learned from this source.</h2>
+        <h2>MemoryWorks learned from this source.</h2>
         <p>{memoryCount} atomic memories and {result.chunks_created ?? result.knowledge_chunks_created ?? 0} evidence chunks are now available to your agents.</p>
         <div className="success-stats"><div><strong>{memoryCount}</strong><span>Memories</span></div><div><strong>{result.source_revision?.version || 1}</strong><span>Source version</span></div><div><strong>{result.change_set?.conflicts?.length || 0}</strong><span>Conflicts</span></div></div>
         <div className="success-actions"><Link className="button" href="/workspace">Ask your memory →</Link><Link className="button secondary" href="/memories">See memories</Link><button className="text-button" onClick={() => {setResult(undefined);setContent("");setTitle("");}}>Add another source</button></div>
       </section>}
     </section>
 
-    <div className="automatic-strip"><span><i>1</i><strong>Ingested</strong><small>Raw source preserved</small></span><b>→</b><span><i>2</i><strong>Remembered</strong><small>Atomic facts extracted</small></span><b>→</b><span><i>3</i><strong>Available</strong><small>Agents get the right context</small></span></div>
   </Page>;
 }

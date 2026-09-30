@@ -2,13 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import ChatBackBar from "@/components/ChatBackBar";
-import IntegrationsNav from "@/components/IntegrationsNav";
-import { RunbookMark } from "@/components/RunbookLogo";
+import { BrandMark } from "@/components/BrandLogo";
+import PageBar from "@/components/PageBar";
 import WorkspaceFrame from "@/components/WorkspaceFrame";
 import { api } from "@/lib/api";
-import { WEBMCP_DEMO_MODE } from "@/lib/demoOrgMemory";
-import { destinationFor, titleFor } from "@/lib/workspaceMap";
+import { titleFor } from "@/lib/workspaceMap";
 
 const SECURING_MIN_MS = 450;
 
@@ -17,19 +15,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const isLanding = pathname === "/";
   const isDocs = pathname === "/docs" || pathname.startsWith("/docs/");
-  const isWebMCP = pathname === "/webmcp";
-  const isPublicWebMCP = isWebMCP && WEBMCP_DEMO_MODE;
-  const isPublic = isLanding || isDocs || pathname === "/login" || isPublicWebMCP;
   const isLogin = pathname === "/login";
-  // The agent-operations console works against the signed-in workspace and
-  // carries its own header, so it sits behind the same gate as the chat.
-  const isChat = pathname === "/workspace" || isWebMCP;
-  const title = isChat ? "" : titleFor(pathname);
+  const isPublic = isLanding || isDocs || isLogin;
+  const isChat = pathname === "/workspace";
   const [user, setUser] = useState<any>();
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    if (isLanding || isPublicWebMCP) {
+    if (isLanding) {
       setReady(true);
       return;
     }
@@ -59,27 +52,25 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       current = false;
       if (securingTimer !== undefined) window.clearTimeout(securingTimer);
     };
-  }, [isLanding, isPublic, isPublicWebMCP, isLogin, router]);
+  }, [isLanding, isPublic, isLogin, router]);
 
   if (isPublic) return <>{children}</>;
-  if (!ready || !user) return <div className="auth-loading"><RunbookMark /><div><p>Opening your memory…</p><span>Loading authorized company context</span></div><div className="secure-progress" aria-hidden="true"><i /></div></div>;
-  // Every signed-in page sits in the same frame: the sidebar lists the whole
-  // registry, so nothing is reachable only by a shortcut or a typed URL. The
-  // chat and the agent console keep their own page bars inside it.
+  if (!ready || !user) return <div className="auth-loading"><BrandMark /><div><p>Opening your memory…</p><span>Loading authorized company context</span></div><div className="secure-progress" aria-hidden="true"><i /></div></div>;
+  // Every signed-in page sits in the same frame. The chat keeps its own bar;
+  // every other page gets the page bar with its place's tabs.
   if (isChat) {
     return (
-      <WorkspaceFrame user={user} ownsCommandMenu={pathname !== "/workspace"}>
+      <WorkspaceFrame user={user} ownsCommandMenu={false}>
         {children}
       </WorkspaceFrame>
     );
   }
-  // A route missing from the map still lands here — it just shows without a
-  // name, which is the visible reminder to register it.
+  // A route missing from the registry still lands here — it just shows without
+  // a title, which is the visible reminder to register it.
   return (
     <WorkspaceFrame user={user} ownsCommandMenu>
-      <div className="om-home ws-satellite">
-        <ChatBackBar title={title || "Workspace"} pathname={pathname} />
-        {destinationFor(pathname)?.group === "Integrations" && <IntegrationsNav pathname={pathname} />}
+      <div className="om-home ws-satellite" data-title={titleFor(pathname)}>
+        <PageBar pathname={pathname} />
         <main>{children}</main>
       </div>
     </WorkspaceFrame>

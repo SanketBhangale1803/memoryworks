@@ -11,7 +11,7 @@ from app.memory import CompanyMemoryService
 from .base import SyncOperation, SyncRecord
 
 
-class OrgMemorySyncApplier:
+class MemoryWorksSyncApplier:
     """Maps normalized connector records into source revisions and current memory."""
 
     def __init__(self, ingestion: IngestionService, graph: GraphStore):

@@ -1,4 +1,4 @@
-/* Where the OrgMemory API lives.
+/* Where the MemoryWorks API lives.
  *
  * Explicit configuration always wins (NEXT_PUBLIC_API_URL). Otherwise the
  * page talks to its own origin: on a hosted deployment the same-origin /api
@@ -31,7 +31,7 @@ export async function api<T = any>(path: string, options?: RequestInit): Promise
     });
   } catch {
     throw new Error(
-      `Cannot reach the OrgMemory API at ${API}. Check that the backend is running and refresh the page.`,
+      `Cannot reach the MemoryWorks API at ${API}. Check that the backend is running and refresh the page.`,
     );
   }
   const payload = await response.json().catch(() => ({}));

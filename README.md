@@ -1,8 +1,8 @@
-# OrgMemory
+# MemoryWorks
 
 **The memory layer for engineering organizations — and for the AI agents working alongside them.**
 
-OrgMemory holds what your org already learned: every incident, decision, owner, dependency, and runbook, tied to its source. The authenticated workspace registers itself as a browser-native Model Context Provider through `document.modelContext.registerTool()`, so an AI agent about to change something can ask what this company knows **before** it acts — and report back what happened after.
+MemoryWorks holds what your org already learned: every incident, decision, owner, dependency, and runbook, tied to its source. The authenticated workspace registers itself as a browser-native Model Context Provider through `document.modelContext.registerTool()`, so an AI agent about to change something can ask what this company knows **before** it acts — and report back what happened after.
 
 Built for the [OpenAI WebMCP Challenge](https://openai.com/webmcp-challenge/). The implementation record is in [`docs/webmcp-challenge.md`](docs/webmcp-challenge.md); the deployed demo is at [orgmemory.vercel.app](https://orgmemory.vercel.app) and its live tool surface is at [`/webmcp`](https://orgmemory.vercel.app/webmcp).
 
@@ -45,7 +45,7 @@ Every engineering org already knows why its payments service failed last time. T
 
 So when an AI agent shows up to change something, it starts from zero — and repeats the outage you already had.
 
-OrgMemory is the layer that stops that. It turns company sources into a time-aware memory graph where every promoted fact cites its evidence, then exposes that graph to agents through WebMCP as a **pre-action control**, not a search box.
+MemoryWorks is the layer that stops that. It turns company sources into a time-aware memory graph where every promoted fact cites its evidence, then exposes that graph to agents through WebMCP as a **pre-action control**, not a search box.
 
 ---
 
@@ -92,7 +92,7 @@ list_orgmemory_approvals
 list_orgmemory_proposals
 ```
 
-Implementation lives in `frontend/lib/webmcp.ts`, with lifecycle management in `frontend/hooks/useOrgMemoryWebMCP.ts` and a handler-free manifest in `frontend/lib/webmcpCatalog.ts` (so the product keeps exactly one execution path).
+Implementation lives in `frontend/lib/webmcp.ts`, with lifecycle management in `frontend/hooks/useMemoryWorksWebMCP.ts` and a handler-free manifest in `frontend/lib/webmcpCatalog.ts` (so the product keeps exactly one execution path).
 
 ### The tool the product exists for
 
@@ -103,7 +103,7 @@ Implementation lives in `frontend/lib/webmcp.ts`, with lifecycle management in `
 // { "task": "restart the payments connection pool", "service": "payments" }
 {
   "verdict": "requires_approval",
-  "headline": "This changes production state for payments. Read the constraints below, then get an explicit human decision — OrgMemory will not approve it for you.",
+  "headline": "This changes production state for payments. Read the constraints below, then get an explicit human decision — MemoryWorks will not approve it for you.",
   "consequential_action": "restarting",
   "must_read":        [{ "memory_id": "mem_d5fd", "type": "procedure",  "subject": "payments pool exhaustion first response" }],
   "constraints":      [{ "memory_id": "mem_0110", "type": "decision",   "subject": "cap payments worker concurrency" }],
@@ -163,7 +163,7 @@ Start Docker Desktop first and wait until it reports the engine is running.
 ```bash
 git clone <this-repo> && cd orgmemory
 cp .env.example .env
-make runbook
+make orgmemory
 ```
 
 | Service | URL |
@@ -217,7 +217,7 @@ All ingestion paths — GitHub repositories, issues, pull requests, Slack, paste
 
 Repository code is interpreted **structurally**: manifests, documented service tables, routes, configuration schemas, and docstrings can become memory, while CSS, JSX fragments, validation errors, and incomplete expressions remain evidence chunks and are never promoted as company policy.
 
-Source provenance is enforced at ingestion. Repository evidence must match the selected project's GitHub repository; uploads and Slack messages are explicitly assigned to one project and inherit its team scope. OrgMemory does not silently mix records from another repository or project.
+Source provenance is enforced at ingestion. Repository evidence must match the selected project's GitHub repository; uploads and Slack messages are explicitly assigned to one project and inherit its team scope. MemoryWorks does not silently mix records from another repository or project.
 
 ### The memory model
 
@@ -237,7 +237,7 @@ source revision → memory change set → current truth reconciliation
 → affected profiles/reports/skills → governed context envelope → agent
 ```
 
-Every stable source has immutable `SourceRevision` records. A changed revision produces a `MemoryChangeSet` listing added, updated, invalidated, and conflicting memories. When new evidence changes a prior memory with the same subject, OrgMemory preserves **both** records, closes the prior validity window when appropriate, and adds an `UPDATES` or `CONTRADICTS` relationship. Removed claims are invalidated rather than silently disappearing.
+Every stable source has immutable `SourceRevision` records. A changed revision produces a `MemoryChangeSet` listing added, updated, invalidated, and conflicting memories. When new evidence changes a prior memory with the same subject, MemoryWorks preserves **both** records, closes the prior validity window when appropriate, and adds an `UPDATES` or `CONTRADICTS` relationship. Removed claims are invalidated rather than silently disappearing.
 
 Reports and briefs are versioned `Artifact` records linked to the exact source revisions, memories, and context envelope used to create them. A supporting change marks the artifact stale and creates a reviewable impact. Policies and procedures compile into versioned `SkillSpec` files for agents; a relevant memory change marks the skill stale.
 
@@ -262,11 +262,11 @@ The invariant is strict: **derived memory, context, briefs, and skills cannot be
 
 ### Why this is not RAG
 
-RAG retrieves passages. OrgMemory also extracts typed, scoped, temporally valid memories; connects them to entities and sources; tracks which memory updates or contradicts another; and assembles current profiles from atomic facts. Retrieval still uses the original evidence, so the graph never becomes an unsupported summary layer.
+RAG retrieves passages. MemoryWorks also extracts typed, scoped, temporally valid memories; connects them to entities and sources; tracks which memory updates or contradicts another; and assembles current profiles from atomic facts. Retrieval still uses the original evidence, so the graph never becomes an unsupported summary layer.
 
 ### Memory Work: from context to outcomes
 
-Describe an outcome once; HCAG selects the authorized scope, current memories, related entities, conflicts, and exact source evidence. OrgMemory saves a revisioned brief and produces an `agent_packet` with an approval-aware execution plan.
+Describe an outcome once; HCAG selects the authorized scope, current memories, related entities, conflicts, and exact source evidence. MemoryWorks saves a revisioned brief and produces an `agent_packet` with an approval-aware execution plan.
 
 ```text
 Outcome → authorized HCAG context → source-backed work package
@@ -274,7 +274,7 @@ Outcome → authorized HCAG context → source-backed work package
 → result evidence returned to company memory
 ```
 
-This complements broad AI-coworker runtimes such as [OpenWorker](https://github.com/andrewyng/openworker): the worker owns the tool-execution loop, while OrgMemory owns organizational context, current truth, permissions, evidence, and durable outcome memory. The packet is portable through the API and MCP to any compatible worker.
+This complements broad AI-coworker runtimes such as [OpenWorker](https://github.com/andrewyng/openworker): the worker owns the tool-execution loop, while MemoryWorks owns organizational context, current truth, permissions, evidence, and durable outcome memory. The packet is portable through the API and MCP to any compatible worker.
 
 ---
 
@@ -399,13 +399,13 @@ POST /api/connectors/{provider}/sync
 POST /api/webhooks/github | /api/webhooks/slack
 ```
 
-Ask responses contain `answer`, `memory_profile_used`, `confidence`, `memory_units`, `evidence`, `related_entities`, `updates`, `conflicts`, `retrieval_trace`, and the persisted `context_envelope`. Answers derive from authorized retrieved evidence; when evidence is insufficient, OrgMemory abstains.
+Ask responses contain `answer`, `memory_profile_used`, `confidence`, `memory_units`, `evidence`, `related_entities`, `updates`, `conflicts`, `retrieval_trace`, and the persisted `context_envelope`. Answers derive from authorized retrieved evidence; when evidence is insufficient, MemoryWorks abstains.
 
 ### Webhooks
 
 Verified GitHub webhooks trigger incremental repository reconciliation — chunks, atomic memories, updates, conflicts, profiles, and HCAG retrieval state. Once a Slack channel is connected, verified message events add, update, or retire the corresponding project memories. Set `GITHUB_WEBHOOK_SECRET` and `SLACK_SIGNING_SECRET`, and point the providers at `/api/webhooks/github` and `/api/webhooks/slack`.
 
-GitHub sign-in and the GitHub connector both use the exact callback registered on the OAuth App: `https://<your-host>/api/auth/github/callback`. On hosted deployments, OrgMemory derives that callback from the public request origin and carries it through the signed OAuth state, so a local `GITHUB_REDIRECT_URI` default cannot leak into the production authorization request. Set `PUBLIC_BASE_URL` to pin a canonical production origin when the deployment is reachable through more than one hostname.
+GitHub sign-in and the GitHub connector both use the exact callback registered on the OAuth App: `https://<your-host>/api/auth/github/callback`. On hosted deployments, MemoryWorks derives that callback from the public request origin and carries it through the signed OAuth state, so a local `GITHUB_REDIRECT_URI` default cannot leak into the production authorization request. Set `PUBLIC_BASE_URL` to pin a canonical production origin when the deployment is reachable through more than one hostname.
 
 ---
 
@@ -418,9 +418,9 @@ make sdk-install
 The client reads `ORGMEMORY_API_URL` and `ORGMEMORY_API_KEY`, or takes them explicitly:
 
 ```python
-from orgmemory import OrgMemory
+from orgmemory import MemoryWorks
 
-memory = OrgMemory(base_url="http://localhost:8000", api_key="om_live_...")
+memory = MemoryWorks(base_url="http://localhost:8000", api_key="om_live_...")
 
 context = memory.ask(
     "prj_platform",
@@ -431,7 +431,7 @@ print(context.answer)
 print(context.compiled_context)
 ```
 
-`AsyncOrgMemory` is available for async applications. The same package ships an operational CLI:
+`AsyncMemoryWorks` is available for async applications. The same package ships an operational CLI:
 
 ```bash
 orgmemory health
@@ -448,7 +448,7 @@ The public developer guide is served at http://localhost:3000/docs.
 
 ## MCP server
 
-Separate from the in-page WebMCP surface, OrgMemory ships a standalone MCP server for Claude, ChatGPT, and other MCP clients.
+Separate from the in-page WebMCP surface, MemoryWorks ships a standalone MCP server for Claude, ChatGPT, and other MCP clients.
 
 ```bash
 make mcp        # stdio
@@ -456,19 +456,20 @@ make mcp-http   # streamable HTTP on :8001, with OAuth
 ```
 
 ```text
-orgmemory_ingest_github_repo      orgmemory_get_memory_graph
-orgmemory_ingest_slack_channel    orgmemory_list_memory_conflicts
-orgmemory_upload_source           orgmemory_list_memory_updates
-orgmemory_ask                     orgmemory_list_source_revisions
-orgmemory_search_memories         orgmemory_list_change_sets
-orgmemory_get_company_profile     orgmemory_compile_skill
-orgmemory_get_project_profile     orgmemory_list_skills
-orgmemory_get_service_profile     orgmemory_create_work
-orgmemory_list_work               orgmemory_get_work
-orgmemory_resolve_work_step       orgmemory_complete_work_step
+get_orgmemory_briefing                 record_orgmemory_outcome
+orgmemory_ask                          orgmemory_get_memory_graph
+orgmemory_search_memories              orgmemory_list_memory_conflicts
+orgmemory_get_company_profile          orgmemory_list_memory_updates
+orgmemory_get_project_profile          orgmemory_list_source_revisions
+orgmemory_get_service_profile          orgmemory_list_change_sets
+orgmemory_list_skills                  orgmemory_list_work
+orgmemory_get_work                     orgmemory_request_connector_action
+orgmemory_list_connector_action_requests
 ```
 
-Register a client from **⌘K → MCP & integrations**. Legacy `runbook_*` tools remain temporarily for compatibility. See [`docs/MCP.md`](docs/MCP.md).
+Register a client from **⌘K → MCP & integrations**. Legacy `runbook_*` tools are
+available only when `ORGMEMORY_ENABLE_LEGACY_TOOLS=true`. See
+[`docs/MCP.md`](docs/MCP.md).
 
 ---
 
@@ -506,7 +507,7 @@ ORG_MEMORY_GENERAL_KNOWLEDGE_ENABLED=true   # answer from model knowledge when m
 AUTH_DEV_MODE=true                      # development login without an OAuth provider
 JWT_SECRET=
 NEXTAUTH_SECRET=
-SESSION_COOKIE_NAME=
+ORGMEMORY_SESSION_COOKIE_NAME=
 ```
 
 The hosted challenge profile uses `PUBLIC_DEMO_MODE=true`. Its Google, GitHub, and guest choices are isolated demo personas—not external OAuth grants—and its signed, `HttpOnly`, `Secure`, `SameSite=Lax` session cookie is stateless so authentication survives Vercel container changes. Normal production installations use real OAuth or email sessions and should use durable shared storage.
@@ -519,8 +520,8 @@ GitHub, Google, Slack, and passwordless email setup are documented in [`docs/OAU
 GRAPH_BACKEND=arcadedb
 ARCADEDB_HOST=localhost
 ARCADEDB_PORT=2480
-RUNBOOK_EMBEDDING_PROVIDER=deterministic
-RUNBOOK_RERANKER_PROVIDER=deterministic
+ORGMEMORY_EMBEDDING_PROVIDER=deterministic
+ORGMEMORY_RERANKER_PROVIDER=deterministic
 ```
 
 ### Webhooks and feature flags
@@ -592,7 +593,7 @@ ArcadeDB is not running. `docker compose up -d arcadedb`, then `make arcade-init
 **`Address already in use` on :8000 or :3000.**
 An earlier process is still bound. `pkill -f "uvicorn app.main:app"` or `pkill -f "next dev"`, then restart.
 
-**"Cannot reach the OrgMemory API at http://localhost:8000".**
+**"Cannot reach the MemoryWorks API at http://localhost:8000".**
 The backend is down, or you are browsing on `127.0.0.1`. The app canonicalises to `localhost` via `frontend/middleware.ts` so OAuth callbacks and credentialed requests do not cross a site boundary — use `localhost`.
 
 **`.env` parse errors when sourcing it in a shell.**
@@ -633,19 +634,21 @@ Service matching is against `scope.service`, the subject, and the body. If the e
 | [`docs/MCP.md`](docs/MCP.md) | Standalone MCP server |
 | [`docs/OAUTH_SETUP.md`](docs/OAUTH_SETUP.md) | GitHub, Google, Slack, email auth |
 | [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) | Retrieval evaluation |
+| [`docs/STARTUP_EXECUTION_PLAN.md`](docs/STARTUP_EXECUTION_PLAN.md) | 90-day customer validation, pilot, metrics, and YC plan |
+| [`docs/HARNESS_EXECUTION.md`](docs/HARNESS_EXECUTION.md) | Reusable execution skill, visual blueprint, and resumable checkpoints |
 
 ---
 
 ## License
 
-OrgMemory is released under the [MIT License](LICENSE).
+MemoryWorks is released under the [MIT License](LICENSE).
 
 ---
 
 ## Product boundary
 
-OrgMemory is organization-specific rather than a generic memory API: company, project, repository, service, and person profiles; temporal validity; conflicts; permission-aware retrieval; an inspectable company graph; and approval-aware work. The web app is the starting point — channels, IDEs, SDKs, CLI, and MCP are delivery surfaces for the same governed brain.
+MemoryWorks is organization-specific rather than a generic memory API: company, project, repository, service, and person profiles; temporal validity; conflicts; permission-aware retrieval; an inspectable company graph; and approval-aware work. The web app is the starting point — channels, IDEs, SDKs, CLI, and MCP are delivery surfaces for the same governed brain.
 
 ## Migration note
 
-Runbook was the previous product direction. OrgMemory is focused on the company brain rather than operational runbooks. Legacy database table names and environment variables (`RUNBOOK_*`) remain temporarily for migration compatibility.
+Runbook was the previous product direction. MemoryWorks is focused on the company brain rather than operational runbooks. Legacy database table names and environment variables (`RUNBOOK_*`) remain temporarily for migration compatibility.

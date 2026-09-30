@@ -1,6 +1,6 @@
 """Package an answer as a task an editor agent can start from.
 
-When someone asks OrgMemory to fix, patch, or review something, the useful
+When someone asks MemoryWorks to fix, patch, or review something, the useful
 output is not prose — it is a scoped instruction plus the minimum context needed
 to act, in a form that can be pasted into Cursor, Copilot, Claude Code, or sent
 through MCP. Handing over the entire evidence pack defeats the point: the value

@@ -1,6 +1,6 @@
-# OrgMemory MCP server
+# MemoryWorks MCP server
 
-`mcp_server/server.py` exposes the real OrgMemory HTTP API over FastMCP stdio. It does not contain canned answers: questions return authorized memory, evidence, a retrieval trace, and the persisted HCAG context envelope.
+`mcp_server/server.py` exposes the real MemoryWorks HTTP API over FastMCP stdio. It does not contain canned answers: questions return authorized memory, evidence, a retrieval trace, and the persisted HCAG context envelope.
 
 ## Run
 
@@ -9,7 +9,21 @@ make mcp
 python mcp_server/server.py --health
 ```
 
-The legacy environment variables `RUNBOOK_API_URL` and `RUNBOOK_API_KEY` remain supported during migration. The default backend URL is `http://localhost:8000`.
+Use `ORGMEMORY_API_URL` and `ORGMEMORY_API_KEY`. The legacy environment variables
+`RUNBOOK_API_URL` and `RUNBOOK_API_KEY` remain supported for one migration window
+and emit a deprecation warning. The default backend URL is `http://localhost:8000`.
+
+## Preflight contract
+
+| Tool | Scope | Purpose |
+|---|---|---|
+| `get_orgmemory_briefing` | `read` | Return a cited verdict, constraints, precedents, and durable `briefing_id` before consequential work |
+| `record_orgmemory_outcome` | `write` | Append the action's result to the briefing ledger without approving or mutating company memory |
+
+Always carry the `briefing_id` from the first call into the outcome call. Treat
+`requires_approval` as a signal to use the caller's approval system, not as
+authorization from MemoryWorks. Treat `no_memory` as missing organizational context,
+not permission to proceed.
 
 ## Company-memory tools
 
@@ -40,10 +54,10 @@ Create a workspace-scoped API key in **Settings → API keys**, then configure:
   "mcpServers": {
     "orgmemory": {
       "command": "make",
-      "args": ["-C", "/absolute/path/to/runbook", "mcp"],
+      "args": ["-C", "/absolute/path/to/orgmemory", "mcp"],
       "env": {
-        "RUNBOOK_API_URL": "http://localhost:8000",
-        "RUNBOOK_API_KEY": "rbk_replace_with_a_new_workspace_key"
+        "ORGMEMORY_API_URL": "http://localhost:8000",
+        "ORGMEMORY_API_KEY": "om_replace_with_a_new_workspace_key"
       }
     }
   }
@@ -55,12 +69,16 @@ Restart the MCP connection after saving. The bridge forwards the key as an `Auth
 Useful prompts:
 
 ```text
-Use OrgMemory to explain this repo before I edit it.
-Use OrgMemory to find prior decisions about this service.
-Use OrgMemory to retrieve current company context for this bug.
-Use OrgMemory to list what changed and which agent skills became stale.
+Use MemoryWorks to explain this repo before I edit it.
+Use MemoryWorks to find prior decisions about this service.
+Use MemoryWorks to retrieve current company context for this bug.
+Use MemoryWorks to list what changed and which agent skills became stale.
+Before changing the deploy workflow, get an MemoryWorks briefing and record the outcome afterward.
 ```
 
 ## Legacy compatibility
 
-The previous `runbook_*` tools remain available temporarily for clients that have not migrated. Procedure extraction, action policies, approvals, and simulation are advanced compatibility features; they are not the primary OrgMemory product surface.
+The previous `runbook_*` tools are hidden by default. Set
+`ORGMEMORY_ENABLE_LEGACY_TOOLS=true` only for clients that have not migrated.
+Procedure extraction, action policies, approvals, and simulation are advanced
+compatibility features; they are not the primary MemoryWorks product surface.

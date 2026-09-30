@@ -88,7 +88,7 @@ async def lifespan(_: FastAPI):
         watch_worker_task.cancel()
 
 
-app = FastAPI(title="OrgMemory API", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="MemoryWorks API", version="1.0.0", lifespan=lifespan)
 allowed_origins = [settings.frontend_url.rstrip("/")]
 if settings.environment.casefold() != "production":
     # Browsers treat localhost and 127.0.0.1 as different origins. Accept both
@@ -117,7 +117,7 @@ app.include_router(oauth_router)
 @app.get("/")
 def root():
     return {
-        "name": "OrgMemory",
+        "name": "MemoryWorks",
         "tagline": "The persistent memory layer for company AI agents.",
         "docs": "/docs",
     }

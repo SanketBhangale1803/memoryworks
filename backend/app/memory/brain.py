@@ -11,7 +11,7 @@ from app.graph.base import GraphStore
 
 
 class CompanyBrainService:
-    """Revision, impact, context, artifact, and skill lifecycle for OrgMemory."""
+    """Revision, impact, context, artifact, and skill lifecycle for MemoryWorks."""
 
     def __init__(self, graph: GraphStore):
         self.graph = graph

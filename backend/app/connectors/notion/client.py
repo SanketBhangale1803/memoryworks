@@ -76,7 +76,7 @@ _MANIFEST = ConnectorManifest(
     rate_limit=RateLimitPolicy(requests=90, window_seconds=60, burst=3),
     retry=RetryPolicy(max_attempts=7, base_delay_seconds=2, max_delay_seconds=300),
     data_policy=DataPolicy(
-        residency="OrgMemory workspace region",
+        residency="MemoryWorks workspace region",
         retention="Until source disconnect or workspace retention policy",
     ),
     package="orgmemory.connector.notion",

@@ -1,6 +1,6 @@
-# OrgMemory architecture
+# MemoryWorks architecture
 
-OrgMemory is a company brain for engineering organizations and the AI agents
+MemoryWorks is a company brain for engineering organizations and the AI agents
 working in them. It turns company sources into scoped, source-backed memory,
 serves that memory as cited answers and pre-action briefings, and records what
 happened after an agent acted on it.
@@ -280,7 +280,7 @@ general knowledge as company truth.
 ```text
 question (+ thread history)
   │
-  ├─ assistant_reply            greetings, thanks, "what is OrgMemory" → deterministic, no model
+  ├─ assistant_reply            greetings, thanks, "what is MemoryWorks" → deterministic, no model
   │
   ├─ continuity.resolve         bind pronouns to the thread's subject;
   │                             a dangling reference is asked about, not guessed
@@ -392,7 +392,7 @@ Every path that changes state beyond reading ends at a person:
 | Code execution | disabled unless `ORG_MEMORY_EXECUTION_ENABLED=true` |
 
 **AgentGate.** `agentgate_adapter/` loads the AgentGate policy engine from
-`AGENTGATE_PATH` when present and combines it with OrgMemory's action taxonomy;
+`AGENTGATE_PATH` when present and combines it with MemoryWorks's action taxonomy;
 otherwise the built-in product policy applies. Unresolved operational
 assertions escalate production-changing proposals to admin review.
 
@@ -469,7 +469,7 @@ The signed-in workspace registers tools with
   memory reads, proposals, approvals);
 - `frontend/lib/orgTools.ts` — 16 organizational-operations tools, the subset
   the agent console registers;
-- `frontend/hooks/useOrgMemoryWebMCP.ts` — registration lifecycle;
+- `frontend/hooks/useMemoryWorksWebMCP.ts` — registration lifecycle;
 - `frontend/lib/webmcpCatalog.ts` — handler-free manifest for the `/webmcp`
   command center, so there is one execution path.
 
@@ -494,7 +494,7 @@ removed unless `ORGMEMORY_ENABLE_LEGACY_TOOLS=true`.
 
 ### Python SDK and CLI
 
-`python_sdk/` provides `OrgMemory` and `AsyncOrgMemory` typed clients and the
+`python_sdk/` provides `MemoryWorks` and `AsyncMemoryWorks` typed clients and the
 `orgmemory` CLI, reading `ORGMEMORY_API_URL` and `ORGMEMORY_API_KEY`.
 
 ### Desktop bridge

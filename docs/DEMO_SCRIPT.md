@@ -1,4 +1,4 @@
-# OrgMemory — 3-minute demo script (production)
+# MemoryWorks — 3-minute demo script (production)
 
 For the OpenAI WebMCP Challenge submission, recorded against the live
 deployment at `https://orgmemory.vercel.app`. Judged on WebMCP Leverage,
@@ -47,7 +47,7 @@ platform cards.
 > can find, and one engineer's head. So when an AI agent shows up to change
 > something, it starts from zero — and repeats the outage you already had.
 >
-> OrgMemory is the memory layer for engineering organizations — and through
+> MemoryWorks is the memory layer for engineering organizations — and through
 > WebMCP, the browser hands that memory to agents before they act."
 
 **Land on:** the tool counter — 21 tools, 14 read-only, 6 human-governed.
@@ -158,7 +158,7 @@ the optional shot — the activity card alone carries it.)*
 > product. Anyone can ingest the same Slack and GitHub. Nobody can copy the
 > record of which context actually produced correct action here.
 >
-> OrgMemory — company memory your agents can actually use, at
+> MemoryWorks — company memory your agents can actually use, at
 > orgmemory.vercel.app."
 
 ---
@@ -173,7 +173,7 @@ catch-up beat and the follow-up chips beat.
 
 - 1080p minimum, ≤ 200 MB (compress if needed; the UI is high-contrast so
   H.264 at ~6 Mbps reads fine)
-- Title: `OrgMemory — WebMCP: company memory your agents can use`
+- Title: `MemoryWorks — WebMCP: company memory your agents can use`
 - Description first line: the one-line story above + repo link +
   `https://orgmemory.vercel.app`
 - Caption the "fix it" beat — judges often watch muted

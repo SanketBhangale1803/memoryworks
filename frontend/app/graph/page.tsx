@@ -75,7 +75,7 @@ export default function RepoGraph() {
     <Page
       eyebrow="Company memory"
       title="Memory Graph"
-      description="The live structure behind OrgMemory answers. Trace current memories, entities, and relationships back to source evidence."
+      description="The live structure behind MemoryWorks answers. Trace current memories, entities, and relationships back to source evidence."
       action={<select className="project-select" value={projectId} onChange={(event) => setProjectId(event.target.value)}>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select>}
     >
       {loading && <div className="notice">Loading the current ArcadeDB graph…</div>}

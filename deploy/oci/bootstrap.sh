@@ -23,4 +23,4 @@ sudo systemctl enable --now docker
 
 echo
 echo "Docker is installed. Log out and SSH back in so group membership applies."
-echo "Then clone OrgMemory, populate .env.production, and run deploy/oci/up.sh."
+echo "Then clone MemoryWorks, populate .env.production, and run deploy/oci/up.sh."

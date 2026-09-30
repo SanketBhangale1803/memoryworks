@@ -1,0 +1,4 @@
+interface:
+  display_name: "OrgMemory Execution Harness"
+  short_description: "Scoped implementation, checkpoints, and verification"
+  default_prompt: "Use $orgmemory-harness to implement the requested OrgMemory milestone, preserve a resumable checkpoint, and verify the result."

@@ -79,7 +79,7 @@ _MANIFEST = ConnectorManifest(
     rate_limit=RateLimitPolicy(requests=240, window_seconds=60, burst=10),
     retry=RetryPolicy(max_attempts=6, base_delay_seconds=2, max_delay_seconds=180),
     data_policy=DataPolicy(
-        residency="OrgMemory workspace region",
+        residency="MemoryWorks workspace region",
         retention="Until source disconnect or workspace retention policy",
     ),
     package="orgmemory.connector.google_drive",

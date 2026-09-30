@@ -1,7 +1,7 @@
 # Connectors
 
 Application login and source connectors are separate concerns: a user logs
-into OrgMemory, then connects sources. Connector tokens are verified against
+into MemoryWorks, then connects sources. Connector tokens are verified against
 the provider before encrypted storage (Fernet; AWS KMS or OCI Vault in
 production).
 

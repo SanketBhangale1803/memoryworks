@@ -167,7 +167,7 @@ class BriefingRequest(BaseModel):
     project_id: str = Field("", max_length=128)
     # Where the agent is working when it asks. Recorded on the context event so
     # the outcome corpus can tell a briefing served to a GitHub pull request from
-    # one served inside the OrgMemory workspace.
+    # one served inside the MemoryWorks workspace.
     surface: str = Field("webmcp", max_length=64)
 
 

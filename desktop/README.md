@@ -1,4 +1,4 @@
-# OrgMemory desktop bridge
+# MemoryWorks desktop bridge
 
 This Tauri 2 client is intentionally thin. It owns OS integration—keychain storage, explicit folder selection, local/private-network probes, notifications, a local MCP sidecar, and signed updates. Connector manifests, OAuth grants, sync state, approvals, audit records, retrieval, and business logic remain in the cloud control plane.
 

@@ -45,7 +45,7 @@ def interpret_diff(
 ) -> ExtractedClaims:
     """Interpret a source diff without storage side effects.
 
-    Passing ``llm`` makes the function fully mockable. Without one, OrgMemory
+    Passing ``llm`` makes the function fully mockable. Without one, MemoryWorks
     selects the configured structured-output provider and falls back to a
     conservative deterministic interpreter when no model is configured.
     """

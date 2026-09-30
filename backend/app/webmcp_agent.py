@@ -1,10 +1,10 @@
 """A real agent loop over the page's WebMCP tool surface.
 
-External browser agents reach OrgMemory through `document.modelContext`. This
+External browser agents reach MemoryWorks through `document.modelContext`. This
 module runs the same experience server-side with the same tool names, the same
 authorization, and the same approval boundary, so the demo can show — step by
 step, with live evidence — exactly what an agent gets when it discovers
-OrgMemory on the web.
+MemoryWorks on the web.
 
 The loop is deliberately tool-first: every claim in the final answer must trace
 to a tool observation, and the only write tool is a proposal that persists
@@ -397,7 +397,7 @@ class WebMCPAgentRunner:
             f"- {tool['name']}({', '.join(tool['arguments'])}): {tool['description']}"
             for tool in self._catalog()
         )
-        return f"""You are a browser AI agent on an OrgMemory page. The page exposes WebMCP tools for company memory.
+        return f"""You are a browser AI agent on an MemoryWorks page. The page exposes WebMCP tools for company memory.
 
 QUESTION: {question}
 
@@ -427,7 +427,7 @@ Rules:
             provider = configured_model(model)
             if not provider:
                 raise RuntimeError(
-                    "No model key is configured. Add one in OrgMemory settings to run a live agent."
+                    "No model key is configured. Add one in MemoryWorks settings to run a live agent."
                 )
             # Free-tier providers rate-limit aggressively. A transient 429 is
             # worth one quick retry; an exhausted quota answers 429 instantly

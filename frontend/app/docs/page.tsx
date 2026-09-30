@@ -4,9 +4,9 @@ import CodeBlock from "@/components/CodeBlock";
 import PublicNav from "@/components/PublicNav";
 
 export const metadata: Metadata = {
-  title: "Docs — OrgMemory",
+  title: "Docs — MemoryWorks",
   description:
-    "Run OrgMemory end to end: local setup, production deploy, authentication, model providers, WebMCP tools, the org-operations API, Python SDK, CLI, and MCP server.",
+    "Run MemoryWorks end to end: local setup, production deploy, authentication, model providers, the agent API, Python SDK, CLI, and MCP server.",
 };
 
 const sections = [
@@ -15,8 +15,7 @@ const sections = [
   ["authentication", "Authentication"],
   ["models", "Model providers"],
   ["connectors", "Connectors"],
-  ["webmcp", "WebMCP tools"],
-  ["org-api", "Agent operations API"],
+  ["org-api", "Agent API"],
   ["core-api", "Core API"],
   ["python-sdk", "Python SDK"],
   ["cli", "CLI"],
@@ -31,7 +30,7 @@ const quickstartDocker = `# 1. Configure once — every provider key is optional
 cp .env.example .env
 
 # 2. Start everything: ArcadeDB, API, workspace, MCP server.
-make runbook
+make memoryworks
 
 # API       http://localhost:8000   (docs at /docs, health at /api/health)
 # Workspace http://localhost:3000
@@ -43,7 +42,7 @@ export GRAPH_BACKEND=memory
 make backend    # uvicorn app.main:app --reload --port 8000
 make frontend   # next dev on port 3000
 
-# Seed the launch scenario the WebMCP console demonstrates:
+# Optional: seed a sample organization to explore:
 curl -X POST http://localhost:8000/api/org/scenario/seed \\
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \\
   -d '{"reset": false}'`;
@@ -65,7 +64,6 @@ vercel env add PUBLIC_DEMO_MODE production    # true
 vercel env add RUNBOOK_DEMO_MODE production   # true
 vercel env add GRAPH_BACKEND production       # memory
 vercel env add PUBLIC_BASE_URL production     # https://your-host
-vercel env add NEXT_PUBLIC_WEBMCP_OFFLINE production  # false
 
 # Real sign-in providers (values from GitHub / Google consoles):
 vercel env add GITHUB_CLIENT_ID production
@@ -119,38 +117,8 @@ ORG_MEMORY_DEFAULT_MODEL_PROVIDER=glm
 # With no model key at all, every agent run falls back to a deterministic
 # policy that still calls the real tools — the product never hard-fails.`;
 
-const webmcpRegister = `// frontend/lib/webmcp.ts — how the workspace becomes a tool provider.
-document.modelContext.registerTool(
-  {
-    name: "get_orgmemory_briefing",
-    title: "Brief me before I act",
-    description: "Call this BEFORE changing anything…",
-    inputSchema: { type: "object", properties: { task: { type: "string" } } },
-    annotations: { readOnlyHint: true },        // or approval-gated for writes
-    execute: (input) => run(input),             // same handler the UI calls
-  },
-  { signal: controller.signal },
-);`;
-
-const webmcpSurface = `Read (14, no approval)            Write (approval-gated)
-──────────────────────────────    ─────────────────────────────
-get_orgmemory_briefing            propose_orgmemory_memory
-ask_orgmemory                     propose_orgmemory_incident
-search_orgmemory                  propose_orgmemory_decision
-get_orgmemory_memory              propose_repository_refresh
-get_orgmemory_related_memories    resolve_orgmemory_proposal  (admin)
-get_orgmemory_incidents           resolve_orgmemory_approval  (admin)
-get_orgmemory_runbook             + 3 org write tools (plans/tasks)
-get_orgmemory_service_context
-get_orgmemory_dependencies
-get_orgmemory_decisions
-list_orgmemory_spaces / proposals / approvals
-inspect_orgmemory_changes
-record_orgmemory_outcome          (ledger-append, no memory change)`;
-
-const webmcpConsole = `# The agent-operations console registers its 16 organizational tools the
-# same way and shows foreign agent traffic live. Its free-text question box
-# streams a real model-driven session:
+const agentStream = `# Agent mode in the chat streams one real, model-driven session. Every step
+# is a tool call against the workspace; changes stop at a plan for a person.
 
 curl -N -X POST "https://your-host/api/org/ask/stream" \\
   -H "Content-Type: application/json" -b "session cookie" \\
@@ -195,9 +163,9 @@ const coreApiRows = [
   ["GET", "/api/memory/swarm/:runId", "Inspect a context-swarm trace."],
 ] as const;
 
-const pythonExample = `from orgmemory import OrgMemory
+const pythonExample = `from orgmemory import MemoryWorks
 
-memory = OrgMemory(
+memory = MemoryWorks(
     base_url="http://localhost:8000",
     api_key="om_live_...",
 )
@@ -237,11 +205,11 @@ orgmemory ingest prj_platform \\
 const mcpConfig = `# Claude Desktop / any MCP client (stdio):
 {
   "mcpServers": {
-    "orgmemory": {
+    "memoryworks": {
       "command": "mcp_server/.venv/bin/python",
       "args": ["mcp_server/server.py", "--transport", "stdio"],
-      "env": { "RUNBOOK_API_URL": "http://localhost:8000",
-               "RUNBOOK_API_KEY": "om_live_..." }
+      "env": { "MEMORYWORKS_API_URL": "http://localhost:8000",
+               "MEMORYWORKS_API_KEY": "om_live_..." }
     }
   }
 }`;
@@ -338,8 +306,8 @@ export default function DocsPage() {
               <strong>Default services</strong>
               <span>
                 API at <code>http://localhost:8000</code> · Workspace at{" "}
-                <code>http://localhost:3000</code> · Agent-operations console at{" "}
-                <code>/webmcp</code> · Graph check via <code>make graph-check</code>
+                <code>http://localhost:3000</code> · Graph check via{" "}
+                <code>make graph-check</code>
               </span>
             </div>
             <div className="docs-note">
@@ -435,7 +403,7 @@ GOOGLE_REDIRECT_URI=http://localhost:8000/api/auth/google/callback`}
             <div className="docs-kicker">04 / Model providers</div>
             <h2>One company context. Your choice of model.</h2>
             <p>
-              OrgMemory retrieves, scopes, and compiles the evidence before a
+              MemoryWorks retrieves, scopes, and compiles the evidence before a
               model sees it. Configure any combination of providers; the
               default answers free-text questions and drives the agent loop
               that chooses tools step by step.
@@ -463,50 +431,14 @@ GOOGLE_REDIRECT_URI=http://localhost:8000/api/auth/google/callback`}
             </div>
           </section>
 
-          <section id="webmcp" className="docs-section docs-section--swarm">
-            <div className="docs-kicker">06 / WebMCP</div>
-            <h2>The browser is the tool provider.</h2>
-            <p>
-              The authenticated workspace registers itself as a browser-native
-              Model Context Provider through{" "}
-              <code>document.modelContext.registerTool()</code>. A browser agent
-              connected to the page can call the same tools the interface calls
-              — without ever receiving credentials: tool calls reuse the
-              page&apos;s HttpOnly session cookie through the existing API
-              client.
-            </p>
-            <CodeBlock label="Registration" language="typescript">
-              {webmcpRegister}
-            </CodeBlock>
-            <div className="docs-object-grid">
-              <div><code>21 tools</code><span>Workspace surface: 14 read-only, 1 ledger-append, 6 approval-gated.</span></div>
-              <div><code>Permission tiers</code><span>readOnlyHint, ledger-append, and approval-required annotations on every tool.</span></div>
-              <div><code>Approval boundary</code><span>There is deliberately no tool that approves — a person does, in the workspace.</span></div>
-              <div><code>Live activity</code><span>Every call, argument, and duration is visible; foreign agent traffic is shown separately.</span></div>
-            </div>
-            <CodeBlock label="Tool surface" language="text">
-              {webmcpSurface}
-            </CodeBlock>
-            <p>
-              Connect a WebMCP-capable browser agent (for example Chrome with
-              the MCP developer mode) to <code>/workspace</code> or{" "}
-              <code>/webmcp</code> and it will discover the tools without any
-              configuration. The <a href="/webmcp">agent-operations console</a>{" "}
-              demonstrates the full loop: briefing → proposal → human approval
-              → recorded outcome.
-            </p>
-            <CodeBlock label="Streaming agent console" language="bash">
-              {webmcpConsole}
-            </CodeBlock>
-          </section>
-
           <section id="org-api" className="docs-section">
-            <div className="docs-kicker">07 / Agent operations API</div>
-            <h2>Cross-space operations behind the WebMCP surface.</h2>
+            <div className="docs-kicker">06 / Agent API</div>
+            <h2>The cross-space operations Agent mode runs on.</h2>
             <p>
-              Every WebMCP tool maps to one HTTP route under <code>/api/org</code>.
+              Every agent step maps to one HTTP route under <code>/api/org</code>.
               Reads execute immediately. Writes only ever create a plan that
-              waits for a person.
+              waits for a person — there is deliberately no route an agent can
+              use to approve its own change.
             </p>
             <div className="docs-api-table">
               {orgApiRows.map(([method, path, description]) => (
@@ -530,10 +462,13 @@ GOOGLE_REDIRECT_URI=http://localhost:8000/api/auth/google/callback`}
                 run — approving it is always a person&apos;s action.
               </span>
             </div>
+            <CodeBlock label="Streaming agent session" language="bash">
+              {agentStream}
+            </CodeBlock>
           </section>
 
           <section id="core-api" className="docs-section">
-            <div className="docs-kicker">08 / Core API</div>
+            <div className="docs-kicker">07 / Core API</div>
             <h2>A small surface for a large memory.</h2>
             <CodeBlock label="Ask with HTTP" language="bash">
               {coreCurl}
@@ -552,11 +487,11 @@ GOOGLE_REDIRECT_URI=http://localhost:8000/api/auth/google/callback`}
           </section>
 
           <section id="python-sdk" className="docs-section">
-            <div className="docs-kicker">09 / Python SDK</div>
+            <div className="docs-kicker">08 / Python SDK</div>
             <h2>Context assembly, typed in Python.</h2>
             <p>
               Install from this repository. The synchronous and asynchronous
-              clients expose the same OrgMemory primitives.
+              clients expose the same MemoryWorks primitives.
             </p>
             <CodeBlock label="Install" language="bash">
               {`python -m pip install -e ./python_sdk
@@ -568,7 +503,7 @@ GOOGLE_REDIRECT_URI=http://localhost:8000/api/auth/google/callback`}
           </section>
 
           <section id="cli" className="docs-section">
-            <div className="docs-kicker">10 / CLI</div>
+            <div className="docs-kicker">09 / CLI</div>
             <h2>Inspect memory from your terminal.</h2>
             <p>
               The CLI ships with the Python SDK: query projects, ingest
@@ -583,7 +518,7 @@ GOOGLE_REDIRECT_URI=http://localhost:8000/api/auth/google/callback`}
           </section>
 
           <section id="swarm" className="docs-section docs-section--swarm">
-            <div className="docs-kicker">11 / Context swarm</div>
+            <div className="docs-kicker">10 / Context swarm</div>
             <h2>Specialists forage. One compiler decides.</h2>
             <p>
               A query activates a small ecosystem of retrieval specialists.
@@ -607,7 +542,7 @@ GOOGLE_REDIRECT_URI=http://localhost:8000/api/auth/google/callback`}
           </section>
 
           <section id="envelopes" className="docs-section">
-            <div className="docs-kicker">12 / Context envelopes</div>
+            <div className="docs-kicker">11 / Context envelopes</div>
             <h2>The answer is not the artifact.</h2>
             <p>
               Every ask returns an answer plus its compiled context, evidence,
@@ -636,7 +571,7 @@ GOOGLE_REDIRECT_URI=http://localhost:8000/api/auth/google/callback`}
           </section>
 
           <section id="mcp" className="docs-section">
-            <div className="docs-kicker">13 / MCP server</div>
+            <div className="docs-kicker">12 / MCP server</div>
             <h2>Memory for tool-using agents outside the browser.</h2>
             <p>
               The same memory surface is exposed over MCP for assistants that
@@ -653,12 +588,12 @@ make mcp-http   # streamable HTTP on :8001`}
           </section>
 
           <section id="testing" className="docs-section">
-            <div className="docs-kicker">14 / Testing and CI</div>
+            <div className="docs-kicker">13 / Testing and CI</div>
             <h2>Every behavior above is under test.</h2>
             <p>
               The suite covers the org tools, the approval boundary, the agent
               runner with scripted models (no network), OAuth round trips,
-              WebMCP registration, and the SDK contract.
+              browser tool registration, and the SDK contract.
             </p>
             <CodeBlock label="Quality gates" language="bash">
               {`make test    # backend pytest + frontend tests + SDK tests
@@ -669,7 +604,7 @@ make reset   # reset local data to a clean slate`}
           </section>
 
           <section id="security" className="docs-section">
-            <div className="docs-kicker">15 / Security</div>
+            <div className="docs-kicker">14 / Security</div>
             <h2>Retrieval respects the caller.</h2>
             <p>
               Project boundaries, bearer authentication, and source metadata

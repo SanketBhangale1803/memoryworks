@@ -955,7 +955,7 @@ def _agent_briefing_answer(evidence: list[GraphEvidence]) -> dict[str, Any]:
 
     if missing:
         sections.append(
-            "**Insufficient company memory.** OrgMemory found no source-backed evidence for: "
+            "**Insufficient company memory.** MemoryWorks found no source-backed evidence for: "
             + "; ".join(missing)
             + "."
         )
@@ -2036,7 +2036,7 @@ def llm_answer(
             )
         approach = f"Approach: {lens}\n" if lens else ""
         prompt = (
-            "You are OrgMemory's source-grounded synthesis engine. Answer any kind of question "
+            "You are MemoryWorks's source-grounded synthesis engine. Answer any kind of question "
             "using only the supplied company evidence. Cite every factual claim with [S<number>]. "
             "Do not infer missing facts and do not turn examples into current policy. Return JSON "
             "with answer (string), likely_cause (string), safe_actions (array of strings), "

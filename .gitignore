@@ -38,3 +38,6 @@ htmlcov/
 !.env.production.example
 # Marketing collateral and local render outputs, not part of the app.
 artifacts/
+# Launch films (1 GB of rendered video) and private assessment reports.
+presentation/
+reports/

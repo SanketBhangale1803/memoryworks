@@ -6,16 +6,15 @@ import { api } from "@/lib/api";
 
 /* Connecting an editor to company memory.
  *
- * The same tools the browser gets over WebMCP are reachable over MCP, so an
- * agent working inside Cursor, VS Code, or Claude Code answers from the same
- * memory as the chat. Every snippet below is generated from this deployment's
+ * An agent working inside Cursor, VS Code, or Claude Code reaches the same
+ * memory as the chat, over MCP. Every snippet below is generated from this deployment's
  * own runtime settings — a self-hosted install shows its own URLs, not
  * localhost copied out of a README. */
 
 type Runtime = { mcp_http_url?: string; mcp_oauth_issuer?: string; api_url?: string };
 type ApiKey = { id: string; name: string; key_prefix: string; created_at: string };
 
-const KEY_PLACEHOLDER = "YOUR_ORGMEMORY_API_KEY";
+const KEY_PLACEHOLDER = "YOUR_MEMORYWORKS_API_KEY";
 
 type Client = {
   id: string;
@@ -35,7 +34,7 @@ const CLIENTS: Client[] = [
       JSON.stringify(
         {
           mcpServers: {
-            orgmemory: {
+            memoryworks: {
               url,
               headers: { Authorization: `Bearer ${key}` },
             },
@@ -55,17 +54,17 @@ const CLIENTS: Client[] = [
         {
           inputs: [
             {
-              id: "orgmemory-key",
+              id: "memoryworks-key",
               type: "promptString",
-              description: "OrgMemory API key",
+              description: "MemoryWorks API key",
               password: true,
             },
           ],
           servers: {
-            orgmemory: {
+            memoryworks: {
               type: "http",
               url,
-              headers: { Authorization: "Bearer ${input:orgmemory-key}" },
+              headers: { Authorization: "Bearer ${input:memoryworks-key}" },
             },
           },
         },
@@ -79,7 +78,7 @@ const CLIENTS: Client[] = [
     file: "Run once in your terminal",
     note: "Adds the server for this project. Use --scope user to add it everywhere.",
     snippet: (url, key) =>
-      `claude mcp add --transport http orgmemory ${url} \\\n  --header "Authorization: Bearer ${key}"`,
+      `claude mcp add --transport http memoryworks ${url} \\\n  --header "Authorization: Bearer ${key}"`,
   },
   {
     id: "claude-desktop",
@@ -90,7 +89,7 @@ const CLIENTS: Client[] = [
       JSON.stringify(
         {
           mcpServers: {
-            orgmemory: {
+            memoryworks: {
               command: "npx",
               args: ["-y", "mcp-remote", url, "--header", `Authorization: Bearer ${key}`],
             },

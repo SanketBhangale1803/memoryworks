@@ -190,20 +190,6 @@ export const WEBMCP_TOOL_CATALOG: WebMCPToolCatalogEntry[] = [
     resultExample: { service: "checkout", incident_count: 3, incidents: [{ subject: "Connection-pool exhaustion" }] },
   },
   {
-    name: "get_orgmemory_runbook",
-    title: "Retrieve a runbook",
-    description: "Retrieve an existing, source-backed runbook for a service and optional issue before proposing remediation.",
-    group: "Retrieve",
-    permission: "read-only",
-    inputSchema: {
-      type: "object",
-      properties: { service: { type: "string" }, issue: { type: "string" }, ...optionalProject },
-      required: ["service"],
-      additionalProperties: false,
-    },
-    resultExample: { runbook_count: 1, runbooks: [{ title: "Checkout pool exhaustion", version: 3 }] },
-  },
-  {
     name: "get_orgmemory_service_context",
     title: "Assemble service context",
     description: "Assemble current facts, decisions, incidents, dependencies, owners, procedures, and policies for a service.",

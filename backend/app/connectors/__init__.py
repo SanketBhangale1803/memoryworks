@@ -1,4 +1,4 @@
-"""OrgMemory connector SDK, signed package registry, and execution runtime."""
+"""MemoryWorks connector SDK, signed package registry, and execution runtime."""
 
 from .base import (
     Connector,

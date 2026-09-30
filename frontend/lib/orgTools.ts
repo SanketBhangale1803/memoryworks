@@ -3,8 +3,8 @@ import {
   demoAgentSession,
   demoFollowups,
   demoOrgRequest,
-  WEBMCP_DEMO_MODE,
-} from "@/lib/demoOrgMemory";
+  OFFLINE_DEMO_MODE,
+} from "@/lib/demoMemory";
 
 /**
  * Organizational operations, as tools.
@@ -48,7 +48,7 @@ export type OrgSpace = {
   updated_at?: string;
 };
 
-export type OrgMemoryRecord = {
+export type MemoryWorksRecord = {
   id: string;
   space_id: string;
   space_name: string;
@@ -91,11 +91,11 @@ export type OrgConflict = {
   id: string;
   task: OrgTask;
   tracked_state: string;
-  tracked_source: OrgMemoryRecord;
+  tracked_source: MemoryWorksRecord;
   recorded_state: string;
   recorded_at: string;
   basis: string;
-  source: OrgMemoryRecord;
+  source: MemoryWorksRecord;
   matched_terms: string[];
   resolution: Record<string, unknown>;
 };
@@ -103,7 +103,7 @@ export type OrgConflict = {
 export type OrgChainStep = {
   position: number;
   role: string;
-  memory: OrgMemoryRecord;
+  memory: MemoryWorksRecord;
 };
 
 export type OrgReasoningChain = {
@@ -197,10 +197,10 @@ export type OrgAgentSession = {
 export type OrgProjectContext = {
   spaces: OrgSpace[];
   memory_count: number;
-  decisions: OrgMemoryRecord[];
+  decisions: MemoryWorksRecord[];
   open_tasks: OrgTask[];
-  unresolved: OrgMemoryRecord[];
-  recent_changes: OrgMemoryRecord[];
+  unresolved: MemoryWorksRecord[];
+  recent_changes: MemoryWorksRecord[];
   blockers: OrgBlocker[];
   next_best_action: { action: string; why: string; task_id: string; owner: string };
 };
@@ -218,12 +218,12 @@ function query(params: Record<string, unknown>): string {
 }
 
 const get = <T,>(path: string, params: Record<string, unknown> = {}) =>
-  WEBMCP_DEMO_MODE
+  OFFLINE_DEMO_MODE
     ? demoOrgRequest<T>("GET", path, params)
     : api<T>(`/api/org${path}${query(params)}`);
 
 const post = <T,>(path: string, body: unknown) =>
-  WEBMCP_DEMO_MODE
+  OFFLINE_DEMO_MODE
     ? demoOrgRequest<T>("POST", path, {}, body)
     : api<T>(`/api/org${path}`, { method: "POST", body: JSON.stringify(body) });
 
@@ -235,23 +235,23 @@ function plural(count: number, one: string, many = `${one}s`) {
 
 export const orgApi = {
   spaces: () => get<{ count: number; spaces: OrgSpace[] }>("/spaces"),
-  space: (spaceId: string) => get<OrgSpace & { recent_memories: OrgMemoryRecord[] }>(`/spaces/${spaceId}`),
+  space: (spaceId: string) => get<OrgSpace & { recent_memories: MemoryWorksRecord[] }>(`/spaces/${spaceId}`),
   context: (spaceIds?: string[]) =>
     get<OrgProjectContext>("/context", { space_ids: spaceIds }),
   search: (queryText: string, spaceIds?: string[], memoryType = "", limit = 10) =>
-    get<{ count: number; results: OrgMemoryRecord[] }>("/search", {
+    get<{ count: number; results: MemoryWorksRecord[] }>("/search", {
       query: queryText,
       space_ids: spaceIds,
       memory_type: memoryType,
       limit,
     }),
   recentChanges: (since = "", spaceIds?: string[]) =>
-    get<{ count: number; changes: OrgMemoryRecord[] }>("/recent-changes", {
+    get<{ count: number; changes: MemoryWorksRecord[] }>("/recent-changes", {
       since,
       space_ids: spaceIds,
     }),
   decisions: (spaceIds?: string[], status = "") =>
-    get<{ count: number; decisions: OrgMemoryRecord[] }>("/decisions", {
+    get<{ count: number; decisions: MemoryWorksRecord[] }>("/decisions", {
       space_ids: spaceIds,
       status,
     }),
@@ -289,7 +289,7 @@ export const orgApi = {
       topic,
     }),
   stale: (topic = "", maxAgeDays = 90, spaceIds?: string[]) =>
-    get<{ count: number; stale: OrgMemoryRecord[] }>("/stale", {
+    get<{ count: number; stale: MemoryWorksRecord[] }>("/stale", {
       topic,
       max_age_days: maxAgeDays,
       space_ids: spaceIds,
@@ -311,7 +311,7 @@ export const orgApi = {
     summaries: string[],
     spaceIds: string[],
   ) =>
-    WEBMCP_DEMO_MODE
+    OFFLINE_DEMO_MODE
       ? demoFollowups(question, summaries)
       : post<{ suggestions: string[]; source: string }>("/followups", {
           question,
@@ -332,7 +332,7 @@ export const orgApi = {
     onSession: (session: OrgAgentSession) => void,
   ): Promise<OrgAgentSession> => {
     const publish = (session: OrgAgentSession) => onSession({ ...session, steps: [...session.steps] });
-    if (WEBMCP_DEMO_MODE) {
+    if (OFFLINE_DEMO_MODE) {
       return (await demoAgentSession(question, spaceIds, publish as (session: any) => void)) as OrgAgentSession;
     }
     let response: Response;
@@ -346,7 +346,7 @@ export const orgApi = {
       });
     } catch {
       throw new Error(
-        `Cannot reach the OrgMemory API at ${API}. Check that the backend is running and refresh the page.`,
+        `Cannot reach the MemoryWorks API at ${API}. Check that the backend is running and refresh the page.`,
       );
     }
     if (!response.ok || !response.body) {
@@ -448,7 +448,7 @@ export const orgApi = {
   resolveFinding: (watchId: string, findingId: string) =>
     post<{ id: string; status: string }>(`/watches/${watchId}/findings/${findingId}/resolve`, {}),
   deleteWatch: (watchId: string) =>
-    WEBMCP_DEMO_MODE
+    OFFLINE_DEMO_MODE
       ? demoOrgRequest("DELETE", `/watches/${watchId}`)
       : api(`/api/org/watches/${watchId}`, { method: "DELETE" }),
 };

@@ -41,7 +41,7 @@ export default function Keys() {
     }
   }
 
-  return <Page eyebrow="Integrations" title="API keys" description="Keys for MCP clients and automation. The secret is shown once at creation; only a hash is stored.">
+  return <Page title="API keys" description="Keys for MCP clients and automation. The secret is shown once at creation; only a hash is stored.">
     <section className="card card-pad stack">
       <div className="row">
         <input value={name} onChange={event=>setName(event.target.value)} placeholder="Key name, e.g. Claude Desktop MCP"/>
@@ -53,7 +53,7 @@ export default function Keys() {
     <section className="card" style={{marginTop:16}}>
       <div className="section-head"><h2>Keys</h2><span className="badge">{keys?.length ?? 0}</span></div>
       {!keys && <div className="empty">Loading…</div>}
-      {keys && !keys.length && <div className="empty">No API keys yet. Create one to connect an MCP client to this Runbook instance.</div>}
+      {keys && !keys.length && <div className="empty">No API keys yet. Create one to use MemoryWorks from an editor, the SDK, or the CLI.</div>}
       {keys && keys.length > 0 && <table className="table">
         <thead><tr><th>Name</th><th>Prefix</th><th>Created</th><th>Last used</th><th>Status</th><th></th></tr></thead>
         <tbody>{keys.map(key => <tr key={key.id}>

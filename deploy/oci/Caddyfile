@@ -9,10 +9,18 @@ app.{$PUBLIC_DOMAIN} {
 
 api.{$PUBLIC_DOMAIN} {
 	encode zstd gzip
+	# Bound before buffering: proxy-level cap for JSON bodies and chunked
+	# uploads, complementing the application guard.
+	request_body {
+		max_size 128MB
+	}
 	reverse_proxy backend:8000
 }
 
 mcp.{$PUBLIC_DOMAIN} {
 	encode zstd gzip
+	request_body {
+		max_size 10MB
+	}
 	reverse_proxy mcp:8001
 }

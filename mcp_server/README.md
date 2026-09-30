@@ -1,30 +1,23 @@
-# OrgMemory MCP server
+# MemoryWorks MCP server
 
-The stdio server exposes company memory to Cursor and other MCP clients. Configure a client to run `make -C /absolute/path/to/runbook mcp` with `RUNBOOK_API_URL` and a workspace-scoped `RUNBOOK_API_KEY` (legacy environment names remain compatible).
+The server gives Cursor and other MCP clients a governed preflight loop around
+consequential work:
 
-Preferred tools:
+1. Call `get_orgmemory_briefing` before acting. It returns a cited verdict,
+   applicable constraints, precedents, and a durable `briefing_id`.
+2. Perform the action only within the returned constraints and the caller's own
+   approval policy.
+3. Call `record_orgmemory_outcome` with that `briefing_id` to close the ledger.
 
-- `orgmemory_ingest_github_repo`
-- `orgmemory_ingest_slack_channel`
-- `orgmemory_upload_source`
-- `orgmemory_ask`
-- `orgmemory_search_memories`
-- `orgmemory_get_company_profile`
-- `orgmemory_get_project_profile`
-- `orgmemory_get_service_profile`
-- `orgmemory_get_memory_graph`
-- `orgmemory_list_memory_conflicts`
-- `orgmemory_list_memory_updates`
-- `orgmemory_list_source_revisions`
-- `orgmemory_list_change_sets`
-- `orgmemory_compile_skill`
-- `orgmemory_list_skills`
-- `orgmemory_create_work`
-- `orgmemory_list_work`
-- `orgmemory_get_work`
-- `orgmemory_resolve_work_step`
-- `orgmemory_complete_work_step`
+`get_orgmemory_briefing` requires `read` scope. `record_orgmemory_outcome` is an
+append-only audit write and requires `write` scope. A `requires_approval` verdict
+does not grant approval, and `no_memory` does not grant permission.
 
-All answers, profiles, and work packages come from source-backed memory and include retrieval lineage. `orgmemory_create_work` prepares a portable agent packet. Consequential connector steps stay in `pending_approval` until `orgmemory_resolve_work_step` approves them; a worker reports the exact outcome through `orgmemory_complete_work_step`.
+The default catalog also exposes the current `orgmemory_*` read tools for asking,
+searching, profiles, lineage, conflicts, change sets, skills, and work packages.
+Legacy `runbook_*` tools are hidden unless
+`ORGMEMORY_ENABLE_LEGACY_TOOLS=true` is set.
 
-Legacy `runbook_*` tools remain available during migration but represent advanced compatibility features, not the primary product surface.
+Configure the server with `ORGMEMORY_API_URL` and a workspace-scoped
+`ORGMEMORY_API_KEY`. The former `RUNBOOK_API_URL` and `RUNBOOK_API_KEY` names are
+accepted for one migration window and emit a deprecation warning.

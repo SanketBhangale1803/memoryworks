@@ -1,8 +1,8 @@
-# OrgMemory product wedge
+# MemoryWorks product wedge
 
 ## Category
 
-OrgMemory is the company memory and context layer for AI workers.
+MemoryWorks is the company memory and context layer for AI workers.
 
 It is not a company-wide search box, a generic chatbot over documents, or another broad desktop agent. It turns fragmented company evidence into current, scoped, source-backed memory and gives each worker only the context it needs for an outcome.
 
@@ -22,7 +22,7 @@ company source changes
 
 ## Complementary position
 
-| Product type | What it owns | OrgMemory’s role |
+| Product type | What it owns | MemoryWorks’s role |
 | --- | --- | --- |
 | OpenWorker-like coworker | Local agent loop, tools, connectors, schedules, deliverables | Authorized organizational context, current truth, evidence, and outcome memory |
 | Enterprise search | Finding documents and people across many systems | Typed memories, temporal validity, relationships, and task-bounded context |
@@ -35,10 +35,10 @@ company source changes
 
 1. A user states an outcome once.
 2. HCAG selects authorized context across the workspace and relevant projects.
-3. OrgMemory prepares a cited, revisioned work package.
+3. MemoryWorks prepares a cited, revisioned work package.
 4. External writes pause for approval.
 5. Any connected worker retrieves the portable packet.
-6. The worker reports results and source evidence back to OrgMemory.
+6. The worker reports results and source evidence back to MemoryWorks.
 
 ## Product principles
 

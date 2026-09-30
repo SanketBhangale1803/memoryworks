@@ -86,7 +86,7 @@ def test_approved_slack_work_posts_exact_visible_message_and_records_permalink(g
     assert result["status"] == "awaiting_approval"
     assert action["status"] == "pending_approval"
     assert action["approval_required"] == 1
-    assert "*OrgMemory project update*" in action["input"]["message"]
+    assert "*MemoryWorks project update*" in action["input"]["message"]
     assert "Launch channel decision" in action["input"]["message"]
     with pytest.raises(ValueError, match="approved"):
         work.complete_step(result["id"], action["id"], {"message_ts": "1"}, "worker")
@@ -106,7 +106,7 @@ def test_approved_slack_work_posts_exact_visible_message_and_records_permalink(g
 
     slack = FakeSlack()
     reviewed_message = action["input"]["message"].replace(
-        "*OrgMemory project update*", "*Launch update*"
+        "*MemoryWorks project update*", "*Launch update*"
     )
     completed = work.approve_and_post_slack(
         result["id"],
@@ -114,7 +114,7 @@ def test_approved_slack_work_posts_exact_visible_message_and_records_permalink(g
         "C_LAUNCH",
         reviewed_message,
         slack,
-        "Test operator",
+        "Approving owner",
     )
 
     assert slack.calls == [("C_LAUNCH", reviewed_message)]
