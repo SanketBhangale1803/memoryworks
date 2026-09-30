@@ -176,7 +176,7 @@ A briefing never authorizes the change it describes: `requires_approval` is advi
 Start Docker Desktop first and wait until it reports the engine is running.
 
 ```bash
-git clone https://github.com/SanketBhangale1803/orgmemory.git && cd orgmemory
+git clone https://github.com/SanketBhangale1803/memoryworks.git && cd memoryworks
 cp .env.example .env
 make memoryworks        # `make orgmemory` and `make runbook` still work as aliases
 ```

@@ -40,8 +40,8 @@ chmod +x bootstrap.sh
 Log out and SSH in again, then:
 
 ```sh
-git clone https://github.com/SanketBhangale1803/orgmemory.git
-cd orgmemory
+git clone https://github.com/SanketBhangale1803/memoryworks.git
+cd memoryworks
 cp .env.production.example .env.production
 chmod 600 .env.production
 ```
