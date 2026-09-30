@@ -43,3 +43,6 @@ presentation/
 reports/
 # Launch videos rendered by /brag-slim.
 brag-output*/
+
+# Internal plans and backups kept on this machine only (never pushed).
+/private/

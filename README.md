@@ -667,7 +667,6 @@ Service matching is against `scope.service`, the subject, and the body. If the e
 | [`docs/OAUTH_SETUP.md`](docs/OAUTH_SETUP.md) | GitHub, Google, Slack, email auth |
 | [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md) | A timed product walkthrough |
 | [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) | Retrieval evaluation |
-| [`docs/STARTUP_EXECUTION_PLAN.md`](docs/STARTUP_EXECUTION_PLAN.md) | Customer validation, pilot, metrics, and fundraising plan |
 | [`docs/HARNESS_EXECUTION.md`](docs/HARNESS_EXECUTION.md) | Reusable execution skill and resumable checkpoints |
 
 ---

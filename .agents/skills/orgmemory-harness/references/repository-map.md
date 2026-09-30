@@ -6,7 +6,7 @@ Use the rows relevant to the current change. Paths are relative to the MemoryWor
 
 | Task | Read first | Follow only if needed |
 |---|---|---|
-| Startup milestone | `docs/STARTUP_EXECUTION_PLAN.md`, requested release | Relevant source and test rows below; roadmap modules may not exist yet |
+| Startup milestone | `private/STARTUP_EXECUTION_PLAN.md` (local only, not in git), requested release | Relevant source and test rows below; roadmap modules may not exist yet |
 | Pre-action briefing | `backend/app/memory/briefing.py`, `backend/app/api/schemas.py` | `create_briefing` in `backend/app/api/routes.py`, `frontend/lib/webmcp.ts` |
 | Memory provenance and scope | `backend/app/memory/company.py`, `backend/app/governance/scopes.py` | `backend/app/memory/authority.py`, `backend/app/memory/beliefs.py` |
 | Context delivery and retrieval | `backend/app/hcag_adapter/adapter.py`, `backend/app/retrieval/service.py` | `backend/app/hcag_adapter/context_store.py`, `backend/app/swarm/service.py` |

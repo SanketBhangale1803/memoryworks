@@ -10,7 +10,7 @@ From the MemoryWorks project, invoke:
 
 ```text
 $orgmemory-harness implement the MCP preflight tools from Release 0 of
-docs/STARTUP_EXECUTION_PLAN.md and verify the API and tool contracts.
+the startup plan (kept outside the repository) and verify the API and tool contracts.
 ```
 
 Or resume an existing run:

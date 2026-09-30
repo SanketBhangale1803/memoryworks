@@ -1,6 +1,6 @@
 """Workstream 0 containment proof: production starts only with safe configuration.
 
-Covers docs/SECURITY_REMEDIATION_PROOF_PLAN.md, Workstream 0 — autonomous
+Covers the internal security remediation plan (kept outside the repository), Workstream 0 — autonomous
 execution defaults off and production refuses it without an explicit isolated
 profile; the ArcadeDB development password is refused at startup; local
 repository paths are rejected in the production profile; buffered endpoints
