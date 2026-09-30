@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1500" height="1500" viewBox="0 0 1500 1500" role="img" aria-labelledby="title desc">
-  <title id="title">OrgMemory execution harness</title>
+  <title id="title">MemoryWorks execution harness</title>
   <desc id="desc">User instructions feed task routing and passive context retrieval. The main agent orchestrates skills, state, and active memory retrieval, then optionally uses specialists and executes through available tools. Verification produces an outcome and a checkpoint; observed failures feed a scoped repair and regression loop.</desc>
   <defs>
     <pattern id="grid" width="28" height="28" patternUnits="userSpaceOnUse"><path d="M28 0H0V28" fill="none" stroke="#ccc8ba" stroke-width=".5" opacity=".38"/></pattern>
@@ -84,7 +84,7 @@
   <rect x="1040" y="563" width="390" height="110" rx="15" fill="#e8ede4" stroke="#b9c9bb" stroke-width="1.4"/>
   <text x="1065" y="593" class="label">07 / ACTIVE CONTEXT</text>
   <text x="1065" y="625" class="name">Retrieve to resolve a gap</text>
-  <text x="1065" y="651" class="body">Local sources or authorized OrgMemory tools</text>
+  <text x="1065" y="651" class="body">Local sources or authorized MemoryWorks tools</text>
   <path d="M960 485H1002V591H1040" class="optional"/>
   <path d="M1040 640H980V523H960" class="optional"/>
 
@@ -145,5 +145,5 @@
   <text x="70" y="1378" class="kicker">COMPLETE MEANS PROVEN</text>
   <text x="70" y="1410" class="body">The requested result is available, acceptance checks have evidence, and remaining limitations are explicit.</text>
   <text x="70" y="1444" class="small">SKILL.md + two focused references + checkpoint.yaml</text>
-  <text x="1430" y="1444" text-anchor="end" class="small">OrgMemory / 09 September 2026</text>
+  <text x="1430" y="1444" text-anchor="end" class="small">MemoryWorks / 09 September 2026</text>
 </svg>

@@ -1,182 +1,92 @@
-# MemoryWorks — 3-minute demo script (production)
+# MemoryWorks — 3-minute walkthrough
 
-For the OpenAI WebMCP Challenge submission, recorded against the live
-deployment at `https://orgmemory.vercel.app`. Judged on WebMCP Leverage,
-Execution, Potential Impact, and Creativity & Ambition — equally weighted.
-Timings assume ~150 wpm; narration is already cut to fit.
+A timed script for recording or presenting MemoryWorks at
+`https://memoryworks.app`. Every beat runs against real data in a real
+workspace — nothing on screen is scripted or simulated.
 
-The story in one line: **a real person signs in, an agent reads the company's
-memory, proposes a fix, and a person approves it — every step visible, nothing
-applied without a human.**
+## Before you record
 
----
+1. **Use a workspace with real sources.** Connect at least one repository with
+   history and one document or Slack channel that records a decision. Ask two or
+   three questions beforehand so the sidebar shows chat history.
+2. **Know one good question.** Pick a service with an owner, a past incident,
+   and a decision about it — for example "Who owns payments, and why are
+   retries capped?" Check the answer cites sources before you record.
+3. **Know one good agent task.** Something that spans spaces, such as "What
+   depends on payments, and who should approve a retry change?" Agent mode
+   takes 30–70 seconds; run it once so you know the timing.
+4. **Browser:** a clean window at 1440×900, zoom 100%, no extensions visible.
+   Sign out first if you want to show sign-in.
 
-## Before you hit record
+## 0:00–0:20 · The problem
 
-1. **Fresh session.** Sign out, then sign in with GitHub once. If it's your
-   first login on the production workspace, click **Load the scenario** in the
-   `/webmcp` console *before* recording so beat 3 starts warm. The scenario
-   needs to be NOT READY (security task open) — if you already reconciled it
-   in an earlier take, click **Reset** (or re-seed with `{"reset": true}`) so
-   the conflict is back.
-2. **Warm every page** you'll show: `/`, `/login`, `/workspace`, `/webmcp`.
-   Nothing may compile or load on camera.
-3. **Browser:** 1440×900, bookmarks bar hidden, only one window. Zoom the
-   system UI one notch if the console text reads small on your screen.
-4. **Record** with QuickTime (File → New Screen Recording) or Screen Studio
-   for auto-zoom. Record the whole take twice; pick the calmer one.
-5. **Mic:** the narration matters more than the pixels. Record audio in a
-   quiet room; re-read any line you stumble on rather than restarting.
-
-Contingencies:
-- If a model step is slow, **don't talk over it** — the live "running" state
-  with the model's thought on screen *is* the demo. Read the thought aloud.
-- If the provider rate-limits, the console says so honestly and the guided
-  fallback still runs the same real tools. If it happens on camera, say:
-  "even without a model, the tool loop is real — watch."
-
----
-
-## 0:00–0:20 · The problem (landing page)
-
-**Screen:** `/` — hold on the hero two seconds, then a slow scroll past the
-platform cards.
+**Screen:** the landing page, scrolled slowly to the first chapter.
 
 > "Every engineering org already knows why its payments service failed last
-> time. That knowledge is in a postmortem nobody reads, a Slack thread nobody
-> can find, and one engineer's head. So when an AI agent shows up to change
-> something, it starts from zero — and repeats the outage you already had.
->
-> MemoryWorks is the memory layer for engineering organizations — and through
-> WebMCP, the browser hands that memory to agents before they act."
+> time. It's in a postmortem nobody reads and one engineer's head. So when an AI
+> agent shows up to change something, it starts from zero. MemoryWorks is the
+> memory it should have read first."
 
-**Land on:** the tool counter — 21 tools, 14 read-only, 6 human-governed.
+## 0:20–0:45 · Sign in, and GitHub is already connected
 
----
+**Screen:** `/login` → **Continue with GitHub** → the consent screen → the chat.
 
-## 0:20–0:40 · Real sign-in (production)
+> "Signing in with GitHub also grants repository access, in one consent. So
+> the first thing I see isn't another 'Connect GitHub' — it's 'Choose
+> repositories'."
 
-**Screen:** `/login` — click **Continue with GitHub**, let the OAuth round
-trip play, land in `/workspace`.
+**Land on:** the empty chat with **Choose repositories**, or, in a prepared
+workspace, the starter questions. Point at the sidebar: Sources, Memory,
+Approvals, and Chats.
 
-> "This is the deployed product, not a localhost. Real sign-in with my real
-> GitHub identity — my source permissions are the boundary. And my session
-> cookie never leaves the browser: when a browser agent connects, it borrows
-> this page's authenticated session inside its permission boundary. Agents
-> never receive credentials."
+## 0:45–1:25 · Ask
 
-**Land on:** your name and role in the workspace.
+**Screen:** type the prepared question in the composer (mode: **Ask**).
 
----
+> "Ask answers only from what the company actually recorded — and says so when
+> it can't."
 
-## 0:40–1:00 · The console registers itself as a tool provider
+**Land on:** the answer. Click **N sources ▾** to show the evidence, then point
+at **Did this work?**
 
-**Screen:** `/webmcp` — point at the header badge, then the right rail.
+> "Every answer is tied to its source, and whether it worked goes back into the
+> record of what context actually produces correct action here."
 
-> "This page is itself a Model Context Provider. It registered sixteen
-> organizational tools on document.modelContext — the same handlers the UI
-> calls, no parallel demo path. Read tools run immediately. Write tools are
-> approval-gated. And approving is *not* a tool — that's a person, in the
-> workspace. That asymmetry is deliberate."
+## 1:25–2:25 · Agent
 
-**Land on:** the WebMCP surface card — Read / Write / **Approve: no tool. A
-person only.**
+**Screen:** switch the composer chip from **Ask** to **Agent**, send the
+prepared task.
 
----
+> "Agent mode works across every memory space step by step — it reads, checks
+> owners and dependencies, looks for contradictions."
 
-## 1:00–1:30 · A question runs real tools, live
+While it runs, point at the live step label. When it finishes, open **Worked
+through N steps** and click a numbered citation to show the evidence panel.
 
-**Screen:** click the **Catch me up** suggestion. Let the tool calls land one
-at a time — read one thought and one summary out loud. Then let the briefing
-render.
+If the agent proposes a change, the plan appears in the conversation:
 
-> "Every row is a real call: the model chose it, the thought above it is the
-> model's, the milliseconds are real. One question, four spaces, and the
-> answer is grounded — every claim cites the memory it came from."
+> "When it wants to change something, it stops. Nothing is applied until a
+> person approves — right here, or in Approvals."
 
-**Land on:** the briefing — decisions on record, the blocker, next best
-action, with citations.
+Click **Approve** (or **Decline**) on camera.
 
----
+## 2:25–2:45 · Where the rest lives
 
-## 1:30–2:15 · The centerpiece: "fix it"
+**Screen:** click **Memory** (show the tabs: Memories, Graph, Profiles, Spaces,
+Conflicts), then **Approvals**, then press **⌘K** and type a page name.
 
-**Screen:** type **fix it** in the composer. Let it run. Do not narrate every
-step — pick the proposal moment and the approval.
+> "Everything else is one click away — what memory holds, what's waiting on a
+> person — and ⌘K reaches all of it."
 
-> "Now the part that matters. 'Fix it' — no context, no menu. The model
-> reads the workspace, finds the one blocker, finds the contradiction — the
-> tracker says open, but a go/no-go meeting already settled it — and proposes
-> the fix *by reference*: the resolution it submits is the exact one the
-> system computed, not a re-typed guess.
->
-> And look — it stops. The plan is right here in the answer: proposed,
-> nothing applied. I'm the approval step."
+## 2:45–3:00 · Close
 
-**Click Approve.** The plan flips to Applied; the readiness board on the
-right recomputes from **NOT READY** to **READY**.
+**Screen:** **Sources → AI tools**, showing the Claude Code / Cursor setup.
 
-> "Approved by a person. The board on the right recomputed from stored state —
-> the launch is unblocked. The agent did the reading; the human did the
-> deciding."
+> "The same memory answers inside Claude Code, Cursor, or any MCP client — so
+> agents get briefed before they act, and report back after. MemoryWorks, at
+> memoryworks.app."
 
----
+## 60-second cut
 
-## 2:15–2:35 · Follow-ups that aren't pre-written
-
-**Screen:** point at the suggestion chips under the composer — they changed
-after the last answer. Click one (e.g. **"Show the proposed change waiting
-for approval"** or **"Who settled the OAuth approval in Launch?"**).
-
-> "These next questions aren't canned. They're drafted from what this session
-> actually found — the conflict it saw, the person on record, the plan it
-> filed. The console keeps up with the conversation."
-
----
-
-## 2:35–2:50 · Built for agents outside the page
-
-**Screen:** the **Live WebMCP activity** card, then (optional, only if
-pre-connected) a Chrome browser agent calling `get_orgmemory_readiness` and
-its call appearing in the card.
-
-> "Anything speaking WebMCP — Chrome's built-in agent support, any MCP
-> client — can connect to this URL and call the same tools. Foreign agent
-> traffic shows here, separate from my own. Read tools stream data; write
-> tools stop at exactly the same approval card I just clicked."
-
-*(If you don't connect an external agent on camera, keep the sentence and cut
-the optional shot — the activity card alone carries it.)*
-
----
-
-## 2:50–3:00 · Close
-
-**Screen:** back to the readiness board, **READY**, then hold on the logo.
-
-> "Briefing, proposal, human decision, recorded outcome — that loop is the
-> product. Anyone can ingest the same Slack and GitHub. Nobody can copy the
-> record of which context actually produced correct action here.
->
-> MemoryWorks — company memory your agents can actually use, at
-> orgmemory.vercel.app."
-
----
-
-## 60-second cut (if the form demands it)
-
-Keep: 0:20–0:40 (real sign-in) → 0:40–1:00 (WebMCP surface card) → 1:30–2:15
-("fix it" + approve + NOT READY→READY) → 2:50–3:00 (close). Drop the
-catch-up beat and the follow-up chips beat.
-
-## Upload checklist
-
-- 1080p minimum, ≤ 200 MB (compress if needed; the UI is high-contrast so
-  H.264 at ~6 Mbps reads fine)
-- Title: `MemoryWorks — WebMCP: company memory your agents can use`
-- Description first line: the one-line story above + repo link +
-  `https://orgmemory.vercel.app`
-- Caption the "fix it" beat — judges often watch muted
-- In the submission form, put the WebMCP surface card (beat 3) in the first
-  two screenshots: WebMCP Leverage is a quarter of the score and it should be
-  legible without pressing play
+Keep 0:20–0:45 (sign-in → repositories), 0:45–1:25 (Ask with sources), and the
+approval moment from 1:25–2:25. Close on the product name and URL.

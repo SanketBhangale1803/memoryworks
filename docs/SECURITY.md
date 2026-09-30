@@ -43,9 +43,11 @@ and ask; viewers read.
 - `ALLOW_LOCAL_COMMAND_EXECUTION=false` is the default. This release has no
   shell executor: approvals produce audit records and command previews
   only, and enabling the flag does not silently add execution.
-- Simulation mode (`/api/simulate`) walks runbook steps through the same
-  policy engine without creating actions, so teams can inspect what an
-  agent would be allowed to do before granting anything.
+- The typed action policy above belongs to the legacy action path
+  (`/api/actions/*`, and a `/api/simulate` dry run), which has no page and is
+  off by default (`ORG_MEMORY_ENABLE_ACTIONS=false`). In the product, agents
+  can only propose: new memories, change plans, refreshes, and connector
+  writes all wait for a person in Approvals (see [`APPROVALS.md`](APPROVALS.md)).
 
 ## Ingestion hygiene
 
@@ -56,7 +58,8 @@ and ask; viewers read.
 
 ## Audit
 
-Every consequential event is recorded: ingestion jobs, queries answered,
-runbook generation, drift checks, simulations, action proposals/approvals/
-denials, memory approvals, importer runs, API key lifecycle, connector
-connections and disconnections.
+Every consequential event is recorded: ingestion jobs, questions answered,
+memory proposals and decisions, agent change plans and their approval,
+repository refreshes, connector writes, importer runs, API key lifecycle, and
+connector connections and disconnections — including a GitHub connection made
+at sign-in. The trail is under **Approvals → Audit log**.

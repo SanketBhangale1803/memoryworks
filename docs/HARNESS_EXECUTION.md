@@ -1,12 +1,12 @@
-# OrgMemory execution harness
+# MemoryWorks execution harness
 
-The reusable [OrgMemory harness skill](../.agents/skills/orgmemory-harness/SKILL.md) guides a coding agent through a scoped change, relevant context, implementation, verification, and a resumable handoff. It adapts all three supplied notebook designs to this repository.
+The reusable [MemoryWorks harness skill](../.agents/skills/orgmemory-harness/SKILL.md) guides a coding agent through a scoped change, relevant context, implementation, verification, and a resumable handoff. It adapts all three supplied notebook designs to this repository.
 
-![OrgMemory execution harness blueprint](assets/orgmemory-harness.svg)
+![MemoryWorks execution harness blueprint](assets/orgmemory-harness.svg)
 
 ## Use the skill
 
-From the OrgMemory project, invoke:
+From the MemoryWorks project, invoke:
 
 ```text
 $orgmemory-harness implement the MCP preflight tools from Release 0 of
@@ -65,4 +65,4 @@ The implementation agent edits that slice, runs the relevant contract checks, re
 
 The delivered skill and templates are usable instructions. They do not themselves implement a new model router, PostgreSQL specialist registry, scheduler, token limiter, GitHub enforcement service, or autonomous worker. Subagents run only when authorized and supported. The sketch's model names and latency numbers are examples and targets, not promises about the current system.
 
-OrgMemory already has briefing, memory, outcome, and execution modules, but their current boundaries still matter. The protocol documents the missing standalone MCP briefing registrations, the best-effort context ledger, and the need to reconcile outcome receipts after a timeout. Those observations were checked against repository source; no live production actions were run to create this skill.
+MemoryWorks already has briefing, memory, outcome, and execution modules, but their current boundaries still matter. The protocol documents the missing standalone MCP briefing registrations, the best-effort context ledger, and the need to reconcile outcome receipts after a timeout. Those observations were checked against repository source; no live production actions were run to create this skill.

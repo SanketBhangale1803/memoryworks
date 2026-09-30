@@ -1,9 +1,9 @@
 ---
 name: orgmemory-harness
-description: Execute or resume a scoped OrgMemory engineering task with repository context, capability-aware routing, durable checkpoints, and evidence-based verification. Use for implementation milestones, bug fixes, and cross-component changes in the OrgMemory repository.
+description: Execute or resume a scoped MemoryWorks engineering task with repository context, capability-aware routing, durable checkpoints, and evidence-based verification. Use for implementation milestones, bug fixes, and cross-component changes in the MemoryWorks repository.
 ---
 
-# OrgMemory execution harness
+# MemoryWorks execution harness
 
 Turn the user's requested change into a verified result that another session can resume. Apply the ten harness primitives in the supplied design: instructions, context delivery, context management, tool interfaces, execution environment, durable state, orchestration, optional specialists, reusable procedures, and verification/observability.
 
@@ -26,7 +26,7 @@ Use two retrieval modes from the design:
 - **Passive context:** collect the task contract, relevant repository instructions, current implementation, and a small set of source-backed memories before planning an edit.
 - **Active context:** fetch a targeted file, citation, source revision, or log only when it resolves a named uncertainty. Record what the additional evidence changed.
 
-When an authorized OrgMemory connection is available, discover its actual tools before using it. Prefer its briefing surface for relevant organizational constraints. Read [the execution protocol](references/execution-protocol.md) for API fallback and verdict handling. Local repository work can proceed from source files and tests when a memory service is unavailable; an action dependent on missing operational knowledge remains unresolved.
+When an authorized MemoryWorks connection is available, discover its actual tools before using it. Prefer its briefing surface for relevant organizational constraints. Read [the execution protocol](references/execution-protocol.md) for API fallback and verdict handling. Local repository work can proceed from source files and tests when a memory service is unavailable; an action dependent on missing operational knowledge remains unresolved.
 
 Preserve the user's selected model. Classify bounded edits and deterministic checks as routine; retain architecture, authorization, schema, and conflicting-evidence decisions with the primary agent. Only select another model if the host exposes that capability and current instructions authorize it. Record a route decision without pretending to have changed models.
 
@@ -79,7 +79,7 @@ Run checks proportionate to the changed behavior. Verification evidence includes
 
 When a failure reveals a repeatable cause within the current task, reproduce it, make the narrow repair, and add the appropriate regression check. Consider a procedure update only when it prevents recurrence; propose broader skill/policy changes for review. Never promote a single success into a company policy or bypass an approval boundary through learning.
 
-Record known outcomes using an available, authorized OrgMemory outcome tool if the task already opened a briefing. Otherwise save the result locally with `outcome_sync: not_attempted` or `pending`. Keep the five supported product labels: `succeeded`, `failed`, `partial`, `abandoned`, `unknown`. Checkpoint workflow state and product outcome label are separate concepts.
+Record known outcomes using an available, authorized MemoryWorks outcome tool if the task already opened a briefing. Otherwise save the result locally with `outcome_sync: not_attempted` or `pending`. Keep the five supported product labels: `succeeded`, `failed`, `partial`, `abandoned`, `unknown`. Checkpoint workflow state and product outcome label are separate concepts.
 
 Mark the task complete only when acceptance conditions are supported by evidence and the requested artifact is available. A local test pass does not establish production success. If verification is incomplete, report the precise limitation.
 

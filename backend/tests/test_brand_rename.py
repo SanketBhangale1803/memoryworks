@@ -22,24 +22,25 @@ def test_old_product_name_is_gone_from_tracked_files():
 
     The Python import path, env vars, and tool identifiers keep lowercase or
     upper-case forms (``orgmemory``, ``ORGMEMORY_*``, ``search_orgmemory``) so
-    existing installs keep working. The capitalised product name appears only
-    in the SDK aliases that keep ``from orgmemory import OrgMemory`` importable,
-    and in notes that explain those aliases.
+    existing installs keep working. The capitalised old name may appear only in
+    the SDK aliases that keep ``from orgmemory import OrgMemory`` importable,
+    in the tests that guard the rename, and in prose that explains the rename.
     """
-    allowed = {
+    alias_files = {
         "python_sdk/src/orgmemory/__init__.py",
         "python_sdk/tests/test_client.py",
-        "mcp_server/server.py",
         "backend/tests/test_brand_rename.py",
         "frontend/tests/navigation.test.mjs",
     }
+    explains_rename = ("pre-rename", "previously called", "as aliases")
     tracked = subprocess.run(
-        ["git", "grep", "-l", "OrgMemory"], cwd=ROOT, capture_output=True, text=True
-    ).stdout.split()
+        ["git", "grep", "-n", "OrgMemory"], cwd=ROOT, capture_output=True, text=True
+    ).stdout.splitlines()
     leftovers = [
-        path
-        for path in tracked
-        if path not in allowed and not path.startswith(("presentation/", "reports/", ".agents/"))
+        line
+        for line in tracked
+        if line.split(":", 1)[0] not in alias_files
+        and not any(phrase in line for phrase in explains_rename)
     ]
     assert leftovers == []
 

@@ -1,23 +1,20 @@
 # MemoryWorks MCP server
 
-The server gives Cursor and other MCP clients a governed preflight loop around
-consequential work:
+A FastMCP server over the MemoryWorks HTTP API, for Claude Code, Cursor,
+VS Code, Claude, ChatGPT, and other MCP clients. It holds no business logic:
+every tool calls the API, and workspace and team scope are enforced there.
 
-1. Call `get_orgmemory_briefing` before acting. It returns a cited verdict,
-   applicable constraints, precedents, and a durable `briefing_id`.
-2. Perform the action only within the returned constraints and the caller's own
-   approval policy.
-3. Call `record_orgmemory_outcome` with that `briefing_id` to close the ledger.
+```bash
+make mcp                                  # stdio, with an API key
+make mcp-http                             # streamable HTTP on :8001, with OAuth
+python mcp_server/server.py --health      # check the backend
+```
 
-`get_orgmemory_briefing` requires `read` scope. `record_orgmemory_outcome` is an
-append-only audit write and requires `write` scope. A `requires_approval` verdict
-does not grant approval, and `no_memory` does not grant permission.
+Settings: `MEMORYWORKS_API_URL`, `MEMORYWORKS_API_KEY`, and `MEMORYWORKS_MCP_*`.
+The older `ORGMEMORY_*` and `RUNBOOK_*` names still work with a deprecation
+warning. The Vercel deployment at memoryworks.app does not run this server yet;
+use stdio with an API key against it, or deploy the server (Docker `mcp` profile
+or `deploy/oci/`) for HTTP with OAuth.
 
-The default catalog also exposes the current `orgmemory_*` read tools for asking,
-searching, profiles, lineage, conflicts, change sets, skills, and work packages.
-Legacy `runbook_*` tools are hidden unless
-`ORGMEMORY_ENABLE_LEGACY_TOOLS=true` is set.
-
-Configure the server with `ORGMEMORY_API_URL` and a workspace-scoped
-`ORGMEMORY_API_KEY`. The former `RUNBOOK_API_URL` and `RUNBOOK_API_KEY` names are
-accepted for one migration window and emit a deprecation warning.
+In the app, **Sources → AI tools** generates the configuration for each client.
+Tool reference and examples: [`docs/MCP.md`](../docs/MCP.md).

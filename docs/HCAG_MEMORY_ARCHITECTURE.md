@@ -2,7 +2,7 @@
 
 ## Product objective
 
-Runbook is a project-scoped company memory, not a long prompt. New evidence is
+MemoryWorks is a project-scoped company memory, not a long prompt. New evidence is
 indexed continuously, repeated observations consolidate, stale evidence loses
 retrieval priority, and every answer remains attributable to current sources.
 Retrieval is read-only: asking a question never makes a claim more authoritative.
@@ -14,7 +14,7 @@ Retrieval is read-only: asking a question never makes a claim more authoritative
 [Continual Knowledge Updating in LLM Systems](https://arxiv.org/abs/2605.05097)
 models an association with coupled fast and slow variables. A recent event lifts
 the fast variable immediately; repeated events raise the slow variable; absence
-allows both to decay. Runbook adopts this at the evidence-version level:
+allows both to decay. MemoryWorks adopts this at the evidence-version level:
 
 - ingestion reinforces the fast signal;
 - repeated observation of the same source version consolidates the slow signal;
@@ -23,14 +23,14 @@ allows both to decay. Runbook adopts this at the evidence-version level:
 - retrieval reads these signals but never writes them.
 
 The paper's evaluation is intentionally small and does not report retrieval QA
-metrics. Runbook therefore exposes the state in retrieval traces and treats it
+metrics. MemoryWorks therefore exposes the state in retrieval traces and treats it
 as a ranking feature, not as proof of improved accuracy.
 
 ### Compressed and sparse selection
 
 [DeepSeek-V4](https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro) alternates
 Compressed Sparse Attention (CSA) with Heavily Compressed Attention (HCA) inside
-the model. Runbook cannot add those neural attention kernels to an API model.
+the model. MemoryWorks cannot add those neural attention kernels to an API model.
 It adopts the useful system pattern instead:
 
 1. **Sparse exact lane** - high-resolution lexical, service, canonical-source,
@@ -58,7 +58,7 @@ application retriever, not a model attention implementation.
 - [DYNA](https://arxiv.org/abs/2606.15778) provides further early evidence for
   temporal knowledge graphs as an external, retraining-free memory substrate.
 
-Runbook keeps typed ArcadeDB relationships and source provenance. Fast/slow
+MemoryWorks keeps typed ArcadeDB relationships and source provenance. Fast/slow
 weights influence only relevant evidence; they cannot create relevance, bypass
 workspace scope, or convert repetition into verification.
 

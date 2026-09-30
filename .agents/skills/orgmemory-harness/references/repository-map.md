@@ -1,6 +1,6 @@
-# OrgMemory repository and verification map
+# MemoryWorks repository and verification map
 
-Use the rows relevant to the current change. Paths are relative to the OrgMemory repository root. This map was inspected on September 9, 2026; recheck current files before acting. It records code locations, not a claim that every deployed integration works.
+Use the rows relevant to the current change. Paths are relative to the MemoryWorks repository root. This map was inspected on September 9, 2026; recheck current files before acting. It records code locations, not a claim that every deployed integration works.
 
 ## Context entry points
 

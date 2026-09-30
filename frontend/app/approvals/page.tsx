@@ -212,9 +212,8 @@ export default function Approvals() {
           </div>
           {recentRequests.map((request) => {
             const state = REFRESH_STATES[request.status] || REFRESH_STATES.pending_approval;
-            const canResolve =
-              request.status === "pending_approval" &&
-              Boolean(principal && (isAdmin || request.requested_by_id === principal.id));
+            // Refreshes re-read a whole repository, so only an owner or admin decides.
+            const canResolve = request.status === "pending_approval" && isAdmin;
             return (
               <article className="ap-row" key={request.id}>
                 <div className="ap-row-main">
@@ -266,7 +265,19 @@ export default function Approvals() {
                   {call.risk_level} risk
                 </span>
               </div>
-              {actions(call.id, () => void resolveConnector(call, true), () => void resolveConnector(call, false), "Approve & run")}
+              {/* The person who asked for a write can approve their own; otherwise an admin decides. */}
+              {isAdmin || call.user_id === principal?.id ? (
+                <div className="ap-row-actions">
+                  <button className="button" disabled={busyId === call.id} onClick={() => void resolveConnector(call, true)}>
+                    Approve &amp; run
+                  </button>
+                  <button className="button secondary" disabled={busyId === call.id} onClick={() => void resolveConnector(call, false)}>
+                    Decline
+                  </button>
+                </div>
+              ) : (
+                <span className="badge">With an admin</span>
+              )}
             </article>
           ))}
         </section>

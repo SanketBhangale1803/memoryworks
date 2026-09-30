@@ -1,21 +1,27 @@
 # Connectors
 
-Application login and source connectors are separate concerns: a user logs
-into MemoryWorks, then connects sources. Connector tokens are verified against
+A person signs in, then connects sources from **Sources** — except GitHub, where
+signing in with GitHub already connects it (see
+[`OAUTH_SETUP.md`](OAUTH_SETUP.md)). Grants are per person and per workspace. Connector tokens are verified against
 the provider before encrypted storage (Fernet; AWS KMS or OCI Vault in
 production).
 
 ## GitHub
 
 - OAuth: create a GitHub OAuth App with callback
-  `http://localhost:8000/api/auth/github/callback`, set `GITHUB_CLIENT_ID`
-  and `GITHUB_CLIENT_SECRET`, then use **Connect with GitHub**. Scopes
-  `repo read:org` allow private repository discovery.
-- Token fallback: paste a fine-grained PAT in the UI or set `GITHUB_TOKEN`.
+  `http://localhost:8000/api/auth/github/callback` (production:
+  `https://memoryworks.app/api/auth/github/callback`) and set
+  `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`. Sign-in and **Connect GitHub**
+  share that app and callback; both request `repo read:org read:user user:email`,
+  which allows private repository discovery.
+- After connecting, **Add knowledge → Connect a repository** lists the
+  repositories the grant can see, one at a time or **Index all repositories**.
+- Server fallback: `GITHUB_TOKEN` is used only outside a workspace context.
 - Endpoints: `GET /api/connectors/github/auth/start`,
-  `GET /api/connectors/github/auth/callback`,
-  `POST /api/connectors/github/token`, `GET /api/connectors/github/status`,
-  `GET /api/connectors/github/repos`, `POST /api/ingest/github`.
+  `GET /api/auth/github/callback` (shared with sign-in),
+  `GET /api/connectors/github/status`,
+  `POST /api/connectors/github/tools/list_repositories`,
+  `POST /api/ingest/github`, `POST /api/ingest/github/all`.
 - Ingestion covers files, imports, endpoints, env vars, compose files,
   workflows, Jenkinsfiles, package manifests, issues, and PRs with original
   URLs; re-ingestion replaces prior repository knowledge for the project.
@@ -25,11 +31,10 @@ production).
 - OAuth: create a Slack app with redirect
   `http://localhost:8000/api/auth/slack/callback`, set `SLACK_CLIENT_ID` and
   `SLACK_CLIENT_SECRET`. The app must be invited to private channels.
-- Token fallback: bot token via UI or `SLACK_BOT_TOKEN`.
 - Endpoints: `GET /api/connectors/slack/auth/start`,
-  `GET /api/connectors/slack/auth/callback`,
-  `POST /api/connectors/slack/token`, `GET /api/connectors/slack/status`,
-  `GET /api/connectors/slack/channels`, `POST /api/ingest/slack`.
+  `GET /api/connectors/slack/auth/callback`, `GET /api/connectors/slack/status`,
+  `GET /api/connectors/slack/resources` (the channels the connecting person can
+  see), `POST /api/ingest/slack`.
 - Pasted Slack exports work without OAuth through `POST /api/ingest/upload`
   with `source_type: slack_export`.
 

@@ -4,9 +4,9 @@ Read this when a task needs organizational briefings, external action correlatio
 
 ## Capability negotiation
 
-Inspect the tools the host actually exposes. Record relevant capabilities as `available`, `unavailable`, or `unverified` in the run checkpoint. Examples: repository reads/edits, shell checks, OrgMemory briefing, outcome append, model selection, subagents, isolated execution, and a scheduler.
+Inspect the tools the host actually exposes. Record relevant capabilities as `available`, `unavailable`, or `unverified` in the run checkpoint. Examples: repository reads/edits, shell checks, MemoryWorks briefing, outcome append, model selection, subagents, isolated execution, and a scheduler.
 
-Use source inspection for local work when an OrgMemory service is absent. Do not fabricate a memory ID, install credentials, change the user's model, provision PostgreSQL, or spawn specialists merely to match the diagram. A skills file provides the procedure; optional infrastructure requires its own implementation.
+Use source inspection for local work when a MemoryWorks service is absent. Do not fabricate a memory ID, install credentials, change the user's model, provision PostgreSQL, or spawn specialists merely to match the diagram. A skills file provides the procedure; optional infrastructure requires its own implementation.
 
 ## Briefing contract
 
@@ -68,7 +68,7 @@ Build a small packet containing:
 
 Run passive retrieval and routine task classification concurrently only when they are independent. When new evidence changes the route, update the packet before editing. The current host model can do both jobs sequentially when no separate router is available.
 
-The handwritten targets of roughly 20k memory tokens, first-token latency below 200 ms, and transport round-trip below 50 ms are design aspirations, not verified OrgMemory properties. Do not insert a hard-coded model name or build new latency infrastructure during an unrelated task. If profiling is requested, measure routing, retrieval, execution, and verification separately and record actual observations.
+The handwritten targets of roughly 20k memory tokens, first-token latency below 200 ms, and transport round-trip below 50 ms are design aspirations, not verified MemoryWorks properties. Do not insert a hard-coded model name or build new latency infrastructure during an unrelated task. If profiling is requested, measure routing, retrieval, execution, and verification separately and record actual observations.
 
 ## Specialist task card
 

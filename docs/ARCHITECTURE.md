@@ -33,7 +33,7 @@ envelopes, artifacts, skills), [`CONTEXT_ACTIVATION_SWARM.md`](CONTEXT_ACTIVATIO
 ```text
                   ┌──────────────────────── clients ─────────────────────────┐
                   │ Next.js web app   browser agents    MCP clients   SDK/CLI │
-                  │ (WorkspaceChat)   (WebMCP, 37 tools) (stdio/HTTP) (Python)│
+                  │ (WorkspaceChat)   (36 page tools)   (stdio/HTTP) (Python)│
                   │                                     Tauri desktop bridge  │
                   └──────┬──────────────────┬─────────────────┬──────────────┘
                          │ session cookie   │ same cookie     │ API key / OAuth bearer
@@ -65,7 +65,7 @@ envelopes, artifacts, skills), [`CONTEXT_ACTIVATION_SWARM.md`](CONTEXT_ACTIVATIO
 | Graph | ArcadeDB over HTTP; an in-memory store with the same contract for tests |
 | Embeddings / rerank | FastEmbed or OpenAI embeddings, optional cross-encoder reranker, deterministic fallback |
 | Models | GLM via OpenRouter (default), OpenAI, Anthropic, Google, xAI, Kimi |
-| Agent surfaces | WebMCP (in-page), FastMCP server (stdio + streamable HTTP), Python SDK + CLI |
+| Agent surfaces | In-browser tools on the chat page, FastMCP server (stdio + streamable HTTP), Python SDK + CLI |
 | Desktop | Tauri 2 thin bridge (`desktop/`) |
 
 ---
@@ -85,7 +85,7 @@ backend/app/
   graph/                GraphStore contract, ArcadeDB + in-memory stores, ranker, traversal
   hcag_adapter/         routing, context windows, context store, memory dynamics
   swarm/                concurrent specialist retrieval + context compiler
-  memory/               atomic memory, beliefs, authority, change intelligence,
+  memory/               atomic memory, beliefs, authority, change sets,
                         revisions/envelopes/artifacts/skill specs, briefings
   retrieval/            the ask pipeline and its lanes, memory_search ranking
   intelligence/         trust, drift, correlation, simulation, blast radius
@@ -94,14 +94,14 @@ backend/app/
   work/                 Memory Work packets
   execution/            headless coding-agent runner
   orgops/               cross-space organizational operations, agent, watches, seed
-  webmcp_agent.py       server-side agent loop over the WebMCP tool surface
+  webmcp_agent.py       the model-driven agent loop Agent mode runs (with orgops tools)
   company_context/      inspectable company-context briefing
   llm/                  model provider catalog and grounded JSON generation
   approvals/ agentgate_adapter/ audit/   action proposals, policy, audit trail
-  runbooks/ reliability/ importers/      runbook extraction, assertions, incident importers
-backend/tests/          48 pytest modules
+  runbooks/ reliability/ importers/      legacy procedure extraction and assertions (no UI), incident importers
+backend/tests/          51 pytest modules
 backend/evals/          briefing evaluation with known-answer cases
-frontend/               Next.js app (32 pages), components, lib, node:test suites
+frontend/               Next.js app (20 routes), components, lib, node:test suites
 mcp_server/             standalone MCP server + contract tests
 python_sdk/             typed sync/async client and the `orgmemory` CLI
 desktop/                Tauri 2 OS bridge (keychain, folders, local MCP sidecar)
@@ -131,7 +131,7 @@ prefixes is blocked outright.
 Principals come from one of three places, all resolved to a workspace, user,
 and role (`owner`, `admin`, `member`):
 
-- a signed session cookie (browser, and therefore WebMCP tools);
+- a signed session cookie (browser, and therefore the in-browser agent tools);
 - an `om_live_…` API key (SDK, CLI, stdio MCP);
 - an MCP OAuth access token, issued by the backend's own authorization server
   (`/oauth/*`, dynamic client registration optional) and introspected by the
@@ -273,7 +273,7 @@ budget, and the retrieval trace — so any answer's context is reproducible.
 ## Answers: the ask pipeline
 
 `RetrievalService.ask` (`retrieval/service.py`) is the single answer path for
-the chat, the API, the SDK, MCP, and WebMCP. It resolves each question into
+Ask mode in the chat, the API, the SDK, MCP, and the in-browser tools. It resolves each question into
 one of three lanes — company, general, or conversational — and never presents
 general knowledge as company truth.
 
@@ -312,10 +312,12 @@ rather than fabricates. The model provider only changes who writes the
 answer; every provider receives the same retrieved evidence
 (`llm/providers.py`).
 
-The org agent console is a separate entry point: `/api/org/ask` runs a
+Agent mode in the chat is a separate entry point: `/api/org/ask` runs a
 tool-using agent over the organizational-operations surface (below), and
-`/api/org/ask/stream` streams that session as NDJSON within one request, so a
-load-balanced deployment cannot lose the process-local run mid-answer.
+`/api/org/ask/stream` — what the chat calls — streams that session as NDJSON
+within one request, so a load-balanced deployment cannot lose the
+process-local run mid-answer. After each turn, `/api/org/followups` drafts the
+suggested next questions from what the turn found.
 
 ---
 
@@ -373,7 +375,8 @@ stable ids back to stored rows.
   catalog and executor the HTTP routes use, with a deterministic decider when
   the model is unreachable.
 - **The launch scenario** (`orgops/seed.py`) is an idempotent multi-space
-  fixture used by the WebMCP walkthrough and public demo mode.
+  fixture used by public demo mode and tests. The product never loads it into
+  a real workspace on its own.
 
 ---
 
@@ -452,35 +455,40 @@ provenance, and `ChangeImpactService` compares re-ingested file and version
 metadata against existing edges to create review reports. A source change is a
 reason to re-verify an assertion, never proof that a procedure is invalid.
 
-`runbooks/` extracts versioned, cited runbooks downstream of retrieval; a
-procedure cannot exist without evidence-backed steps. Actions, procedures, and
-advanced reliability surfaces are behind `ORG_MEMORY_ENABLE_*` flags.
+`runbooks/` extracts versioned, cited procedures downstream of retrieval; a
+procedure cannot exist without evidence-backed steps. These are engines from the
+product's earlier runbook direction: they have no pages or navigation, stay
+behind `ORG_MEMORY_ENABLE_*` flags (off by default), and are slated for removal
+from the backend.
 
 ---
 
 ## Agent surfaces
 
-### WebMCP (in the browser)
+### In the browser
 
-The signed-in workspace registers tools with
-`document.modelContext.registerTool()`:
+The chat page registers its tools with the browser through
+`document.modelContext.registerTool()`, so an AI agent running in a signed-in
+tab can use MemoryWorks without scraping the interface. Nothing in the
+interface names or advertises this; it is plumbing.
 
-- `frontend/lib/webmcp.ts` — 21 memory tools (briefing, outcome, ask, search,
+- `frontend/lib/webmcp.ts` — 20 memory tools (briefing, outcome, ask, search,
   memory reads, proposals, approvals);
-- `frontend/lib/orgTools.ts` — 16 organizational-operations tools, the subset
-  the agent console registers;
-- `frontend/hooks/useMemoryWorksWebMCP.ts` — registration lifecycle;
-- `frontend/lib/webmcpCatalog.ts` — handler-free manifest for the `/webmcp`
-  command center, so there is one execution path.
+- `frontend/lib/orgTools.ts` — 16 cross-space operations tools, the same ones
+  Agent mode's server-side loop uses;
+- `frontend/hooks/useWorkspaceTools.ts` — registers both sets from the chat
+  page, wiring each tool to the same API calls the interface makes;
+- `frontend/lib/webmcpCatalog.ts` — a handler-free manifest derived from the
+  executable definitions, used by tests and the docs.
 
 Tools reuse the page's `HttpOnly` session cookie through `lib/api.ts`; agents
 never receive credentials. Tools are annotated in tiers — `read-only`,
 `ledger-append`, `approval-required`, `admin-decision` — and the server enforces
-authorization regardless of what the client advertises.
+authorization regardless of what the client advertises. Decision tools are only
+registered for owners and admins.
 
-`backend/app/webmcp_agent.py` runs the same tool surface server-side
-(`/api/webmcp/agent-sessions`) so the console can show a live agent loop with
-the same names, authorization, and approval boundary.
+`/api/webmcp/agent-sessions` is an older server-side entry point to the same
+agent loop; no page calls it any more.
 
 ### MCP server
 
@@ -490,12 +498,15 @@ at `/mcp` with OAuth, verifying bearer tokens by introspecting against the
 backend. Every tool carries MCP annotations plus an `orgmemory/toolKind`
 tag (`preflight` for the briefing, `outcome` for recording one, `read`,
 `write`). Legacy `runbook_*` tools are
-removed unless `ORGMEMORY_ENABLE_LEGACY_TOOLS=true`.
+removed unless `ORGMEMORY_ENABLE_LEGACY_TOOLS=true`. Settings are read as
+`MEMORYWORKS_*` first, with `ORGMEMORY_*` and `RUNBOOK_*` as deprecated
+fallbacks.
 
 ### Python SDK and CLI
 
 `python_sdk/` provides `MemoryWorks` and `AsyncMemoryWorks` typed clients and the
-`orgmemory` CLI, reading `ORGMEMORY_API_URL` and `ORGMEMORY_API_KEY`.
+`orgmemory` CLI, reading `ORGMEMORY_API_URL` and `ORGMEMORY_API_KEY`. The import
+path stays `orgmemory`, and the pre-rename `OrgMemory` names remain as aliases.
 
 ### Desktop bridge
 
@@ -509,17 +520,26 @@ stays in the backend.
 ## Frontend
 
 - **Shell.** `app/layout.tsx` wraps every page in `AppShell`, which places
-  signed-in pages inside `WorkspaceFrame`: a sidebar built from the destination
-  registry, collapsible and a drawer on narrow screens.
-- **One registry.** `lib/workspaceMap.ts` lists every destination (grouped Ask,
-  Knowledge, Integrations, Govern, Agents, Admin). The sidebar, the ⌘K
-  `CommandMenu`, and the page title bar all read it; `tests/navigation.test.mjs`
-  checks it. `adminOnly` hides doors that would not open — the server is still
-  the boundary.
-- **Post-login surface.** `/workspace` renders `WorkspaceChat`, a single chat
-  over the ask pipeline; other pages are satellites of it.
-- **Public surfaces.** The landing page, `/docs`, `/login`, and the `/webmcp`
-  demo render outside the frame.
+  signed-in pages inside `WorkspaceFrame`, laid out like an editor: New chat,
+  Search (⌘K), three places — Sources, Memory, Approvals (with a waiting
+  count) — the chat history, a three-step Getting started card, and the account
+  row. On narrow screens the sidebar is a drawer.
+- **One registry.** `lib/workspaceMap.ts` lists every destination, grouped
+  Chat, Sources, Memory, Review, and Settings. `SIDEBAR_PLACES` picks the three
+  sidebar entries; every other page in a group appears as a tab on that group's
+  hub (`components/PageBar.tsx`). The sidebar, the tabs, the ⌘K `CommandMenu`,
+  and the page title bar all read the registry; `tests/navigation.test.mjs`
+  checks it, including that retired pages stay gone.
+- **Post-login surface.** `/workspace` renders `WorkspaceChat`, the one window:
+  a composer with Ask/Agent mode, memory-space, and model chips; answers with
+  folded evidence; Agent turns rendered by `components/AgentTurn.tsx` with
+  their steps, citations, and inline plan approval. Chat history is kept per
+  workspace in the browser (`lib/threads.ts`).
+- **Retired routes.** `/webmcp`, `/ask`, `/runbooks`, `/simulation`,
+  `/benchmarks`, `/updates`, `/drift`, `/reliability`, and `/admin` redirect
+  (`next.config.ts`) to the chat or Approvals.
+- **Public surfaces.** The landing page, `/docs`, and `/login` render outside
+  the frame.
 - **Design.** A custom token-based design system in `app/globals.css`; no
   component library.
 
@@ -531,7 +551,7 @@ stays in the backend.
 |---|---|
 | Local | `docker-compose.yml`: `arcadedb`, `backend`, `frontend`, `mcp` (profile). Or `make backend` / `make frontend` against a local ArcadeDB. |
 | Single VM (OCI) | `compose.production.yml` adds Caddy with automatic TLS: `app.`, `api.`, and `mcp.` subdomains, with proxy-level body caps (128 MB API, 10 MB MCP). Connector grants are encrypted through OCI Vault (`CONNECTOR_VAULT_PROVIDER=oci-kms`). See `deploy/oci/`. |
-| Vercel | `vercel.json` runs the frontend and a containerized backend (`Dockerfile.vercel`), routing `/api/*` and `/.well-known/*` to the backend. Used for `PUBLIC_DEMO_MODE`: the in-memory graph, a disposable SQLite database under `/tmp/orgmemory`, stateless signed sessions, and all execution and external connectors disabled. |
+| Vercel (memoryworks.app) | `vercel.json` runs the frontend and a containerized backend (`Dockerfile.vercel`), routing `/api/*` and `/.well-known/*` to the backend. Production runs here with real sign-in (`PUBLIC_DEMO_MODE=false`), the in-memory graph, and SQLite at `/tmp/orgmemory/`. Vercel containers are stateless, so that state is **not durable** — a new container starts empty apart from what sessions rebuild. The single-VM target is the durable option. `PUBLIC_DEMO_MODE=true` is a stricter profile for a shared, disposable demo. |
 
 `settings.assert_safe_for_environment()` refuses to start with
 `ENVIRONMENT=production` when development trust boundaries remain: dev login,

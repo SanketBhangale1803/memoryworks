@@ -59,11 +59,14 @@ vercel link
 vercel env add JWT_SECRET production          # required — signs sessions
 vercel env add OPENROUTER_API_KEY production  # model for live agent sessions
 
-# Public-demo profile (the hosted challenge site):
-vercel env add PUBLIC_DEMO_MODE production    # true
-vercel env add RUNBOOK_DEMO_MODE production   # true
+# Canonical origin — every OAuth callback is derived from it:
+vercel env add PUBLIC_BASE_URL production     # https://memoryworks.app
+vercel env add FRONTEND_URL production        # https://memoryworks.app
 vercel env add GRAPH_BACKEND production       # memory
-vercel env add PUBLIC_BASE_URL production     # https://your-host
+
+# Vercel containers are stateless: SQLite and the in-memory graph reset when a
+# new container starts. For durable data, use the single-VM deploy (deploy/oci).
+# PUBLIC_DEMO_MODE=true is a stricter profile for a shared, disposable demo.
 
 # Real sign-in providers (values from GitHub / Google consoles):
 vercel env add GITHUB_CLIENT_ID production
@@ -73,11 +76,11 @@ vercel env add GOOGLE_CLIENT_SECRET production
 
 vercel --prod`;
 
-const oauthCallbacks = `# GitHub OAuth app → Authorization callback URL
-https://your-host/api/auth/github/callback
+const oauthCallbacks = `# GitHub OAuth app → Authorization callback URL (one per app)
+https://memoryworks.app/api/auth/github/callback
 
 # Google Cloud → Credentials → OAuth client → Authorized redirect URIs
-https://your-host/api/auth/google/callback
+https://memoryworks.app/api/auth/google/callback
 
 # Locally the host is derived from the request, so the defaults just work:
 #   http://localhost:8000/api/auth/github/callback
@@ -91,7 +94,7 @@ SMTP_PORT=587
 SMTP_USER=...
 SMTP_PASSWORD=...`;
 
-const apiKeyExample = `# Create a workspace-scoped key in the UI (Settings → API keys),
+const apiKeyExample = `# Create a workspace-scoped key in the UI (Sources → API keys),
 # or with the endpoint:
 curl -X POST "$ORGMEMORY_API_URL/api/keys" \\
   -H "Authorization: Bearer $SESSION_TOKEN" \\
@@ -357,8 +360,10 @@ export default function DocsPage() {
             <h2>Work identity for people. Scoped keys for agents.</h2>
             <p>
               People sign in with GitHub, Google, or a passwordless email code.
-              SDK, CLI, MCP, and server-side agents use a workspace-scoped API
-              key. The browser session is an HttpOnly cookie; SDK and CLI use
+              GitHub sign-in also requests repository access and stores it as
+              that person&apos;s GitHub connection, so the next step is choosing
+              repositories — not connecting GitHub again. SDK, CLI, MCP, and
+              server-side agents use a workspace-scoped API key. The browser session is an HttpOnly cookie; SDK and CLI use
               bearer tokens. Nothing is stored in the browser.
             </p>
             <h3 className="docs-sub">Register the OAuth callbacks</h3>

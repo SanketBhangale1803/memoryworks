@@ -20,7 +20,8 @@ Collaboration: `Issue`, `PullRequest`, `Label`, `User`, `Comment`,
 Knowledge: `KnowledgeItem`, `KnowledgeChunk`, `ContextWindow`,
 `EvidenceSource`.
 
-Execution: `Runbook`, `RunbookStep`, `ApprovalPolicy`, `AgentAction`.
+Execution (legacy — from the product's earlier runbook direction; no UI, slated
+for removal): `Runbook`, `RunbookStep`, `ApprovalPolicy`, `AgentAction`.
 
 Intelligence (Fable 5 upgrade): `OperationalMemory`, `ServiceOwner`,
 `BlastRadius`, `TrustScore`, `RunbookDriftSignal`, `OperationalAssertion`,

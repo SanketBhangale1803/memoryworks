@@ -1,4 +1,4 @@
-"""OrgMemory configuration names and one-window legacy compatibility."""
+"""MemoryWorks configuration names and one-window legacy compatibility."""
 
 import pytest
 

@@ -397,7 +397,7 @@ class WebMCPAgentRunner:
             f"- {tool['name']}({', '.join(tool['arguments'])}): {tool['description']}"
             for tool in self._catalog()
         )
-        return f"""You are a browser AI agent on an MemoryWorks page. The page exposes WebMCP tools for company memory.
+        return f"""You are a browser AI agent on a MemoryWorks page. The page exposes WebMCP tools for company memory.
 
 QUESTION: {question}
 

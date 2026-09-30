@@ -1,6 +1,6 @@
 # MemoryWorks MCP server
 
-`mcp_server/server.py` exposes the real MemoryWorks HTTP API over FastMCP stdio. It does not contain canned answers: questions return authorized memory, evidence, a retrieval trace, and the persisted HCAG context envelope.
+`mcp_server/server.py` exposes the real MemoryWorks HTTP API over FastMCP — stdio for a local bridge, or streamable HTTP with OAuth where the server is deployed (the Docker `mcp` profile, or the `mcp.` subdomain in `deploy/oci/`). The Vercel deployment at memoryworks.app does not run the MCP server yet, so connect to it over stdio with an API key. It does not contain canned answers: questions return authorized memory, evidence, a retrieval trace, and the persisted HCAG context envelope.
 
 ## Run
 
@@ -9,9 +9,13 @@ make mcp
 python mcp_server/server.py --health
 ```
 
-Use `ORGMEMORY_API_URL` and `ORGMEMORY_API_KEY`. The legacy environment variables
-`RUNBOOK_API_URL` and `RUNBOOK_API_KEY` remain supported for one migration window
-and emit a deprecation warning. The default backend URL is `http://localhost:8000`.
+Use `MEMORYWORKS_API_URL` and `MEMORYWORKS_API_KEY` (and `MEMORYWORKS_MCP_*` for
+the HTTP transport). The older `ORGMEMORY_*` and `RUNBOOK_*` names still work and
+emit a deprecation warning. The default backend URL is `http://localhost:8000`.
+
+The easiest setup is in the app: **Sources → AI tools** generates the exact
+configuration for Claude Code, Cursor, VS Code, Claude, and ChatGPT against
+this deployment's own URLs.
 
 ## Preflight contract
 
@@ -44,25 +48,37 @@ not permission to proceed.
 | `orgmemory_list_change_sets` | Inspect semantic memory commits and impacts |
 | `orgmemory_compile_skill` | Compile current policy/procedure memory into a versioned agent skill |
 | `orgmemory_list_skills` | List current or stale skill specs |
+| `orgmemory_create_work` / `orgmemory_list_work` / `orgmemory_get_work` | Create and read source-backed work packages |
+| `orgmemory_resolve_work_step` / `orgmemory_complete_work_step` | Move a work package forward and return result evidence |
+| `orgmemory_request_connector_action` | Ask to write to a connected tool — always waits for approval |
+| `orgmemory_list_connector_action_requests` | See those requests and their status |
 
-## Cursor configuration
+Tool names keep the `orgmemory` prefix on purpose: clients and agent prompts
+call them by name, so renaming them would break existing setups.
 
-Create a workspace-scoped API key in **Settings → API keys**, then configure:
+## Local stdio configuration (Cursor example)
+
+Create a workspace-scoped API key in **Sources → API keys**, then configure:
 
 ```json
 {
   "mcpServers": {
-    "orgmemory": {
+    "memoryworks": {
       "command": "make",
-      "args": ["-C", "/absolute/path/to/orgmemory", "mcp"],
+      "args": ["-C", "/absolute/path/to/memoryworks", "mcp"],
       "env": {
-        "ORGMEMORY_API_URL": "http://localhost:8000",
-        "ORGMEMORY_API_KEY": "om_replace_with_a_new_workspace_key"
+        "MEMORYWORKS_API_URL": "http://localhost:8000",
+        "MEMORYWORKS_API_KEY": "om_replace_with_a_new_workspace_key"
       }
     }
   }
 }
 ```
+
+Against a deployment that runs `make mcp-http` (or the compose `mcp`
+service), an HTTP-capable client can connect to that server's `/mcp` path and
+sign in through MemoryWorks OAuth instead of pasting a key. Set
+`MEMORYWORKS_MCP_PUBLIC_URL` to the server's origin, without `/mcp`.
 
 Restart the MCP connection after saving. The bridge forwards the key as an `Authorization: Bearer` header. Workspace and team scope are enforced before retrieval; source-restricted memory cannot enter an agent's context envelope.
 
@@ -73,12 +89,11 @@ Use MemoryWorks to explain this repo before I edit it.
 Use MemoryWorks to find prior decisions about this service.
 Use MemoryWorks to retrieve current company context for this bug.
 Use MemoryWorks to list what changed and which agent skills became stale.
-Before changing the deploy workflow, get an MemoryWorks briefing and record the outcome afterward.
+Before changing the deploy workflow, get a MemoryWorks briefing and record the outcome afterward.
 ```
 
 ## Legacy compatibility
 
-The previous `runbook_*` tools are hidden by default. Set
-`ORGMEMORY_ENABLE_LEGACY_TOOLS=true` only for clients that have not migrated.
-Procedure extraction, action policies, approvals, and simulation are advanced
-compatibility features; they are not the primary MemoryWorks product surface.
+The `runbook_*` tools from the product's earlier direction are hidden by
+default. Set `ORGMEMORY_ENABLE_LEGACY_TOOLS=true` only for a client that still
+depends on them; they are slated for removal.

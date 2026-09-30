@@ -64,7 +64,7 @@ export default function Ingest() {
       method: "POST",
       body: JSON.stringify({arguments: {}}),
     }).then(response => setRepositories(response.result?.repositories || [])).catch(() => undefined);
-    api<any[]>("/api/connectors/slack/channels").then(items => {
+    api<any[]>("/api/connectors/slack/resources").then(items => {
       setChannels(items);
       if (items[0]) setChannel(items[0].id);
     }).catch(() => undefined);

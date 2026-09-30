@@ -1,17 +1,25 @@
 # Benchmarks
 
-Runbook's retrieval intelligence is benchmarked through HCAG's harness.
+MemoryWorks retrieval is measured two ways: the HCAG harness for routing and
+windowing, and a briefing evaluation for pre-action briefings.
 
 ```bash
-make benchmark        # from runbook/ — delegates to ../hcag
+make benchmark        # from the repository root — delegates to ../hcag
 # or
 cd ../hcag && make benchmark && make benchmark-report
 ```
 
-Reports are written to `hcag/benchmark_reports/latest.{json,md}` and served
-in the product at **Benchmark Reports** (`/benchmarks`, backed by
-`GET /api/benchmarks`). If no report exists the page says so and shows the
-command — it never displays fabricated numbers.
+Reports are written to `hcag/benchmark_reports/latest.{json,md}` and returned
+by `GET /api/benchmarks` (there is no page for them in the product). If no report
+exists the endpoint says so — it never returns fabricated numbers.
+
+Briefing quality is measured with known-answer cases:
+
+```bash
+backend/.venv/bin/python backend/evals/briefing_eval.py
+```
+
+Run it before and after any retrieval or briefing change and compare.
 
 ## What is measured
 

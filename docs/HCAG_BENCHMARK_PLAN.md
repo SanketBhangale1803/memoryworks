@@ -40,10 +40,10 @@ Measured-first: each item lands only with a before/after harness delta.
    delta stays isolated).
 2. Embedding-based window routing using stored centroids when
    `OPENAI_API_KEY` is present, with the lexical router as fallback.
-3. Contradiction/staleness-aware ranking penalties fed by Runbook's trust
+3. Contradiction/staleness-aware ranking penalties fed by MemoryWorks trust
    module.
 4. Larger company-brain corpora generated from real ingested repositories
-   (via Runbook's exporter) with human-labeled relevance.
+   (via the MemoryWorks exporter) with human-labeled relevance.
 
 ## Reporting rules
 
