@@ -21,6 +21,11 @@ sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plug
 sudo usermod -aG docker "${USER}"
 sudo systemctl enable --now docker
 
+# oci-cli uploads nightly backups to Object Storage with the instance principal.
+sudo apt-get install -y pipx
+pipx install oci-cli
+pipx ensurepath
+
 echo
 echo "Docker is installed. Log out and SSH back in so group membership applies."
 echo "Then clone MemoryWorks, populate .env.production, and run deploy/oci/up.sh."

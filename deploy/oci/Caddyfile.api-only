@@ -1,0 +1,22 @@
+{
+	email {$TLS_EMAIL}
+}
+
+# The web app stays on Vercel at SITE_URL and forwards /api/* and /.well-known/*
+# here, so this VM serves only the API and the hosted MCP endpoint.
+
+api.{$PUBLIC_DOMAIN} {
+	encode zstd gzip
+	request_body {
+		max_size 128MB
+	}
+	reverse_proxy backend:8000
+}
+
+mcp.{$PUBLIC_DOMAIN} {
+	encode zstd gzip
+	request_body {
+		max_size 10MB
+	}
+	reverse_proxy mcp:8001
+}

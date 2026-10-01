@@ -1,0 +1,39 @@
+# Layered on compose.production.yml when the web app is hosted elsewhere
+# (memoryworks.app on Vercel) and forwards /api/* and /.well-known/* to
+# api.<PUBLIC_DOMAIN>. The browser only ever sees SITE_URL, so cookies stay
+# first-party and the OAuth callbacks registered for SITE_URL keep working.
+#
+#   docker compose --env-file .env.production \
+#     -f compose.production.yml -f deploy/oci/compose.api-only.yml up -d
+#
+# deploy/oci/up.sh adds this file automatically when SITE_URL is set.
+
+services:
+  backend:
+    environment:
+      API_URL: ${SITE_URL:?set SITE_URL}
+      FRONTEND_URL: ${SITE_URL:?set SITE_URL}
+      APP_BASE_URL: ${SITE_URL:?set SITE_URL}
+      GITHUB_REDIRECT_URI: ${SITE_URL:?set SITE_URL}/api/auth/github/callback
+      SLACK_REDIRECT_URI: ${SITE_URL:?set SITE_URL}/api/auth/slack/callback
+      GOOGLE_REDIRECT_URI: ${SITE_URL:?set SITE_URL}/api/auth/google/callback
+      MCP_OAUTH_ISSUER_URL: ${SITE_URL:?set SITE_URL}
+      # Host-only cookie on SITE_URL, set through the forwarded /api path.
+      SESSION_COOKIE_DOMAIN: ""
+
+  mcp:
+    environment:
+      MCP_OAUTH_ISSUER_URL: ${SITE_URL:?set SITE_URL}
+
+  # Not started: the web app is served by Vercel.
+  frontend:
+    profiles: ["full-stack"]
+
+  caddy:
+    volumes: !override
+      - ./deploy/oci/Caddyfile.api-only:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: !override
+      - backend
+      - mcp
