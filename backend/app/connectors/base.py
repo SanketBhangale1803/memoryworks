@@ -290,12 +290,21 @@ class Connector(ABC):
     @abstractmethod
     def health(self, account: ConnectorAccount | None = None) -> ConnectorHealth: ...
 
+    def oauth_configured(self) -> bool:
+        """Whether this deployment can start the connector's authorization.
+
+        OAuth connectors override this to require their client credentials, so
+        an unconfigured provider reads as needing setup instead of offering a
+        Connect button that fails.
+        """
+        return True
+
     def status(self) -> ConnectorStatus:
         """Compatibility view used by existing clients during the SDK migration."""
         accounts = self.connection_statuses()
         return ConnectorStatus(
             provider=self.manifest.id,
-            available=True,
+            available=self.oauth_configured(),
             connected=any(item.get("status") == "connected" for item in accounts),
             accounts=accounts,
             version=self.manifest.version,

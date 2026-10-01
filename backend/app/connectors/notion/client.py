@@ -144,6 +144,9 @@ class NotionConnector(Connector):
 
     # -- OAuth ----------------------------------------------------------------
 
+    def oauth_configured(self) -> bool:
+        return bool(settings.notion_client_id and settings.notion_client_secret)
+
     def authorize(self, user: dict[str, Any], scopes: list[str]) -> str:
         if not settings.notion_client_id:
             raise ValueError("Notion OAuth is not configured (NOTION_CLIENT_ID)")

@@ -2601,6 +2601,11 @@ select:focus, .project-select:focus { outline:none; border-color:var(--ink-4); b
 
 .copy-field { display:flex; align-items:center; gap:10px; padding:6px 6px 6px 12px; border:1px solid var(--line); border-radius:var(--r); background:var(--surface-2); }
 .copy-field code { flex:1; min-width:0; overflow:hidden; font-size:12.5px; text-overflow:ellipsis; white-space:nowrap; }
+/* One-time secrets: one click selects the whole key, and it wraps instead of
+   hiding behind an ellipsis. */
+.ide-secret, .key-reveal code { -webkit-user-select:all; user-select:all; cursor:text; }
+.key-reveal { display:flex; flex-direction:column; gap:8px; }
+.key-reveal .copy-field code { white-space:normal; overflow-wrap:anywhere; color:var(--ink); }
 
 @media (max-width:700px) {
   .hub-status { display:none; }

@@ -10,6 +10,7 @@ from pathlib import Path
 from threading import Thread
 from urllib.parse import urlencode
 
+import httpx
 from fastapi import (
     APIRouter,
     BackgroundTasks,
@@ -905,6 +906,29 @@ def overview(authorization: str | None = Header(default=None)):
     return {**counts, "graph": graph_health(), "recent_activity": activity}
 
 
+_MCP_PROBE_SECONDS = 300
+_mcp_probe: dict[str, float | bool] = {"checked_at": 0.0, "available": False}
+
+
+def _hosted_mcp_available() -> bool:
+    """Whether the advertised MCP endpoint is actually served.
+
+    An unauthenticated request to a live endpoint gets an OAuth challenge
+    (401); a deployment that does not run the MCP server answers 404 or not
+    at all. Cached so the settings pages do not probe on every load.
+    """
+    now = time.monotonic()
+    if now - float(_mcp_probe["checked_at"]) < _MCP_PROBE_SECONDS:
+        return bool(_mcp_probe["available"])
+    try:
+        response = httpx.post(settings.mcp_public_url.rstrip("/") + "/mcp", timeout=3)
+        available = response.status_code in {401, 403}
+    except httpx.HTTPError:
+        available = False
+    _mcp_probe.update(checked_at=now, available=available)
+    return available
+
+
 @router.get("/settings/runtime")
 def runtime_settings(authorization: str | None = Header(default=None)):
     """Deployment/runtime surface consumed by the settings, admin, and IDE
@@ -931,6 +955,7 @@ def runtime_settings(authorization: str | None = Header(default=None)):
         # generated from this rather than written into the docs by hand, so a
         # self-hosted deployment shows its own URLs instead of localhost.
         "mcp_http_url": settings.mcp_public_url.rstrip("/") + "/mcp",
+        "mcp_available": _hosted_mcp_available(),
         "mcp_oauth_issuer": settings.mcp_oauth_issuer_url.rstrip("/"),
         "api_url": settings.api_url.rstrip("/"),
     }

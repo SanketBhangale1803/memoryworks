@@ -98,6 +98,9 @@ class GoogleDriveConnector(Connector):
 
     # -- OAuth ----------------------------------------------------------------
 
+    def oauth_configured(self) -> bool:
+        return bool(settings.google_client_id and settings.google_client_secret)
+
     def authorize(self, user: dict[str, Any], scopes: list[str]) -> str:
         if not settings.google_client_id:
             raise ValueError("Google OAuth is not configured (GOOGLE_CLIENT_ID)")

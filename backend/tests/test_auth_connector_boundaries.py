@@ -381,3 +381,13 @@ def test_slack_oauth_requests_and_prefers_personal_user_token(graph, monkeypatch
     assert identity["token"] == "xoxp-personal"
     assert identity["slack_user_id"] == "U1"
     assert identity["token_type"] == "user"
+
+
+def test_connectors_without_an_oauth_app_read_as_needing_setup(graph, monkeypatch):
+    monkeypatch.setattr(settings, "slack_client_id", "")
+    monkeypatch.setattr(settings, "slack_client_secret", "")
+    monkeypatch.setattr(settings, "github_client_id", "github-client")
+    monkeypatch.setattr(settings, "github_client_secret", "github-secret")
+
+    assert SlackConnector().status().available is False
+    assert GitHubConnector().status().available is True

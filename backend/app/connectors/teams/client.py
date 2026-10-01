@@ -103,6 +103,9 @@ class TeamsConnector(Connector):
 
     # -- OAuth ----------------------------------------------------------------
 
+    def oauth_configured(self) -> bool:
+        return bool(settings.microsoft_client_id and settings.microsoft_client_secret)
+
     def authorize(self, user: dict[str, Any], scopes: list[str]) -> str:
         if not settings.microsoft_client_id:
             raise ValueError("Microsoft OAuth is not configured (MICROSOFT_CLIENT_ID)")

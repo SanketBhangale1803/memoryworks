@@ -57,3 +57,20 @@ def test_storage_issues_name_every_per_process_store():
         "connector_key_per_process",
     ]
     assert durable.storage_issues() == []
+
+
+@pytest.mark.parametrize(("status", "available"), [(401, True), (404, False), (502, False)])
+def test_hosted_mcp_is_available_only_when_it_answers_with_an_auth_challenge(
+    monkeypatch, status, available
+):
+    import httpx
+
+    from app.api import routes
+
+    monkeypatch.setattr(routes, "_mcp_probe", {"checked_at": 0.0, "available": False})
+    monkeypatch.setattr(routes.time, "monotonic", lambda: 10_000.0)
+    monkeypatch.setattr(
+        routes.httpx, "post", lambda url, timeout: httpx.Response(status, request=httpx.Request("POST", url))
+    )
+
+    assert routes._hosted_mcp_available() is available

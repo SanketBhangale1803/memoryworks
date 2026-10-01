@@ -9,6 +9,7 @@ export default function Keys() {
   const [name, setName] = useState("");
   const [created, setCreated] = useState<any>();
   const [error, setError] = useState("");
+  const [copied, setCopied] = useState(false);
 
   async function load() {
     try {
@@ -31,6 +32,16 @@ export default function Keys() {
     }
   }
 
+  async function copyKey(secret: string) {
+    try {
+      await navigator.clipboard.writeText(secret);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch {
+      setError("Clipboard is unavailable. Click the key to select it, then press ⌘C.");
+    }
+  }
+
   async function revoke(id: string) {
     setError("");
     try {
@@ -47,7 +58,13 @@ export default function Keys() {
         <input value={name} onChange={event=>setName(event.target.value)} placeholder="Key name, e.g. Claude Desktop MCP"/>
         <button className="button" disabled={!name.trim()} onClick={create}>Create key</button>
       </div>
-      {created && <div className="notice"><strong>Copy this key now — it will not be shown again.</strong><br/><code>{created.api_key}</code></div>}
+      {created && <div className="notice key-reveal">
+        <strong>Copy this key now — it will not be shown again.</strong>
+        <div className="copy-field">
+          <code>{created.api_key}</code>
+          <button className="button secondary" onClick={() => copyKey(created.api_key)}>{copied ? "Copied" : "Copy key"}</button>
+        </div>
+      </div>}
     </section>
     {error && <div className="notice error" style={{marginTop:16}}>{error}</div>}
     <section className="card" style={{marginTop:16}}>

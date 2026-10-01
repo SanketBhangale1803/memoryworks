@@ -11,7 +11,7 @@ import { api } from "@/lib/api";
  * own runtime settings — a self-hosted install shows its own URLs, not
  * localhost copied out of a README. */
 
-type Runtime = { mcp_http_url?: string; mcp_oauth_issuer?: string; api_url?: string };
+type Runtime = { mcp_http_url?: string; mcp_available?: boolean; mcp_oauth_issuer?: string; api_url?: string };
 type ApiKey = { id: string; name: string; key_prefix: string; created_at: string };
 
 const KEY_PLACEHOLDER = "YOUR_MEMORYWORKS_API_KEY";
@@ -131,11 +131,11 @@ export default function IdeAccess() {
     setCreating(true);
     setError("");
     try {
-      const created = await api<{ key: string }>("/api/keys", {
+      const created = await api<{ api_key: string }>("/api/keys", {
         method: "POST",
         body: JSON.stringify({ name: `${active.label} — editor access` }),
       });
-      setIssued(created.key);
+      setIssued(created.api_key);
       setKeys(await api<ApiKey[]>("/api/keys").catch(() => keys));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not issue a key.");
@@ -170,6 +170,13 @@ export default function IdeAccess() {
         immediately; anything that would change company memory comes back here as a proposal and
         waits for a person.
       </p>
+
+      {runtime.mcp_available === false && (
+        <div className="notice" role="status">
+          Hosted MCP isn&apos;t running on this deployment yet, so editors can&apos;t connect to{" "}
+          <code>{url}</code>. Keys issued here already work with the API.
+        </div>
+      )}
 
       <div className="ide-tabs" role="tablist">
         {CLIENTS.map((item) => (

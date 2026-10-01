@@ -103,6 +103,9 @@ class GitHubConnector(Connector):
     def connection_statuses(self) -> list[dict[str, Any]]:
         return self.secrets.status(self.manifest.id)
 
+    def oauth_configured(self) -> bool:
+        return bool(settings.github_client_id and settings.github_client_secret)
+
     def authorize(self, user: dict[str, Any], scopes: list[str]) -> str:
         flow = user.get("flow") or user
         wanted = " ".join(scopes or list(self.manifest.oauth.scopes if self.manifest.oauth else ()))
