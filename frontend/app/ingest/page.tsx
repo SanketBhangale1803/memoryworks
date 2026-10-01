@@ -23,6 +23,10 @@ export default function Ingest() {
   const [projects, setProjects] = useState<any[]>([]);
   const [repositories, setRepositories] = useState<any[]>([]);
   const [channels, setChannels] = useState<any[]>([]);
+  // Listing failures are shown, not swallowed: an empty picker with no reason
+  // reads as "you have no repositories" when the request actually failed.
+  const [repositoriesError, setRepositoriesError] = useState("");
+  const [channelsError, setChannelsError] = useState("");
   const [connections, setConnections] = useState<any[]>([]);
   const [teams, setTeams] = useState<any[]>([]);
   const [project, setProject] = useState("__new__");
@@ -60,18 +64,29 @@ export default function Ingest() {
       if (items[0]) setProject(items[0].id);
     });
     api<any[]>("/api/connectors").then(setConnections);
-    api<{result?: {repositories?: any[]}}>("/api/connectors/github/tools/list_repositories", {
-      method: "POST",
-      body: JSON.stringify({arguments: {}}),
-    }).then(response => setRepositories(response.result?.repositories || [])).catch(() => undefined);
-    api<any[]>("/api/connectors/slack/resources").then(items => {
-      setChannels(items);
-      if (items[0]) setChannel(items[0].id);
-    }).catch(() => undefined);
+    loadRepositories();
+    loadChannels();
     api<any>("/api/auth/me")
       .then(me => api<any[]>(`/api/workspaces/${me.active_workspace_id}/teams`))
       .then(setTeams).catch(() => undefined);
   }, []);
+
+  function loadRepositories() {
+    setRepositoriesError("");
+    api<{result?: {repositories?: any[]}}>("/api/connectors/github/tools/list_repositories", {
+      method: "POST",
+      body: JSON.stringify({arguments: {}}),
+    }).then(response => setRepositories(response.result?.repositories || []))
+      .catch((cause: any) => setRepositoriesError(cause?.message || "Could not list repositories."));
+  }
+
+  function loadChannels() {
+    setChannelsError("");
+    api<any[]>("/api/connectors/slack/resources").then(items => {
+      setChannels(items);
+      if (items[0]) setChannel(items[0].id);
+    }).catch((cause: any) => setChannelsError(cause?.message || "Could not list channels."));
+  }
 
   useEffect(() => {
     if (!busy) { setPhase(0); return; }
@@ -217,14 +232,14 @@ export default function Ingest() {
 
           {kind === "github" && <div className="quick-memory-form">
             <div className="builder-title"><span className="source-hero-icon"><GitHubIcon size={27}/></span><div><h2>Choose a repository</h2><p>MemoryWorks reads the repository and builds its project memory automatically.</p></div></div>
-            {!connected("github") ? <div className="builder-connect"><strong>Give MemoryWorks access to your repositories</strong><p>Authorize once, then pick repositories right here. Private repositories are supported.</p><a className="button" href={`${API}/api/connectors/github/auth/start`}>Continue with GitHub →</a></div> : <><select aria-label="GitHub repository" value={repo} onChange={event => {setRepo(event.target.value);const match=repositories.find(item=>item.clone_url===event.target.value);setRepoName(match?.full_name || match?.name || "");}}><option value="">Select a repository…</option>{repositories.map(item => <option key={item.id} value={item.clone_url}>{item.full_name}{item.private ? " · Private" : ""}</option>)}</select><p className="privacy-note"><i/> Private repositories supported. Existing source permissions are preserved.</p>
+            {!connected("github") ? <div className="builder-connect"><strong>Give MemoryWorks access to your repositories</strong><p>Authorize once, then pick repositories right here. Private repositories are supported.</p><a className="button" href={`${API}/api/connectors/github/auth/start`}>Continue with GitHub →</a></div> : <><select aria-label="GitHub repository" value={repo} onChange={event => {setRepo(event.target.value);const match=repositories.find(item=>item.clone_url===event.target.value);setRepoName(match?.full_name || match?.name || "");}}><option value="">Select a repository…</option>{repositories.map(item => <option key={item.id} value={item.clone_url}>{item.full_name}{item.private ? " · Private" : ""}</option>)}</select>{repositoriesError && <ListingError message={`Couldn't list your repositories: ${repositoriesError}`} onRetry={loadRepositories}/>}<p className="privacy-note"><i/> Private repositories supported. Existing source permissions are preserved.</p>
               <div className="bulk-index">
                 <div>
                   <strong>Or index everything you have access to</strong>
                   <span>
                     {bulk
                       ? `${bulk.queued} repositor${bulk.queued === 1 ? "y" : "ies"} queued. Each becomes its own memory space as it finishes.`
-                      : `${repositories.length} repositor${repositories.length === 1 ? "y" : "ies"} visible to this workspace's GitHub grant.`}
+                      : repositoriesError ? "Repositories couldn't be listed." : `${repositories.length} repositor${repositories.length === 1 ? "y" : "ies"} visible to this workspace's GitHub grant.`}
                   </span>
                 </div>
                 <button className="button secondary" disabled={bulkBusy || !repositories.length} onClick={indexEverything}>
@@ -235,7 +250,7 @@ export default function Ingest() {
 
           {kind === "slack" && <div className="quick-memory-form">
             <div className="builder-title"><span className="source-hero-icon slack">SL</span><div><h2>Choose a Slack channel</h2><p>Remember team decisions and conventions with links back to each message.</p></div></div>
-            {!connected("slack") ? <div className="builder-connect"><strong>Connect Slack once</strong><p>Choose which channels MemoryWorks may read.</p><a className="button" href={`${API}/api/connectors/slack/auth/start`}>Connect Slack →</a></div> : <select aria-label="Slack channel" value={channel} onChange={event => setChannel(event.target.value)}>{channels.map(item => <option key={item.id} value={item.id}>#{item.name}{item.is_private ? " · Private" : ""}</option>)}</select>}
+            {!connected("slack") ? <div className="builder-connect"><strong>Connect Slack once</strong><p>Choose which channels MemoryWorks may read.</p><a className="button" href={`${API}/api/connectors/slack/auth/start`}>Connect Slack →</a></div> : <><select aria-label="Slack channel" value={channel} onChange={event => setChannel(event.target.value)}>{channels.map(item => <option key={item.id} value={item.id}>#{item.name}{item.is_private ? " · Private" : ""}</option>)}</select>{channelsError && <ListingError message={`Couldn't list your channels: ${channelsError}`} onRetry={loadChannels}/>}</>}
           </div>}
 
           {kind !== "github" && <div className="builder-project-row"><label>Save to</label><select value={project} onChange={event => setProject(event.target.value)}><option value="__new__">New memory space</option>{projects.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select>{project === "__new__" && <input aria-label="New memory space name" value={newProject} onChange={event => setNewProject(event.target.value)} />}</div>}
@@ -256,4 +271,11 @@ export default function Ingest() {
     </section>
 
   </Page>;
+}
+
+function ListingError({message, onRetry}: {message: string; onRetry: () => void}) {
+  return <div className="notice error listing-error" role="alert">
+    <span>{message}</span>
+    <button className="text-button" onClick={onRetry}>Try again</button>
+  </div>;
 }

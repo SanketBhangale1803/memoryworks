@@ -4,7 +4,7 @@ import os
 import warnings
 from pathlib import Path
 
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -307,9 +307,31 @@ class Settings(BaseSettings):
     org_memory_run_live_llm_tests: bool = False
     github_webhook_secret: str = ""
 
+    @field_validator("mcp_public_url")
+    @classmethod
+    def _mcp_origin_only(cls, value: str) -> str:
+        # The MCP endpoint path is appended wherever the URL is used, so a value
+        # that already ends in /mcp would be advertised as .../mcp/mcp.
+        return value.rstrip("/").removesuffix("/mcp")
+
     @property
     def arcadedb_url(self) -> str:
         return f"http://{self.arcadedb_host}:{self.arcadedb_port}"
+
+    def storage_issues(self) -> list[str]:
+        """Reasons this process's state would not survive a restart or be shared
+        with another process. Empty means storage is durable."""
+        issues: list[str] = []
+        if str(self.sqlite_path).startswith("/tmp/"):
+            issues.append("database_in_tmp")
+        if self.graph_backend.casefold() == "memory":
+            issues.append("graph_in_memory")
+        if (
+            self.connector_vault_provider.casefold() not in {"aws-kms", "oci-kms"}
+            and not self.integration_encryption_key
+        ):
+            issues.append("connector_key_per_process")
+        return issues
 
     def assert_safe_for_environment(self) -> None:
         """Refuse production startup with development trust boundaries."""

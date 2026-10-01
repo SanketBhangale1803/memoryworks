@@ -53,6 +53,7 @@ export default function WorkspaceFrame({
   const [setup, setSetup] = useState<Setup>();
   const [setupDismissed, setSetupDismissed] = useState(true);
   const [allChats, setAllChats] = useState(false);
+  const [ephemeral, setEphemeral] = useState(false);
   const command = useCommandMenu();
   const history = useThreads();
   const isAdmin = user?.role === "owner" || user?.role === "admin";
@@ -70,6 +71,14 @@ export default function WorkspaceFrame({
     } catch {
       setSetupDismissed(false);
     }
+  }, []);
+
+  // A deployment without durable storage loses what people add on restart, so
+  // say so rather than let a demo pass for the real thing.
+  useEffect(() => {
+    api<{ storage?: string }>("/api/health")
+      .then((health) => setEphemeral(health.storage === "ephemeral"))
+      .catch(() => undefined);
   }, []);
 
   useEffect(() => setDrawerOpen(false), [pathname]);
@@ -269,6 +278,17 @@ export default function WorkspaceFrame({
                 {nextStep.label}
               </Link>
             </section>
+          )}
+
+          {ephemeral && (
+            <p
+              className="nav-storage-note"
+              role="status"
+              title="This deployment keeps data on temporary storage. Connections and memories can disappear when the server restarts or redeploys."
+            >
+              <i aria-hidden="true" />
+              Temporary storage · data may reset
+            </p>
           )}
 
           <div className="nav-account">

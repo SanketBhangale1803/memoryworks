@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import os
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -12,6 +13,8 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from app.connectors.base import ConnectorAccount
 from app.core.config import settings
 from app.core.database import connect, new_id, rows, utcnow
+
+logger = logging.getLogger(__name__)
 
 
 class VaultCipher(Protocol):
@@ -34,6 +37,11 @@ class LocalFernetCipher:
         if key is None and key_path.exists():
             key = key_path.read_bytes().strip()
         if key is None:
+            logger.warning(
+                "INTEGRATION_ENCRYPTION_KEY is not set; generated %s. Connector grants "
+                "encrypted here cannot be read by any process that does not share this file.",
+                key_path,
+            )
             key_path.parent.mkdir(parents=True, exist_ok=True)
             key = Fernet.generate_key()
             key_path.write_bytes(key)

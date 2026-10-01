@@ -445,6 +445,9 @@ def health():
         "status": "ok",
         "product": "MemoryWorks",
         "semantic_index": hcag.backfill_status,
+        # Public, so it says only whether data survives a restart; the reasons
+        # are in the admin runtime settings.
+        "storage": "ephemeral" if settings.storage_issues() else "durable",
     }
 
 
@@ -941,6 +944,7 @@ def runtime_settings(authorization: str | None = Header(default=None)):
         "allow_local_command_execution": settings.allow_local_command_execution,
         "graph_backend": settings.graph_backend,
         "arcadedb_database": settings.arcadedb_database,
+        "storage_issues": settings.storage_issues(),
         "hcag_enabled": True,
         "agentgate_enabled": True,
         "embedding_provider": settings.runbook_embedding_provider,

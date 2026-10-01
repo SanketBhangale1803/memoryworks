@@ -49,6 +49,8 @@ MCP_PUBLIC_URL = _env(
     "MCP_PUBLIC_URL",
     default="http://localhost:8001",
 ).rstrip("/")
+# The setting is the server's origin; /mcp is appended below.
+MCP_PUBLIC_URL = MCP_PUBLIC_URL.removesuffix("/mcp")
 OAUTH_ISSUER = _env(
     "MEMORYWORKS_MCP_OAUTH_ISSUER_URL",
     "ORGMEMORY_MCP_OAUTH_ISSUER_URL",

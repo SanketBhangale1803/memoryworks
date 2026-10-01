@@ -2654,6 +2654,9 @@ select:focus, .project-select:focus { outline:none; border-color:var(--ink-4); b
 .nav-more { align-self:flex-start; margin:4px 0 0; padding:4px 8px; border:0; background:none; color:var(--ink-3); font:inherit; font-size:12px; cursor:pointer; }
 .nav-more:hover { color:var(--ink); }
 
+.nav-storage-note { display:flex; align-items:center; gap:7px; margin:0; padding:2px 8px; color:var(--ink-3); font-size:11px; cursor:help; }
+.nav-storage-note i { width:6px; height:6px; flex:none; border-radius:50%; background:var(--warning); }
+.notice.listing-error { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:8px 0 0; }
 .nav-setup { display:flex; flex-direction:column; gap:10px; padding:12px; border:1px solid var(--line); border-radius:var(--r-lg); background:var(--surface); }
 .nav-setup header { display:flex; align-items:center; gap:8px; }
 .nav-setup header strong { flex:1; color:var(--ink); font-size:12.5px; font-weight:600; }
