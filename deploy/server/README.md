@@ -3,11 +3,10 @@
 The MemoryWorks control plane runs on one Ubuntu 24.04 server: Caddy/TLS,
 FastAPI, the remote Streamable HTTP MCP service, SQLite durable state, and
 persistent ArcadeDB graph storage (plus Next.js, unless the web app is hosted
-on Vercel; see the variant below). OCI Vault encrypts delegated OAuth grants.
+on Vercel; see the variant below).
 
 memoryworks.app runs on an **OVH VPS-2** (4 vCores, 8 GB, 75 GB NVMe, US East /
-Vint Hill), with OCI Vault and OCI Object Storage kept for key management and
-offsite backups. An Oracle Cloud Ampere A1 VM works the same way.
+Vint Hill). An Oracle Cloud Ampere A1 VM works the same way.
 
 ## 1. Create the infrastructure
 
@@ -17,44 +16,23 @@ afterwards to `~ubuntu/.ssh/authorized_keys`. Only Caddy publishes ports (80
 and 443); `bootstrap.sh` also enables `ufw` for SSH, HTTP, and HTTPS. On Oracle
 Cloud, open TCP 22, 80, and 443 in the network security list instead.
 
-**The encryption key (OCI Vault).** In the Oracle Cloud Console, in the
-tenancy's home region:
+**The encryption key.** Connector grants (GitHub, Slack, and other tokens) are
+encrypted at rest. On a single server, generate a Fernet key and set
+`CONNECTOR_VAULT_PROVIDER=local` and `INTEGRATION_ENCRYPTION_KEY` in
+`.env.production`:
 
-1. Create a Vault (the default, non-private type) and a symmetric AES key in
-   it. Copy the key OCID and the vault's **Crypto Endpoint**.
-2. Grant the server permission to use only that key.
+```sh
+python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
 
-   *On an Oracle VM* create a dynamic group matching only the instance,
-   `ALL {instance.id = '<INSTANCE_OCID>'}`, and set
-   `CONNECTOR_OCI_KMS_AUTH=instance-principal`.
-
-   *On any other server* create an IAM user (for example `memoryworks-server`)
-   with no console password, put it in its own group, and add an API signing
-   key generated on your machine
-   (`openssl genrsa -out memoryworks-kms.pem 2048` and
-   `openssl rsa -pubout -in memoryworks-kms.pem -out memoryworks-kms.pub`).
-   Copy the private key to the server as `~/.oci/memoryworks-kms.pem`
-   (mode 600) and write `~/.oci/config`:
-
-   ```ini
-   [DEFAULT]
-   user=<USER_OCID>
-   fingerprint=<KEY_FINGERPRINT>
-   tenancy=<TENANCY_OCID>
-   region=<HOME_REGION>
-   key_file=~/.oci/memoryworks-kms.pem
-   ```
-
-   Set `CONNECTOR_OCI_KMS_AUTH=config-file` and `OCI_CONFIG_DIR=/home/ubuntu/.oci`
-   in `.env.production`; the backend mounts that directory read-only, and the
-   `~` in `key_file` resolves both on the host and in the container.
-3. Add the policy in the key's compartment, with the dynamic group or the
-   user's group as the subject:
-
-   `Allow group memoryworks-server to use keys in compartment id <COMPARTMENT_OCID> where target.key.id = '<KEY_OCID>'`
-
-Either way the credential can encrypt and decrypt with one key and nothing
-else, and no OCI credential is stored in `.env.production`.
+Production refuses to start with `local` unless this key is set explicitly, so
+grants never depend on a key generated inside the data volume. Store a copy in a
+password manager: backups contain the encrypted grants but never the key, and a
+restore onto a new server needs it. Anyone with root on the server can read both
+the key and the grants; a cloud KMS removes that exposure. To use one instead,
+set `CONNECTOR_VAULT_PROVIDER=aws-kms` with `CONNECTOR_KMS_KEY_ID`, or on an
+Oracle Cloud VM `oci-kms` with an OCI Vault key, a dynamic group matching the
+instance, and `CONNECTOR_OCI_KMS_AUTH=instance-principal`.
 
 ## 2. Install Docker and clone
 
@@ -87,7 +65,7 @@ Create a GitHub OAuth App with:
 
 Put its client ID and client secret in `.env.production`. GitHub is used for
 interactive sign-in; each connector authorization still creates a per-user
-delegated grant in OCI Vault.
+encrypted delegated grant.
 
 ## 4. Start and verify
 
@@ -120,11 +98,11 @@ Follow sections 1–4 above with these differences.
   the VM all of it and a 100 GB boot volume. Creation often fails with "Out of
   capacity"; retry another availability domain, upgrade to Pay As You Go, or
   use any other provider.
-- Also create an Object Storage bucket (for example `memoryworks-backups`) with a
-  lifecycle rule that deletes objects after 14 days, and extend the policy for
-  the same subject:
-
-  `Allow group memoryworks-server to manage objects in compartment id <COMPARTMENT_OCID> where target.bucket.name = 'memoryworks-backups'`
+- Backups stay on the server (14 days of nightly archives) plus the
+  provider's own snapshot. For an offsite copy on Oracle Cloud, create an Object
+  Storage bucket with a 14-day lifecycle rule, allow the instance to
+  `manage objects` in it, and set `OCI_BACKUP_BUCKET` and
+  `OCI_CLI_AUTH=instance_principal`.
 
 **DNS.** At the domain's registrar, add two A records pointing at the server's
 public IP: `api` and `mcp`. Leave the apex and `www` on Vercel. Caddy issues
@@ -135,7 +113,8 @@ TLS for both names once DNS resolves.
 ```sh
 PUBLIC_DOMAIN=memoryworks.app
 SITE_URL=https://memoryworks.app
-OCI_BACKUP_BUCKET=memoryworks-backups
+CONNECTOR_VAULT_PROVIDER=local
+INTEGRATION_ENCRYPTION_KEY=<Fernet key>
 ```
 
 Copy `GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET`, `GOOGLE_CLIENT_ID`/

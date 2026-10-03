@@ -30,8 +30,8 @@ sudo ufw allow 443/udp
 sudo ufw --force enable
 sudo systemctl enable --now docker
 
-# oci-cli uploads nightly backups to OCI Object Storage (instance principal on
-# an Oracle VM, the API-key config in ~/.oci elsewhere).
+# oci-cli is used only when OCI_BACKUP_BUCKET sends nightly backups to OCI
+# Object Storage.
 sudo apt-get install -y pipx
 pipx install oci-cli
 pipx ensurepath

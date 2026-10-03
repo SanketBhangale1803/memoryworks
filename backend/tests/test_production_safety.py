@@ -61,6 +61,42 @@ def test_production_configuration_accepts_oci_kms():
     config.assert_safe_for_environment()
 
 
+def _single_server_config(**overrides):
+    values = dict(
+        environment="production",
+        auth_dev_mode=False,
+        jwt_secret="a-production-secret-that-is-longer-than-32-characters",
+        frontend_url="https://orgmemory.example.com",
+        github_client_id="production-client-id",
+        github_client_secret="production-client-secret",
+        runbook_embedding_provider="fastembed",
+        arcadedb_password="a-production-arcade-password",
+        connector_vault_provider="local",
+        mcp_public_url="https://mcp.orgmemory.example.com",
+        mcp_oauth_issuer_url="https://api.orgmemory.example.com",
+    )
+    values.update(overrides)
+    return Settings(**values)
+
+
+def test_production_configuration_accepts_local_vault_with_explicit_key():
+    from cryptography.fernet import Fernet
+
+    config = _single_server_config(integration_encryption_key=Fernet.generate_key().decode())
+
+    config.assert_safe_for_environment()
+
+
+@pytest.mark.parametrize("key", ["", "not-a-fernet-key"])
+def test_production_local_vault_refuses_generated_or_malformed_keys(key):
+    config = _single_server_config(integration_encryption_key=key)
+
+    with pytest.raises(RuntimeError) as exc:
+        config.assert_safe_for_environment()
+
+    assert "INTEGRATION_ENCRYPTION_KEY" in str(exc.value)
+
+
 def test_public_demo_configuration_is_production_safe_and_isolated():
     config = Settings(
         environment="production",

@@ -247,7 +247,7 @@ def test_production_compose_keeps_database_private_and_execution_disabled():
 
 
 def test_caddyfile_bounds_request_bodies():
-    caddy = (REPO_ROOT / "deploy" / "oci" / "Caddyfile").read_text()
+    caddy = (REPO_ROOT / "deploy" / "server" / "Caddyfile").read_text()
     api_block = caddy.split("api.{$PUBLIC_DOMAIN} {", 1)[1].split("\n}", 1)[0]
     mcp_block = caddy.split("mcp.{$PUBLIC_DOMAIN} {", 1)[1].split("\n}", 1)[0]
 

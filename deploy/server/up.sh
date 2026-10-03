@@ -13,7 +13,12 @@ set -a
 . ./.env.production
 set +a
 
-required=(PUBLIC_DOMAIN TLS_EMAIL ARCADEDB_PASSWORD JWT_SECRET GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET CONNECTOR_KMS_KEY_ID CONNECTOR_OCI_KMS_CRYPTO_ENDPOINT)
+required=(PUBLIC_DOMAIN TLS_EMAIL ARCADEDB_PASSWORD JWT_SECRET GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET)
+case ${CONNECTOR_VAULT_PROVIDER:-local} in
+  local) required+=(INTEGRATION_ENCRYPTION_KEY) ;;
+  oci-kms) required+=(CONNECTOR_KMS_KEY_ID CONNECTOR_OCI_KMS_CRYPTO_ENDPOINT) ;;
+  *) required+=(CONNECTOR_KMS_KEY_ID) ;;
+esac
 for name in "${required[@]}"; do
   if [[ -z ${!name:-} ]]; then
     echo "${name} is required in .env.production" >&2

@@ -44,9 +44,6 @@ services:
     volumes:
       - orgmemory_data:/workspace/runbook/data
       - generated_runbooks:/workspace/runbook/generated_runbooks
-      # OCI API-key config for CONNECTOR_OCI_KMS_AUTH=config-file (servers outside
-      # Oracle Cloud). Key paths written as ~/.oci/... resolve on the host and here.
-      - ${OCI_CONFIG_DIR:-./deploy/server/no-oci-config}:/root/.oci:ro
     depends_on:
       arcadedb:
         condition: service_healthy

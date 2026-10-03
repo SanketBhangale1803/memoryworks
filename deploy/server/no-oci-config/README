@@ -1,2 +1,0 @@
-Mounted at /root/.oci in the backend container when OCI_CONFIG_DIR is unset
-(Oracle VMs authenticate with the instance principal and need no config file).

@@ -42,6 +42,16 @@ def _warn_for_legacy_environment() -> None:
 _warn_for_legacy_environment()
 
 
+def _is_fernet_key(value: str) -> bool:
+    from cryptography.fernet import Fernet
+
+    try:
+        Fernet(value.encode())
+    except (ValueError, TypeError):
+        return False
+    return True
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=ROOT / ".env", extra="ignore", populate_by_name=True)
 
@@ -400,10 +410,19 @@ class Settings(BaseSettings):
         if self.runbook_embedding_provider.casefold() == "deterministic":
             faults.append("ORGMEMORY_EMBEDDING_PROVIDER must use fastembed or openai")
         vault_provider = self.connector_vault_provider.casefold()
-        if vault_provider not in {"aws-kms", "oci-kms"} or not self.connector_kms_key_id:
+        if vault_provider == "local":
+            # A key generated next to the database would be lost with the
+            # container and copied into every backup; only an explicit key,
+            # kept outside the data volume, is acceptable in production.
+            if not _is_fernet_key(self.integration_encryption_key):
+                faults.append(
+                    "CONNECTOR_VAULT_PROVIDER=local in production requires "
+                    "INTEGRATION_ENCRYPTION_KEY set to a Fernet key"
+                )
+        elif vault_provider not in {"aws-kms", "oci-kms"} or not self.connector_kms_key_id:
             faults.append(
                 "Production connector grants require CONNECTOR_VAULT_PROVIDER=aws-kms "
-                "or oci-kms and CONNECTOR_KMS_KEY_ID"
+                "or oci-kms and CONNECTOR_KMS_KEY_ID, or local and INTEGRATION_ENCRYPTION_KEY"
             )
         if vault_provider == "oci-kms" and not self.connector_oci_kms_crypto_endpoint.startswith(
             "https://"
