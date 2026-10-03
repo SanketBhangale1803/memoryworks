@@ -91,6 +91,10 @@ class Settings(BaseSettings):
     openrouter_api_key: str = ""
     glm_model: str = "z-ai/glm-5.3-flash"
     glm_base_url: str = "https://openrouter.ai/api/v1"
+    # GLM 5.3 reasons before answering and OpenRouter will not let that be turned
+    # off. At the provider's default effort a grounded answer took ~140 s, which
+    # outlives the web proxy; "low" answered the same question in ~5 s.
+    glm_reasoning_effort: str = "low"
     xai_api_key: str = ""
     grok_model: str = "grok-4.5"
     kimi_api_key: str = ""
@@ -101,6 +105,9 @@ class Settings(BaseSettings):
     # that actually fits what was asked. 1 disables the parallel pass entirely.
     org_memory_answer_candidates: int = 5
     org_memory_answer_judge_enabled: bool = True
+    # Wall-clock budget for the parallel candidates. Whatever finished in time is
+    # judged; a slow candidate is dropped rather than holding the answer hostage.
+    org_memory_answer_deadline_seconds: float = 40.0
     # When company memory holds nothing relevant and the question is not about
     # the company, answer from the model's own knowledge instead of refusing.
     org_memory_general_knowledge_enabled: bool = True

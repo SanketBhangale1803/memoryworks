@@ -156,7 +156,10 @@ def _openai_compatible(provider: ModelProvider, prompt: str) -> str:
                 "max_tokens": 2048,
             }
         )
-    elif provider.id != "glm":
+    elif provider.id == "glm":
+        if settings.glm_reasoning_effort:
+            payload["reasoning"] = {"effort": settings.glm_reasoning_effort}
+    else:
         payload["temperature"] = 0
     headers = {
         "Authorization": f"Bearer {provider.api_key}",

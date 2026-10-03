@@ -152,6 +152,42 @@ def test_deliberation_falls_back_to_first_candidate_without_a_judge(monkeypatch)
     assert winner["_deliberation"]["selected_lens"] == "direct"
 
 
+def test_a_slow_candidate_is_dropped_instead_of_holding_up_the_answer(monkeypatch):
+    # A reasoning model at high effort took ~140 s per candidate, and the asker
+    # got a proxy 502 instead of any answer. Whatever finishes in time is judged.
+    import threading
+
+    release = threading.Event()
+
+    def synthesize(query, items, *, compiled_context=None, model_provider=None, lens=""):
+        if "causal chain" in lens:
+            release.wait(5)
+        return {
+            "answer": f"answer for {lens[:12]}",
+            "likely_cause": "cause",
+            "safe_actions": [],
+            "approval_required": [],
+            "sufficient": True,
+        }
+
+    monkeypatch.setattr("app.retrieval.deliberation.llm_answer", synthesize)
+    monkeypatch.setattr(
+        "app.retrieval.deliberation.generate_grounded_json",
+        lambda prompt, provider=None: None,
+    )
+
+    winner = deliberate(
+        "why is checkout failing?",
+        [_evidence("c1", "checkout.py", "checkout calls payments v1")],
+        candidate_count=3,
+        deadline_seconds=0.5,
+    )
+    release.set()
+
+    assert winner["_deliberation"]["candidate_count"] == 2
+    assert "causal" not in {item["lens"] for item in winner["_deliberation"]["candidates"]}
+
+
 def test_deliberation_returns_nothing_when_no_model_answers(monkeypatch):
     monkeypatch.setattr("app.retrieval.deliberation.llm_answer", lambda *args, **kwargs: None)
 

@@ -15,7 +15,7 @@ when the judge call fails, this degrades to exactly the previous behaviour.
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait
 from typing import Any
 
 from app.graph.base import GraphEvidence
@@ -78,6 +78,7 @@ def deliberate(
     model_provider: str | None = None,
     candidate_count: int = 5,
     judge_enabled: bool = True,
+    deadline_seconds: float | None = None,
 ) -> dict[str, Any] | None:
     """Return the best grounded answer among several, or None when none succeed."""
 
@@ -91,22 +92,31 @@ def deliberate(
         )
 
     lenses = LENSES[:count]
-    with ThreadPoolExecutor(max_workers=count) as pool:
-        produced = list(
-            pool.map(
-                lambda lens: (
-                    lens["id"],
-                    llm_answer(
-                        query,
-                        evidence,
-                        compiled_context=compiled_context,
-                        model_provider=model_provider,
-                        lens=lens["instruction"],
-                    ),
-                ),
-                lenses,
-            )
+    pool = ThreadPoolExecutor(max_workers=count)
+    futures = [
+        (
+            lens["id"],
+            pool.submit(
+                llm_answer,
+                query,
+                evidence,
+                compiled_context=compiled_context,
+                model_provider=model_provider,
+                lens=lens["instruction"],
+            ),
         )
+        for lens in lenses
+    ]
+    # The asker is waiting on the slowest candidate, so the pass has a deadline:
+    # whatever finished in time is judged, and stragglers are abandoned (their
+    # threads run out on their own; nothing waits for them).
+    wait([future for _, future in futures], timeout=deadline_seconds)
+    pool.shutdown(wait=False, cancel_futures=True)
+    produced = [
+        (lens_id, future.result())
+        for lens_id, future in futures
+        if future.done() and not future.cancelled() and future.exception() is None
+    ]
 
     candidates = [(lens_id, answer) for lens_id, answer in produced if answer]
     if not candidates:

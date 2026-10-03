@@ -507,6 +507,7 @@ class RetrievalService:
             model_provider=model_provider,
             candidate_count=settings.org_memory_answer_candidates,
             judge_enabled=settings.org_memory_answer_judge_enabled,
+            deadline_seconds=settings.org_memory_answer_deadline_seconds,
         )
 
     def _clarification_result(
