@@ -81,7 +81,14 @@ export async function streamAnswer<T>(body: unknown, onEvent: (event: StreamEven
   const decoder = new TextDecoder();
   let buffer = "";
   for (;;) {
-    const { done, value } = await reader.read();
+    let chunk: ReadableStreamReadResult<Uint8Array>;
+    try {
+      chunk = await reader.read();
+    } catch {
+      // The browser says only "network error" when a stream is cut mid-answer.
+      throw new Error("The connection dropped while MemoryWorks was answering. Ask again.");
+    }
+    const { done, value } = chunk;
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
     let newline = buffer.indexOf("\n");

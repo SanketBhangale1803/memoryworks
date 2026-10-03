@@ -639,7 +639,10 @@ def ask_org_stream(request: AskRequest, authorization: str | None = Header(defau
         deadline = time.monotonic() + 300
         while True:
             try:
-                kind, payload = events.get(timeout=30)
+                # Pings every 10 s: a proxy that sees a quiet connection for
+                # longer may close it mid-run, which the browser reports only
+                # as "network error".
+                kind, payload = events.get(timeout=10)
             except queue.Empty:
                 if time.monotonic() > deadline:
                     org_sessions.update(run_id, status="error", error="Timed out")

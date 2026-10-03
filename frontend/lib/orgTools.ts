@@ -349,17 +349,22 @@ export const orgApi = {
         `Cannot reach the MemoryWorks API at ${API}. Check that the backend is running and refresh the page.`,
       );
     }
-    if (!response.ok || !response.body) {
-      let session = await post<OrgAgentSession>("/ask", { question, space_ids: spaceIds });
+    /* Follow a run by polling its stored session until it finishes. */
+    const follow = async (first: OrgAgentSession) => {
+      let session = first;
       publish(session);
-      const deadline = Date.now() + 150000;
+      const deadline = Date.now() + 240000;
       while (session.status === "running" && Date.now() < deadline) {
-        await new Promise((resolve) => setTimeout(resolve, 1200));
+        await new Promise((resolve) => setTimeout(resolve, 1500));
         session = await orgApi.askStatus(session.id);
         publish(session);
       }
       if (session.status === "error") throw new Error(session.error || "The agent could not finish.");
+      if (session.status === "running") throw new Error("The agent is taking unusually long. Check back in a minute.");
       return session;
+    };
+    if (!response.ok || !response.body) {
+      return follow(await post<OrgAgentSession>("/ask", { question, space_ids: spaceIds }));
     }
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -370,7 +375,17 @@ export const orgApi = {
       publish(next);
     };
     for (;;) {
-      const { done, value } = await reader.read();
+      let chunk: ReadableStreamReadResult<Uint8Array>;
+      try {
+        chunk = await reader.read();
+      } catch {
+        /* The connection dropped mid-run ("network error"). The run keeps going
+           on the server and stores every step, so pick it up from there rather
+           than losing the answer. */
+        if (state.session?.id) return follow(state.session);
+        throw new Error("The connection to MemoryWorks dropped before the agent started. Try again.");
+      }
+      const { done, value } = chunk;
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
       let newline = buffer.indexOf("\n");
@@ -434,6 +449,8 @@ export const orgApi = {
       }
     }
     if (!state.session) throw new Error("The agent stream ended without a result.");
+    // A stream that closed without its final event was cut off; the stored run has the rest.
+    if (state.session.status === "running" && state.session.id) return follow(state.session);
     return state.session;
   },
   watches: () => get<{ count: number; watches: OrgWatch[] }>("/watches"),
