@@ -267,9 +267,26 @@ class WebMCPAgentRunner:
                 }
         # Budget exhausted without an answer. If the run did real work, report
         # what it actually found rather than claiming nothing was grounded.
-        summaries = [step["summary"] for step in steps if step.get("summary")]
-        if any(step["tool"] == "propose_orgmemory_changes" for step in steps):
-            answer = " ".join(summaries[-2:]) + " The changes are waiting for a person to approve."
+        summaries = [
+            step["summary"]
+            for step in steps
+            if step.get("summary") and not str(step["summary"]).startswith("Tool error")
+        ]
+        proposal_errors = [
+            str(step["summary"]).removeprefix("Tool error: ")
+            for step in steps
+            if step["tool"] == "propose_orgmemory_changes"
+            and str(step.get("summary") or "").startswith("Tool error")
+        ]
+        if proposal_errors:
+            # A successful proposal ends the run above, so reaching here means
+            # every attempt was refused. Saying the changes await approval would
+            # send someone looking for a plan that does not exist.
+            answer = (
+                "I could not file the proposed changes, so nothing is waiting for "
+                f"approval and nothing was changed. The last attempt failed: {proposal_errors[-1]}"
+                + (" What I found before that: " + " ".join(summaries[-3:]) if summaries else "")
+            )
         else:
             answer = (
                 "I could not ground a complete answer within the tool budget. "
@@ -417,7 +434,8 @@ Rules:
 - Ground every claim in the observations. Name the memory_ids you used.
 - You have at most {max_steps} tool calls total. Start with the most specific tool.
 - To reconcile a conflict found by find_orgmemory_conflicts, call propose_orgmemory_changes with that conflict's id as conflict_id. Never retype a resolution's operations yourself.
-- If you must pass explicit operations, each op is exactly one of create_task, update_task, add_memory. Nothing else is valid.
+- If you must pass explicit operations, each op is exactly one of create_task, update_task, add_memory. Nothing else is valid. Every create_task and add_memory needs space_id: the project_id of the space it belongs to, from AUTHORIZED SPACES.
+- If a tool call fails, read its error and fix the arguments; do not repeat the same call unchanged.
 - The moment propose_orgmemory_changes succeeds, give your final answer: say the changes are proposed and waiting for a person to approve. Do not re-verify or call more tools.
 - Never invent spaces, memory ids, or facts. If evidence is missing, say so.
 - Proposing saves nothing by itself; a person approves it on the page."""

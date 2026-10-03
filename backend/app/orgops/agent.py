@@ -115,9 +115,12 @@ ORG_AGENT_TOOLS: list[dict[str, Any]] = [
         "description": (
             "Submit changes for human approval. Applies NOTHING. To reconcile a "
             "conflict, pass its conflict_id — the recorded resolution is copied "
-            "by reference, never retyped. Otherwise pass explicit operations: "
-            "each op must be exactly create_task, update_task, or add_memory "
-            "(never update_task_status or close_memory)."
+            "by reference, never retyped. Otherwise pass explicit operations, each "
+            "exactly one of: create_task {space_id, title, description, owner, "
+            "priority}, update_task {task_id, status, owner, priority, reason}, "
+            "add_memory {space_id, type, title, content}. space_id is the project_id "
+            "of the space the change belongs to, from AUTHORIZED SPACES. Never "
+            "update_task_status or close_memory."
         ),
         "arguments": ["summary", "operations (or conflict_id)"],
     },
@@ -137,6 +140,67 @@ def _int(value: Any, fallback: int) -> int:
         return int(value)
     except (TypeError, ValueError):
         return fallback
+
+
+_SPACED_OPS = {"create_task", "add_memory"}
+
+
+def _place_operations(operations: list, spaces: list[dict], default_space: str) -> list[dict]:
+    """Give every new task or memory a space the caller may write to.
+
+    Models routinely leave space_id out, or write the space's name instead of its
+    id. Neither is ambiguous when only one space fits, so fill or translate it;
+    when it is ambiguous, refuse with the valid choices, which is what lets the
+    next attempt succeed instead of repeating the same mistake.
+    """
+    by_id = {str(space["id"]): space for space in spaces}
+    by_name = {str(space.get("name") or "").casefold(): space for space in spaces}
+    by_name.update(
+        {
+            str(space.get("repository") or "").casefold().rstrip("/"): space
+            for space in spaces
+            if space.get("repository")
+        }
+    )
+    fallback = default_space if default_space in by_id else ""
+    if not fallback and len(by_id) == 1:
+        fallback = next(iter(by_id))
+    choices = "; ".join(f"{space['id']} ({space.get('name') or 'unnamed'})" for space in spaces)
+
+    placed: list[dict] = []
+    for operation in operations:
+        if not isinstance(operation, dict):
+            raise ValueError("each operation must be an object")
+        operation = dict(operation)
+        if str(operation.get("op") or "") in _SPACED_OPS:
+            given = _text(operation.get("space_id"))
+            if given and given not in by_id:
+                needle = given.casefold().rstrip("/")
+                match = by_name.get(needle)
+                if not match:
+                    # "SAP-AI-PRs" for "https://github.com/acme/SAP-AI-PRs" is fine;
+                    # a fragment that fits two spaces is a guess, so it is refused.
+                    partial = {
+                        str(space["id"]): space
+                        for name, space in by_name.items()
+                        if name and (name.endswith("/" + needle) or needle in name)
+                    }
+                    match = next(iter(partial.values())) if len(partial) == 1 else None
+                if not match:
+                    raise ValueError(
+                        f"{operation['op']} names space {given!r}, which is not one you can "
+                        f"change. Use one of these project_ids: {choices}"
+                    )
+                given = str(match["id"])
+            given = given or fallback
+            if not given:
+                raise ValueError(
+                    f"{operation['op']} needs space_id: the project_id of the space it "
+                    f"belongs to. Use one of: {choices}"
+                )
+            operation["space_id"] = given
+        placed.append(operation)
+    return placed
 
 
 def build_org_executor(
@@ -296,6 +360,9 @@ def build_org_executor(
                 raise ValueError(
                     "operations must be a non-empty list, or pass conflict_id to reconcile"
                 )
+            operations = _place_operations(
+                operations, orgops.list_spaces(spaces), _text(arguments.get("space_id"))
+            )
             plan = propose(
                 principal,
                 _text(arguments.get("summary")) or "Agent-proposed changes",
