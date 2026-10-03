@@ -97,3 +97,70 @@ def test_short_single_word_labels_remain_filtered_by_the_older_css_rule():
     # A multi-word label sidesteps that rule entirely, which is why the behaviour
     # looks inconsistent from the outside.
     assert _answerable_line("Default branch: main")
+
+
+# What "are there any payments set up in the repos?" used to come back with: the
+# question's framing words ("setup", "repos") matched source code about setup,
+# and nothing checked that a quoted line was about payments at all.
+RANKER_SOURCE = _evidence(
+    "c3",
+    "app/graph/graph_ranker.py",
+    "INTENT_TERMS = {\n"
+    '    "setup": {"build", "dev", "install", "make", "npm", "run", "setup", "start"},\n'
+    '    "repository_locator": {"auth", "login"},\n'
+    "}\n"
+    "    # Searching company repositories is a setup concern for every repository.\n"
+    '    "company repositories",\n',
+    95.0,
+)
+PITCH = _evidence(
+    "c4",
+    "README.md",
+    "Every engineering org already knows why its payments service failed last time.\n"
+    "\n\n\n\n"
+    "Run docker compose up -d to set up a local copy.\n",
+    90.0,
+)
+
+
+def test_framing_words_alone_never_answer_a_question_about_something_else():
+    answer = universal_evidence_answer(
+        "are there any payments setup in any of the repos?", [RANKER_SOURCE]
+    )
+
+    assert not answer["sufficient"]
+    assert answer["answer"].startswith("I do not have enough company memory")
+    assert "Nothing in the searched sources mentions payments." in answer["answer"]
+
+
+def test_a_passing_mention_of_the_subject_does_not_answer_what_was_asked_about_it():
+    # README mentions payments, and separately explains setup — neither line is a
+    # payments setup.
+    answer = universal_evidence_answer(
+        "are there any payments setup in any of the repos?", [RANKER_SOURCE, PITCH]
+    )
+
+    assert not answer["sufficient"]
+
+
+def test_a_real_payments_setup_still_answers():
+    setup = _evidence(
+        "c5",
+        "docs/billing.md",
+        "Payments run through Stripe; set STRIPE_SECRET_KEY and run make setup-payments.\n",
+        80.0,
+    )
+
+    answer = universal_evidence_answer(
+        "are there any payments setup in any of the repos?", [RANKER_SOURCE, setup]
+    )
+
+    assert answer["sufficient"]
+    assert "Stripe" in answer["answer"]
+    assert "graph_ranker" not in answer["answer"]
+
+
+def test_quoted_data_literals_from_source_code_are_not_prose():
+    assert not _answerable_line('"setup": {"build", "dev", "install", "start"},')
+    assert not _answerable_line('"company repositories",')
+    assert _answerable_line('"Payments" are handled by the billing service.')

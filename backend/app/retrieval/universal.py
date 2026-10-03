@@ -13,6 +13,8 @@ STOP_WORDS = {
     "all",
     "an",
     "and",
+    "any",
+    "anything",
     "are",
     "as",
     "at",
@@ -37,11 +39,14 @@ STOP_WORDS = {
     "our",
     "please",
     "repo",
+    "repos",
+    "repositories",
     "repository",
     "should",
     "show",
     "that",
     "the",
+    "there",
     "this",
     "to",
     "using",
@@ -226,6 +231,86 @@ CONCEPTS: dict[str, set[str]] = {
 }
 
 
+# Words that frame a question without naming what it is about. In "are there any
+# payments set up in the repos", everything except "payments" is framing — and
+# framing words match almost every chunk ("setup", "repos"), which is how a
+# question about payments used to be answered with quoted lines about setup.
+FRAMING_TERMS = {
+    "actually",
+    "anywhere",
+    "app",
+    "apps",
+    "code",
+    "codebase",
+    "codebases",
+    "currently",
+    "exist",
+    "existing",
+    "exists",
+    "feature",
+    "features",
+    "file",
+    "files",
+    "find",
+    "found",
+    "handled",
+    "implement",
+    "implementation",
+    "implemented",
+    "integrated",
+    "integration",
+    "kind",
+    "list",
+    "locally",
+    "logic",
+    "project",
+    "projects",
+    "recent",
+    "recently",
+    "set",
+    "some",
+    "something",
+    "still",
+    "support",
+    "supported",
+    "tell",
+    "thing",
+    "things",
+    "today",
+    "use",
+    "used",
+    "uses",
+    "work",
+    "working",
+    "works",
+    "you",
+    "your",
+}
+
+
+# How many lines from a mention of the subject a line may sit and still count as
+# being about it. "payment_service failed." / "Root cause: the pool was exhausted."
+# is one answer across two lines; a setup step thirty lines below a marketing
+# sentence that happens to say "payments" is not.
+SUBJECT_RADIUS = 3
+
+
+def subject_terms(tokens: tuple[str, ...]) -> tuple[str, ...]:
+    """The query terms that name what the question is about.
+
+    A term belongs to the subject when it is neither framing nor part of a concept
+    vocabulary: concept words ("setup", "config", "error") describe the *kind* of
+    answer wanted and are expanded separately, while the subject is what that
+    answer has to be about.
+    """
+    vocabulary = set().union(*CONCEPTS.values())
+    return tuple(
+        token
+        for token in tokens
+        if len(token) >= 4 and token not in FRAMING_TERMS and not (_term_forms(token) & vocabulary)
+    )
+
+
 @dataclass(frozen=True)
 class UniversalQueryPlan:
     original: str
@@ -295,10 +380,23 @@ def plan_query(query: str) -> UniversalQueryPlan:
     )
 
 
-def _candidate_lines(text: str) -> list[str]:
-    output: list[str] = []
+def _candidate_lines(text: str, near: tuple[str, ...] = ()) -> list[tuple[str, str]]:
+    """Answerable lines of ``text``, each with the source line it was cut from.
+
+    With ``near``, only lines close to a mention of one of those terms are kept.
+    """
+    output: list[tuple[str, str]] = []
     raw_lines = text.splitlines()
+    allowed: set[int] | None = None
+    if near:
+        allowed = set()
+        for index, raw_line in enumerate(raw_lines):
+            lowered = raw_line.casefold()
+            if any(_matches(term, lowered) for term in near):
+                allowed.update(range(index - SUBJECT_RADIUS, index + SUBJECT_RADIUS + 1))
     for index, raw_line in enumerate(raw_lines):
+        if allowed is not None and index not in allowed:
+            continue
         line = raw_line.strip(" \t-*#>")
         if len(line) < 8 or line in {"```", "---"} or not _answerable_line(line):
             continue
@@ -314,9 +412,9 @@ def _candidate_lines(text: str) -> list[str]:
                     break
             combined = " ".join(window)[:700]
             if len(combined) >= 12:
-                output.append(combined)
+                output.append((combined, line))
         pieces = re.split(r"(?<=[.!?])\s+", line)
-        output.extend(piece.strip() for piece in pieces if 8 <= len(piece.strip()) <= 700)
+        output.extend((piece.strip(), line) for piece in pieces if 8 <= len(piece.strip()) <= 700)
     return output
 
 
@@ -336,6 +434,10 @@ def _answerable_line(line: str) -> bool:
     ):
         return False
     if re.match(r"^[\w-]+\s*:\s*[^:]+;?$", value):
+        return False
+    # A quoted key or list element is a data literal lifted out of source code
+    # ('"setup": {"build", ...}' or '"company repositories",'), never a statement.
+    if re.match(r"""^(["'])[^"']{1,120}\1\s*[:,\]]""", value):
         return False
     if lowered.startswith(("open the vite url", "http://", "https://")):
         return False
@@ -396,6 +498,10 @@ def universal_evidence_answer(query: str, evidence: list[GraphEvidence]) -> dict
         expansion_terms.update(CONCEPTS[facet])
     anchors = {value.casefold() for value in plan.technical_anchors}
     required_facet_terms = CONCEPTS["risk"] if "risk" in plan.facets else set()
+    subject = subject_terms(plan.tokens)
+    # What the question asks *about* its subject: the other words it used, plus
+    # the vocabulary of the concepts those words activated.
+    asked_terms = expansion_terms - set(subject)
 
     ranked: list[tuple[float, str, GraphEvidence]] = []
     for item in evidence:
@@ -404,7 +510,11 @@ def universal_evidence_answer(query: str, evidence: list[GraphEvidence]) -> dict
         item_direct = any(
             _matches(term, item_text) or _matches(term, title) for term in query_terms
         )
-        for line in _candidate_lines(item.text):
+        # A source whose title names the subject is about it throughout; any
+        # other source only near the lines that mention it.
+        titled = any(_matches(term, title) for term in subject)
+        near = () if titled else subject
+        for line, source_line in _candidate_lines(item.text, near):
             lowered = line.casefold()
             direct = sum(_matches(term, lowered) for term in query_terms)
             expanded = sum(_matches(term, lowered) for term in expansion_terms - query_terms)
@@ -418,12 +528,39 @@ def universal_evidence_answer(query: str, evidence: list[GraphEvidence]) -> dict
                 _matches(term, lowered) for term in required_facet_terms
             ):
                 continue
+            # Naming the subject is not enough when the question also asks
+            # something about it: "payments setup" is not answered by a line
+            # that only mentions payments in passing. The whole source line is
+            # checked, because the sentence next to a fix often names the symptom.
+            if (
+                subject
+                and asked_terms
+                and not titled
+                and not any(_matches(term, source_line.casefold()) for term in asked_terms)
+            ):
+                continue
             source_quality = min(float(item.score or 0) / 40.0, 2.5)
             score = direct * 3.0 + min(expanded, 3) * 0.8 + anchor_hits * 5 + title_hits * 2
             score += source_quality
             ranked.append((score, line, item))
     ranked.sort(key=lambda value: value[0], reverse=True)
     if not ranked or ranked[0][0] < 3.0:
+        missing = [
+            term
+            for term in subject
+            if not any(
+                _matches(term, item.text.casefold()) or _matches(term, item.source_title.casefold())
+                for item in evidence
+            )
+        ]
+        if missing and len(missing) == len(subject) <= 2:
+            # "Is there any X?" with no X anywhere in the searched sources has an
+            # answer, and it is not "I can't tell": say what was looked for. The
+            # standard sentence stays first because callers detect a refusal by it.
+            return _insufficient(
+                "I do not have enough company memory to answer this confidently. "
+                f"Nothing in the searched sources mentions {' or '.join(missing)}."
+            )
         return _insufficient()
 
     findings: list[tuple[str, GraphEvidence]] = []
@@ -462,9 +599,11 @@ def universal_evidence_answer(query: str, evidence: list[GraphEvidence]) -> dict
     }
 
 
-def _insufficient() -> dict[str, Any]:
+def _insufficient(
+    answer: str = "I do not have enough company memory to answer this confidently.",
+) -> dict[str, Any]:
     return {
-        "answer": "I do not have enough company memory to answer this confidently.",
+        "answer": answer,
         "likely_cause": "Insufficient evidence",
         "safe_actions": [],
         "approval_required": [],
