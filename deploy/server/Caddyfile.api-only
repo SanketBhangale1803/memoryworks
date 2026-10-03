@@ -10,7 +10,11 @@ api.{$PUBLIC_DOMAIN} {
 	request_body {
 		max_size 128MB
 	}
-	reverse_proxy backend:8000
+	# Answers stream (/api/ask/stream, /api/org/ask/stream): hand every write to
+	# the client as it happens instead of buffering it.
+	reverse_proxy backend:8000 {
+		flush_interval -1
+	}
 }
 
 mcp.{$PUBLIC_DOMAIN} {

@@ -46,3 +46,6 @@ brag-output*/
 
 # Internal plans and backups kept on this machine only (never pushed).
 /private/
+
+# Deploy marker: which Caddyfile the running proxy was last restarted with.
+.caddyfile.sha256

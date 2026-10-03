@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from app.graph.base import GraphEvidence
-from app.llm import generate_grounded_json
+from app.llm import generate_grounded_json, stream_text
 from app.retrieval.intents import ownership_scope
 from app.retrieval.universal import universal_evidence_answer
 
@@ -2082,3 +2083,71 @@ def llm_answer(
     except Exception:
         return None
     return None
+
+
+_CITATION_RE = re.compile(r"\[S(\d+)\]")
+
+
+def stream_llm_answer(
+    query: str,
+    evidence: list[GraphEvidence],
+    *,
+    compiled_context: dict[str, Any] | None = None,
+    model_provider: str | None = None,
+    on_text: Callable[[str], None],
+    on_reasoning: Callable[[str], None] | None = None,
+) -> dict[str, Any] | None:
+    """:func:`llm_answer`, but the answer's words reach ``on_text`` as they are written.
+
+    The evidence contract is the same; the shape is not. A JSON envelope cannot
+    be shown until it closes, so the model writes the answer as prose with
+    [S<n>] citations, and the cited sources are read back out of the text.
+    Returns None when no model answered, so the caller's fallback still applies.
+    """
+    if not evidence:
+        return None
+    source_text = str((compiled_context or {}).get("content") or "")
+    if not source_text:
+        source_text = "\n\n".join(
+            f"[S{index}] {item.source_title} ({item.source_type})\n{item.text}"
+            for index, item in enumerate(evidence, 1)
+        )
+    prompt = (
+        "You are MemoryWorks's source-grounded synthesis engine. Answer the question "
+        "using only the supplied company evidence, in concise Markdown. Cite every "
+        "factual claim inline with [S<number>]. Do not infer missing facts and do not "
+        "turn examples into current policy. When the question asks whether something "
+        "exists and the evidence shows no sign of it, that is an answer: say plainly that "
+        "nothing in the searched sources shows it, and cite what they do show instead. "
+        "Only when the evidence cannot address the question at all, begin with exactly "
+        "'I do not have enough company memory to answer this confidently.' and then say "
+        "in one sentence what the evidence does and does not show.\n"
+        f"Question: {query}\nEvidence:\n{source_text}"
+    )
+    try:
+        generated = stream_text(prompt, model_provider, on_text=on_text, on_reasoning=on_reasoning)
+    except Exception:
+        return None
+    if not generated:
+        return None
+    text, provider = generated
+    text = text.strip()
+    if not text:
+        return None
+    used = list(
+        dict.fromkeys(
+            int(value) for value in _CITATION_RE.findall(text) if 1 <= int(value) <= len(evidence)
+        )
+    )
+    answer = text
+    for index in used:
+        answer = answer.replace(f"[S{index}]", f"[{evidence[index - 1].source_title}]")
+    return {
+        "answer": answer,
+        "likely_cause": "Not applicable — this is a source-grounded company memory answer.",
+        "safe_actions": [],
+        "approval_required": [],
+        "supporting_chunk_ids": [evidence[index - 1].chunk_id for index in used],
+        "sufficient": bool(used) and not answer.startswith("I do not have enough company memory"),
+        "_model_provider": provider.id,
+    }

@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import json
 import logging
+import queue
 import re
 import time
 from datetime import UTC, datetime, timedelta
@@ -24,7 +25,7 @@ from fastapi import (
     Response,
     UploadFile,
 )
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
 
 from app.approvals import ApprovalService
 from app.audit import AuditService
@@ -1761,6 +1762,64 @@ def ask(request: AskRequest, authorization: str | None = Header(default=None)):
         surface=request.surface,
         scope=request.scope,
         history=[turn.model_dump() for turn in request.history],
+    )
+
+
+@router.post("/ask/stream")
+def ask_stream(request: AskRequest, authorization: str | None = Header(default=None)):
+    """``/ask``, narrated while it happens.
+
+    Newline-delimited JSON: ``step`` events as each stage starts, ``thinking``
+    and ``text`` pieces while the model reasons and writes, ``draft_reset`` when
+    a draft is replaced, and one ``done`` event carrying exactly what ``/ask``
+    would have returned. The draft is a preview; ``done`` is the answer. A
+    ``ping`` keeps proxies from closing a quiet connection.
+    """
+    principal = _authorize_project(request.project_id, authorization)
+    visible = _visible_project_ids(principal)
+    events: queue.Queue[tuple[str, dict]] = queue.Queue()
+
+    def worker() -> None:
+        try:
+            result = retrieval.ask(
+                request.project_id,
+                request.query,
+                sorted(visible or []),
+                principal=principal,
+                allowed_team_ids=_principal_team_ids(principal),
+                token_budget=request.token_budget,
+                model_provider=request.model,
+                surface=request.surface,
+                scope=request.scope,
+                history=[turn.model_dump() for turn in request.history],
+                on_event=lambda kind, payload: events.put((kind, payload)),
+            )
+            events.put(("done", {"answer": result}))
+        except Exception:  # noqa: BLE001 - the stream must end with an event
+            logger.exception("Streamed answer failed")
+            events.put(("error", {"message": "MemoryWorks could not finish this answer."}))
+
+    Thread(target=worker, daemon=True).start()
+
+    def stream():
+        deadline = time.monotonic() + 240
+        while True:
+            try:
+                kind, payload = events.get(timeout=10)
+            except queue.Empty:
+                if time.monotonic() > deadline:
+                    yield json.dumps({"type": "error", "message": "The answer timed out."}) + "\n"
+                    return
+                yield json.dumps({"type": "ping"}) + "\n"
+                continue
+            yield json.dumps({"type": kind, **payload}, default=str) + "\n"
+            if kind in {"done", "error"}:
+                return
+
+    return StreamingResponse(
+        stream(),
+        media_type="application/x-ndjson",
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
     )
 
 

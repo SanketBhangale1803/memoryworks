@@ -64,6 +64,14 @@ COMPANY_MARKERS = (
     "this project",
     "this codebase",
     "our codebase",
+    # "Are there any payments in the repos?" is about the connected code, not
+    # about repositories in general — "what is a repository" stays general.
+    "the repo",
+    "my repo",
+    "these repo",
+    "those repo",
+    "connected repo",
+    "codebase",
     "internal",
     "runbook",
     "on-call",

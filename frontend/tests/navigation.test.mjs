@@ -109,9 +109,16 @@ test("the post-login surface is one chat with Ask and Agent modes", () => {
   const workspace = read("../app/workspace/page.tsx");
   const chat = read("../components/WorkspaceChat.tsx");
   const agent = read("../components/AgentTurn.tsx");
+  const ask = read("../components/AskTrace.tsx");
   assert.match(workspace, /<WorkspaceChat/);
   assert.match(chat, /\/api\/models/);
-  assert.match(chat, /\/api\/ask/);
+  // Ask mode is narrated: steps and words stream from /api/ask/stream, with the
+  // plain request kept for a server that does not stream.
+  assert.match(chat, /streamAnswer</);
+  assert.match(ask, /\/api\/ask\/stream/);
+  assert.match(ask, /"\/api\/ask"/);
+  assert.match(chat, /<AskTrace/);
+  assert.match(chat, /<LiveDraft/);
   // Agent mode is the agent-operations console, folded into the same window.
   assert.match(chat, /orgApi\.askStream/);
   assert.match(chat, /orgApi\.approvePlan/);

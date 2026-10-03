@@ -2743,6 +2743,15 @@ select:focus, .project-select:focus { outline:none; border-color:var(--ink-4); b
 .ws-steps li.running strong { color:var(--accent); }
 .ws-steps li.error p { color:var(--danger); }
 .ws-step-thought { color:var(--ink-3); font-style:italic; }
+/* Ask mode's trail sits above the answer it narrates; thinking can run long, so it scrolls. */
+.ws-steps.ask { margin-bottom:12px; }
+.ws-steps.ask .ws-step-thought { max-height:9.5em; overflow-y:auto; white-space:pre-wrap; }
+/* The answer while it is being written: a caret marks where the next word lands. */
+.ws-draft .markdown-answer { display:contents; }
+.ws-draft .markdown-answer > p:last-child { display:inline; }
+.ws-caret { display:inline-block; width:7px; height:1.05em; margin-left:2px; vertical-align:text-bottom; border-radius:1px; background:var(--accent); animation:caret-blink 1s steps(2, start) infinite; }
+@keyframes caret-blink { to { visibility:hidden; } }
+@media (prefers-reduced-motion: reduce) { .ws-caret { animation:none; opacity:.6; } }
 .ws-cites { display:flex; align-items:center; flex-wrap:wrap; gap:6px; color:var(--ink-3); font-size:12px; }
 .ws-cites button { min-width:24px; height:22px; padding:0 7px; border:1px solid var(--line); border-radius:999px; background:var(--surface); color:var(--accent); font:inherit; font-size:11.5px; font-weight:600; cursor:pointer; }
 .ws-cites button:hover { border-color:var(--accent); background:var(--accent-soft); }

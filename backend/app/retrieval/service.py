@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import re
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import asdict, replace
 from typing import Any
 
@@ -17,7 +19,7 @@ from app.hcag_adapter import HCAGAdapter
 from app.hcag_adapter.models import RouteResult
 from app.intelligence.correlation import correlate_changes
 from app.intelligence.trust import trust_score
-from app.llm import model_runtime
+from app.llm import configured_model, model_runtime
 from app.memory.beliefs import BeliefStore
 from app.memory.brain import CompanyBrainService
 from app.memory.change_intelligence import ChangeIntelligenceService
@@ -31,13 +33,58 @@ from .conversation import assistant_reply, general_knowledge_answer, is_company_
 from .deliberation import deliberate
 from .handoff import build_handoff
 from .hypotheses import extract_hypotheses
-from .reasoner import answer_intent, evidence_answer, validate_grounded_answer
+from .reasoner import (
+    answer_intent,
+    evidence_answer,
+    stream_llm_answer,
+    validate_grounded_answer,
+)
 from .universal import universal_evidence_answer
 
 # Below this final confidence, the diagnostic hypothesis path engages (in addition
 # to whenever the reasoner reports insufficient evidence). Prototype constant; can
 # be promoted to settings once the loop is validated.
 LOW_CONFIDENCE_THRESHOLD = 0.45
+
+
+def _emit(
+    on_event: Callable[[str, dict[str, Any]], None] | None, kind: str, payload: dict[str, Any]
+) -> None:
+    if not on_event:
+        return
+    # A broken listener must not break the answer it is narrating.
+    with contextlib.suppress(Exception):
+        on_event(kind, payload)
+
+
+def _plural(count: int, noun: str) -> str:
+    return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
+
+
+def _source_summary(evidence: list[GraphEvidence], limit: int = 3) -> str:
+    """Where the passages came from, in words a person recognizes.
+
+    Repository names when the search crossed repositories, file names otherwise.
+    Scores, chunk ids and graph paths stay out: they are how the looking works,
+    not what was found.
+    """
+    projects = list(
+        dict.fromkeys(
+            str(item.metadata.get("project_name") or "").strip()
+            for item in evidence
+            if str(item.metadata.get("project_name") or "").strip()
+        )
+    )
+    names = (
+        projects
+        if len(projects) > 1
+        else list(dict.fromkeys(item.source_title for item in evidence if item.source_title))
+    )
+    if not names:
+        return ""
+    shown = ", ".join(names[:limit])
+    rest = len(names) - limit
+    return f"From {shown}" + (f" and {rest} more" if rest > 0 else "")
 
 
 def should_run_diagnostics(route: RouteResult, sufficient: bool, confidence: float) -> bool:
@@ -66,7 +113,20 @@ class RetrievalService:
         surface: str = "api",
         scope: str = "auto",
         history: list[dict[str, Any]] | None = None,
+        on_event: Callable[[str, dict[str, Any]], None] | None = None,
     ) -> dict[str, Any]:
+        """Answer ``query`` from company memory.
+
+        ``on_event`` turns the call into a narrated one: each stage is reported as
+        a plain-language ``step`` as it starts, and a model-written answer arrives
+        as ``text`` (and ``thinking``) pieces while it is being written. Without a
+        listener the answer is deliberated across several candidates as before.
+        Listener failures are swallowed — narrating must never break an answer.
+        """
+
+        def step(label: str, detail: str = "") -> None:
+            _emit(on_event, "step", {"label": label, "detail": detail})
+
         # "hello" is not a retrieval failure. Conversational turns are answered
         # before any lane runs, so they never consume evidence or a model call.
         conversational = assistant_reply(query)
@@ -95,6 +155,8 @@ class RetrievalService:
                 surface=surface,
             )
         query = thread["query"]
+        if thread.get("subject"):
+            step("Reading this as a follow-up", f"About {thread['subject']}")
         route = self.hcag.route_query(project_id, query)
         memory_service = CompanyMemoryService(self.hcag.graph)
         scope_service = ScopeService()
@@ -104,6 +166,7 @@ class RetrievalService:
         )
         answer_shape = answer_intent(query)
         source_sweep_intents = {"runtime_record", "slack_messages"}
+        step("Checking approved company memory")
         belief_grounding = (
             None
             if answer_shape in source_sweep_intents
@@ -126,7 +189,12 @@ class RetrievalService:
                 for item in project
             ]
             intent = str(grounded.get("answer_kind") or "memory")
+            step("Found approved memory that answers this", _plural(len(evidence), "record"))
         else:
+            step(
+                "Searching connected sources",
+                "Every connected repository" if scope == "workspace" else "",
+            )
             evidence, searched_projects = self._workspace_evidence(
                 project_id,
                 query,
@@ -144,6 +212,10 @@ class RetrievalService:
             evidence = self._security_trim_evidence(
                 evidence, scope_service, project_id, allowed_team_ids
             )
+            step(
+                f"Read {_plural(len(evidence), 'relevant passage')}",
+                _source_summary(evidence),
+            )
             # Structured repository questions are answered deterministically from
             # manifests and code evidence. Free-form operational questions may use
             # the configured LLM, with the extractive reasoner as the safe fallback.
@@ -155,11 +227,14 @@ class RetrievalService:
             if intent in {"general", "api_contract"} and not deterministic["sufficient"]:
                 fallback = universal_evidence_answer(query, evidence)
                 deterministic = fallback if fallback["sufficient"] else deterministic
-            grounded = (
-                self._synthesize(query, evidence, route, model_provider) or deterministic
-                if intent in {"general", "overview", "slack_messages"}
-                else deterministic
-            )
+            if intent in {"general", "overview", "slack_messages"}:
+                grounded = (
+                    self._synthesize(query, evidence, route, model_provider, on_event)
+                    or deterministic
+                )
+            else:
+                step("Pulling the answer straight from the sources")
+                grounded = deterministic
             selected_memories = []
             if (
                 not grounded["sufficient"]
@@ -172,6 +247,7 @@ class RetrievalService:
                 and self._allow_automatic_workspace_fallback(query, intent)
                 and len(searched_projects) <= 1
             ):
+                step("Nothing conclusive here — widening to every connected repository")
                 previous_compiled_context = route.plan.get("_compiled_context")
                 previous_active_run = route.plan.get("_active_activation_run_id")
                 expanded_evidence, expanded_projects = self._workspace_evidence(
@@ -195,7 +271,7 @@ class RetrievalService:
                     evidence = expanded_evidence
                     searched_projects = expanded_projects
                     grounded = (
-                        self._synthesize(query, expanded_evidence, route, model_provider)
+                        self._synthesize(query, expanded_evidence, route, model_provider, on_event)
                         or expanded
                         if intent == "general"
                         else expanded
@@ -220,6 +296,7 @@ class RetrievalService:
             )
             evidence = activation.evidence
             self._attach_activation(route, activation)
+        step("Checking the answer against its sources")
         grounded = validate_grounded_answer(query, grounded, evidence)
         # Company memory holding nothing is only a refusal when the question was
         # about the company. A basic question the world already knows the answer
@@ -229,6 +306,7 @@ class RetrievalService:
             and settings.org_memory_general_knowledge_enabled
             and not is_company_question(query)
         ):
+            step("Not in company memory — answering from general knowledge")
             general = general_knowledge_answer(query, model_provider=model_provider)
             if general:
                 grounded = general
@@ -498,8 +576,34 @@ class RetrievalService:
         evidence: list[GraphEvidence],
         route: RouteResult,
         model_provider: str | None,
+        on_event: Callable[[str, dict[str, Any]], None] | None = None,
     ) -> dict[str, Any] | None:
-        """Grounded synthesis, deliberated across several readings of the question."""
+        """Grounded synthesis, deliberated across several readings of the question.
+
+        With a listener the answer is written once and streamed instead: someone
+        watching words appear needs the answer they see to be the answer they get,
+        which a judge choosing between hidden candidates afterwards cannot give.
+        """
+        if on_event:
+            model = configured_model(model_provider)
+            if not model:
+                return None
+            # A second synthesis (after widening the search) replaces the first
+            # draft rather than appending to it.
+            _emit(on_event, "draft_reset", {})
+            _emit(
+                on_event,
+                "step",
+                {"label": "Writing the answer", "detail": f"{model.label} · {model.model}"},
+            )
+            return stream_llm_answer(
+                query,
+                evidence,
+                compiled_context=route.plan.get("_compiled_context"),
+                model_provider=model_provider,
+                on_text=lambda text: _emit(on_event, "text", {"text": text}),
+                on_reasoning=lambda text: _emit(on_event, "thinking", {"text": text}),
+            )
         return deliberate(
             query,
             evidence,

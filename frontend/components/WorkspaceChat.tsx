@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AgentAnswer, EvidencePanel, stepsFrom, type AgentState } from "@/components/AgentTurn";
+import { applyEvent, AskTrace, emptyTrace, LiveDraft, streamAnswer, type Trace } from "@/components/AskTrace";
 import { BrandMark } from "@/components/BrandLogo";
 import CommandMenu, { useCommandMenu } from "@/components/CommandMenu";
 import GitHubIcon from "@/components/icons/GitHubIcon";
@@ -75,7 +76,15 @@ type Run = {
   error: string;
   executor: string;
 };
-type Turn = { question: string; mode: ThreadMode; answer?: Answer; agent?: AgentState; error?: string };
+type Turn = {
+  question: string;
+  mode: ThreadMode;
+  answer?: Answer;
+  agent?: AgentState;
+  /* How an Ask answer was produced, kept with it so the trail can be reopened. */
+  trace?: Trace;
+  error?: string;
+};
 
 /* Terminal states stop the poller. Anything else is still in flight. */
 const RUN_DONE = ["committed", "pushed", "no_changes", "failed"];
@@ -137,6 +146,10 @@ export default function WorkspaceChat({ user }: { user: any }) {
   const [followups, setFollowups] = useState<string[]>([]);
   const [github, setGithub] = useState(false);
   const [importing, setImporting] = useState(0);
+  /* The answer being written, word by word. Held here rather than in the saved
+     thread: persisting on every word would rewrite storage dozens of times a
+     second. The finished trail is saved with the answer. */
+  const [live, setLive] = useState<{ key: string; trace: Trace } | null>(null);
 
   const history = useThreads();
   const command = useCommandMenu();
@@ -216,7 +229,18 @@ export default function WorkspaceChat({ user }: { user: any }) {
   const lastSteps = turns.at(-1)?.agent?.steps.length;
   useEffect(() => {
     thread.current?.scrollTo({ top: thread.current.scrollHeight, behavior: "smooth" });
-  }, [turns.length, busy, lastSteps]);
+  }, [turns.length, busy, lastSteps, live?.trace.steps.length]);
+
+  /* Follow the answer as it is written — unless the reader scrolled up to look
+     at something, in which case the page stays where they put it. */
+  const liveLength = live ? live.trace.draft.length + live.trace.thinking.length : 0;
+  useEffect(() => {
+    const element = thread.current;
+    if (!element || !liveLength) return;
+    if (element.scrollHeight - element.scrollTop - element.clientHeight < 160) {
+      element.scrollTop = element.scrollHeight;
+    }
+  }, [liveLength]);
 
   const activeModel = useMemo(() => models.find((item) => item.id === model), [models, model]);
   const activeProject = useMemo(() => projects.find((item) => item.id === project), [projects, project]);
@@ -287,10 +311,12 @@ export default function WorkspaceChat({ user }: { user: any }) {
     setFollowups([]);
     setBusy(true);
     const { threadId, index, prior } = beginTurn(question, "ask", target, turnScope);
+    const key = `${threadId}:${index}`;
+    let trace = emptyTrace();
+    setLive({ key, trace });
     try {
-      const response = await api<Answer>("/api/ask", {
-        method: "POST",
-        body: JSON.stringify({
+      const response = await streamAnswer<Answer>(
+        {
           project_id: target,
           query: question,
           model: model || undefined,
@@ -299,9 +325,16 @@ export default function WorkspaceChat({ user }: { user: any }) {
           // asked, so that turn is scoped to it rather than searched workspace-wide.
           scope: turnScope,
           history: threadHistory(prior),
-        }),
+        },
+        (event) => {
+          trace = applyEvent(trace, event);
+          setLive({ key, trace });
+        },
+      );
+      patchTurn(threadId, index, {
+        answer: response,
+        trace: trace.steps.length ? { ...trace, draft: "", ms: Date.now() - trace.started } : undefined,
       });
-      patchTurn(threadId, index, { answer: response });
       if (response.answer_sufficient && !response.clarification) {
         void suggestNext(question, response.answer, (response.memory_units || []).map((unit) => unit.subject));
       }
@@ -310,6 +343,7 @@ export default function WorkspaceChat({ user }: { user: any }) {
       patchTurn(threadId, index, { error: error.message });
       throw error;
     } finally {
+      setLive(null);
       setBusy(false);
     }
   }
@@ -496,6 +530,13 @@ export default function WorkspaceChat({ user }: { user: any }) {
                   />
                 )}
 
+                {turn.mode === "ask" &&
+                  (() => {
+                    const streaming = live?.key === `${active?.id}:${index}` ? live.trace : undefined;
+                    const shown = streaming || turn.trace;
+                    return shown ? <AskTrace trace={shown} running={Boolean(streaming)} /> : null;
+                  })()}
+
                 {turn.error && <div className="ws-alert">{turn.error}</div>}
 
                 {turn.answer && (
@@ -509,7 +550,14 @@ export default function WorkspaceChat({ user }: { user: any }) {
                   />
                 )}
 
-                {turn.mode === "ask" && !turn.answer && !turn.error && busy && index === turns.length - 1 && (
+                {live?.key === `${active?.id}:${index}` && !turn.answer && <LiveDraft text={live.trace.draft} />}
+
+                {turn.mode === "ask" &&
+                  !turn.answer &&
+                  !turn.error &&
+                  busy &&
+                  index === turns.length - 1 &&
+                  !live?.trace.steps.length && (
                   <div className="ws-working" role="status" aria-live="polite">
                     <span className="ws-working-dots" aria-hidden="true"><i /><i /><i /></span>
                     <p>Searching your company’s memory…</p>

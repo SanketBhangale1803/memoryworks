@@ -36,6 +36,18 @@ fi
 "${compose[@]}" config --quiet
 "${compose[@]}" up -d --build
 
+# Caddy reads its Caddyfile through a single-file bind mount, which keeps pointing
+# at the old file after `git pull` replaces it, and `up -d` leaves an unchanged
+# container running. Restart it only when the Caddyfile actually changed.
+caddyfile=deploy/server/Caddyfile
+[[ -n ${SITE_URL:-} ]] && caddyfile=deploy/server/Caddyfile.api-only
+caddy_stamp=.caddyfile.sha256
+caddy_sum=$(sha256sum "$caddyfile" | cut -d' ' -f1)
+if [[ ! -f $caddy_stamp || $(cat "$caddy_stamp") != "$caddy_sum" ]]; then
+  "${compose[@]}" restart caddy
+  echo "$caddy_sum" >"$caddy_stamp"
+fi
+
 echo "Waiting for public HTTPS health check..."
 for _ in $(seq 1 60); do
   if curl -fsS "https://api.${PUBLIC_DOMAIN}/api/health" >/dev/null; then

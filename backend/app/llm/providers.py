@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import re
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -144,10 +146,24 @@ def generate_grounded_json(
 
 
 def _openai_compatible(provider: ModelProvider, prompt: str) -> str:
+    headers, payload = _openai_compatible_request(provider, prompt)
+    payload["response_format"] = {"type": "json_object"}
+    response = httpx.post(
+        f"{provider.base_url}/chat/completions",
+        headers=headers,
+        json=payload,
+        timeout=60,
+    )
+    response.raise_for_status()
+    return str(response.json()["choices"][0]["message"]["content"] or "")
+
+
+def _openai_compatible_request(
+    provider: ModelProvider, prompt: str
+) -> tuple[dict[str, str], dict[str, Any]]:
     payload: dict[str, Any] = {
         "model": provider.model,
         "messages": [{"role": "user", "content": prompt}],
-        "response_format": {"type": "json_object"},
     }
     if provider.id == "kimi":
         payload.update(
@@ -172,14 +188,76 @@ def _openai_compatible(provider: ModelProvider, prompt: str) -> str:
                 "X-OpenRouter-Title": "MemoryWorks",
             }
         )
-    response = httpx.post(
+    return headers, payload
+
+
+def stream_text(
+    prompt: str,
+    provider_id: str | None = None,
+    *,
+    on_text: Callable[[str], None],
+    on_reasoning: Callable[[str], None] | None = None,
+    deadline_seconds: float = 90.0,
+) -> tuple[str, ModelProvider] | None:
+    """Generate plain text, handing each piece to ``on_text`` as it is predicted.
+
+    OpenAI-compatible providers (GLM via OpenRouter among them) stream token by
+    token, and a reasoning model's thinking is passed to ``on_reasoning`` as it
+    arrives. Other families answer in one piece, delivered as a single chunk, so
+    callers never need a second code path. Returns None when no model is
+    configured; raises on transport errors and when the deadline passes, because
+    the caller has already shown part of an answer and must know it is incomplete.
+    """
+    provider = configured_model(provider_id)
+    if not provider:
+        return None
+    if provider.family == "anthropic":
+        text = _anthropic(provider, prompt)
+        on_text(text)
+        return text, provider
+    if provider.family == "gemini":
+        text = _gemini(provider, prompt)
+        on_text(text)
+        return text, provider
+
+    headers, payload = _openai_compatible_request(provider, prompt)
+    payload["stream"] = True
+    deadline = time.monotonic() + deadline_seconds
+    pieces: list[str] = []
+    with httpx.stream(
+        "POST",
         f"{provider.base_url}/chat/completions",
         headers=headers,
         json=payload,
-        timeout=60,
-    )
-    response.raise_for_status()
-    return str(response.json()["choices"][0]["message"]["content"] or "")
+        timeout=httpx.Timeout(60, connect=10),
+    ) as response:
+        response.raise_for_status()
+        for line in response.iter_lines():
+            if time.monotonic() > deadline:
+                raise TimeoutError("The model did not finish its answer in time.")
+            # Server-sent events: "data: {...}" per chunk, ": comment" keep-alives
+            # while the provider is still thinking, and "data: [DONE]" at the end.
+            if not line.startswith("data:"):
+                continue
+            data = line[5:].strip()
+            if data == "[DONE]":
+                break
+            try:
+                chunk = json.loads(data)
+            except json.JSONDecodeError:
+                continue
+            if chunk.get("error"):
+                raise RuntimeError(str(chunk["error"].get("message") or chunk["error"]))
+            choices = chunk.get("choices") or []
+            delta = (choices[0].get("delta") or {}) if choices else {}
+            thinking = delta.get("reasoning") or delta.get("reasoning_content")
+            if thinking and on_reasoning:
+                on_reasoning(str(thinking))
+            content = delta.get("content")
+            if content:
+                pieces.append(str(content))
+                on_text(str(content))
+    return "".join(pieces), provider
 
 
 def _anthropic(provider: ModelProvider, prompt: str) -> str:
