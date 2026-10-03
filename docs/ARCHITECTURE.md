@@ -105,7 +105,7 @@ frontend/               Next.js app (20 routes), components, lib, node:test suit
 mcp_server/             standalone MCP server + contract tests
 python_sdk/             typed sync/async client and the `orgmemory` CLI
 desktop/                Tauri 2 OS bridge (keychain, folders, local MCP sidecar)
-deploy/oci/             Caddy + bootstrap scripts for a single-VM deployment
+deploy/server/          Caddy + bootstrap scripts for a single-server deployment
 ```
 
 ---
@@ -550,7 +550,7 @@ stays in the backend.
 | Target | Shape |
 |---|---|
 | Local | `docker-compose.yml`: `arcadedb`, `backend`, `frontend`, `mcp` (profile). Or `make backend` / `make frontend` against a local ArcadeDB. |
-| Single VM (OCI) | `compose.production.yml` adds Caddy with automatic TLS: `app.`, `api.`, and `mcp.` subdomains, with proxy-level body caps (128 MB API, 10 MB MCP). Connector grants are encrypted through OCI Vault (`CONNECTOR_VAULT_PROVIDER=oci-kms`). See `deploy/oci/`. |
+| Single server | `compose.production.yml` adds Caddy with automatic TLS: `app.`, `api.`, and `mcp.` subdomains, with proxy-level body caps (128 MB API, 10 MB MCP). Connector grants are encrypted through OCI Vault (`CONNECTOR_VAULT_PROVIDER=oci-kms`). See `deploy/server/`. |
 | Vercel (memoryworks.app) | `vercel.json` runs the frontend and a containerized backend (`Dockerfile.vercel`), routing `/api/*` and `/.well-known/*` to the backend. Production runs here with real sign-in (`PUBLIC_DEMO_MODE=false`), the in-memory graph, and SQLite at `/tmp/orgmemory/`. Vercel containers are stateless, so that state is **not durable** — a new container starts empty apart from what sessions rebuild. The single-VM target is the durable option. `PUBLIC_DEMO_MODE=true` is a stricter profile for a shared, disposable demo. |
 
 `settings.assert_safe_for_environment()` refuses to start with

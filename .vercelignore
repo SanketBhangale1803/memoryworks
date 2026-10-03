@@ -19,7 +19,7 @@ generated_runbooks/
 *.sqlite
 *.sqlite3
 .connector_key
-deploy/oci/.keys/
+deploy/server/.keys/
 
 # Tool/editor caches.
 .git/

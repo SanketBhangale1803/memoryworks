@@ -552,7 +552,7 @@ Secrets are encrypted at rest, source access is workspace-scoped, and API keys a
 Production runs at **https://memoryworks.app** as a Vercel Services project (`orgmemory`): Next.js serves the web app and a FastAPI container serves same-origin `/api/*`, so session cookies stay first-party.
 
 - A push to `main` creates the production deployment; other branches create preview deployments (behind Vercel login).
-- **Storage on Vercel is not durable.** The backend container keeps SQLite under `/tmp/orgmemory/` and uses the in-memory graph, and Vercel containers are stateless, so workspace data can reset when a new container starts. For durable data, run the single-VM deployment in [`deploy/oci/`](deploy/oci/README.md) (Caddy, ArcadeDB, persistent volumes).
+- **Storage on Vercel is not durable.** The backend container keeps SQLite under `/tmp/orgmemory/` and uses the in-memory graph, and Vercel containers are stateless, so workspace data can reset when a new container starts. For durable data, run the single-VM deployment in [`deploy/server/`](deploy/server/README.md) (Caddy, ArcadeDB, persistent volumes).
 - Production needs the values in `.env.production.example`, plus a sensitive `JWT_SECRET` and a model key. Environment changes take effect on the next deployment.
 - The URL settings — `FRONTEND_URL`, `PUBLIC_BASE_URL`, `APP_BASE_URL`, `API_URL`, `MCP_OAUTH_ISSUER_URL`, `NEXT_PUBLIC_SITE_URL` — are `https://memoryworks.app`.
 - The MCP server does not run on Vercel. Editors connect to memoryworks.app through the stdio bridge with an API key; HTTP MCP with OAuth needs the Docker `mcp` profile or the single-VM deployment.

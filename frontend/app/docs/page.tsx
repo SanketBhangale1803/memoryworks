@@ -65,7 +65,7 @@ vercel env add FRONTEND_URL production        # https://memoryworks.app
 vercel env add GRAPH_BACKEND production       # memory
 
 # Vercel containers are stateless: SQLite and the in-memory graph reset when a
-# new container starts. For durable data, use the single-VM deploy (deploy/oci).
+# new container starts. For durable data, use the single-VM deploy (deploy/server).
 # PUBLIC_DEMO_MODE=true is a stricter profile for a shared, disposable demo.
 
 # Real sign-in providers (values from GitHub / Google consoles):
@@ -347,7 +347,7 @@ export default function DocsPage() {
             <div className="docs-note">
               <strong>Self-hosted alternative</strong>
               <span>
-                <code>deploy/oci</code> and <code>compose.production.yml</code>{" "}
+                <code>deploy/server</code> and <code>compose.production.yml</code>{" "}
                 run the same stack as durable containers with persistent
                 volumes — that profile keeps ArcadeDB-backed graph storage and
                 long-running watches.

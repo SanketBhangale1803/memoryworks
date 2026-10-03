@@ -27,7 +27,7 @@ Create one GitHub OAuth App under **Settings → Developer settings → OAuth Ap
 
 A GitHub OAuth App accepts **one** callback URL, so use a separate OAuth App for
 local development. On a split-domain deployment (for example the `api.`
-subdomain in `deploy/oci/`), the callback is on the API host.
+subdomain in `deploy/server/`), the callback is on the API host.
 
 Copy the client ID and generate a client secret, then set the server-only values:
 

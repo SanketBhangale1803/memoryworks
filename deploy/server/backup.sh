@@ -4,7 +4,7 @@
 # Storage when OCI_BACKUP_BUCKET is set, and prunes local archives older than
 # BACKUP_RETENTION_DAYS (object retention is a lifecycle rule on the bucket).
 #
-#   crontab: 15 3 * * * $HOME/memoryworks/deploy/oci/backup.sh >> $HOME/memoryworks-backups/backup.log 2>&1
+#   crontab: 15 3 * * * $HOME/memoryworks/deploy/server/backup.sh >> $HOME/memoryworks-backups/backup.log 2>&1
 set -euo pipefail
 export PATH="${HOME}/.local/bin:${PATH}"  # cron does not see pipx's oci
 
@@ -16,7 +16,7 @@ set +a
 
 compose=(docker compose --env-file .env.production -f compose.production.yml)
 if [[ -n ${SITE_URL:-} ]]; then
-  compose+=(-f deploy/oci/compose.api-only.yml)
+  compose+=(-f deploy/server/compose.api-only.yml)
 fi
 
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
@@ -58,7 +58,9 @@ tar -C "${work}" -czf "${archive}" .
 echo "Wrote ${archive} ($(du -h "${archive}" | cut -f1))"
 
 if [[ -n ${OCI_BACKUP_BUCKET:-} ]]; then
-  oci os object put --auth instance_principal --bucket-name "${OCI_BACKUP_BUCKET}" \
+  # oci reads OCI_CLI_AUTH (instance_principal on an Oracle VM); without it,
+  # the API-key config in ~/.oci/config is used.
+  oci os object put --bucket-name "${OCI_BACKUP_BUCKET}" \
     --file "${archive}" --name "$(basename "${archive}")" >/dev/null
   echo "Uploaded to bucket ${OCI_BACKUP_BUCKET}"
 fi

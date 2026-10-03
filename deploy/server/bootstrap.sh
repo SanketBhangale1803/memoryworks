@@ -19,13 +19,23 @@ echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.
 sudo apt-get update
 sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 sudo usermod -aG docker "${USER}"
+
+# Only Caddy publishes ports; the firewall keeps anything else that listens
+# on the host off the internet.
+sudo apt-get install -y ufw
+sudo ufw allow OpenSSH
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo ufw allow 443/udp
+sudo ufw --force enable
 sudo systemctl enable --now docker
 
-# oci-cli uploads nightly backups to Object Storage with the instance principal.
+# oci-cli uploads nightly backups to OCI Object Storage (instance principal on
+# an Oracle VM, the API-key config in ~/.oci elsewhere).
 sudo apt-get install -y pipx
 pipx install oci-cli
 pipx ensurepath
 
 echo
 echo "Docker is installed. Log out and SSH back in so group membership applies."
-echo "Then clone MemoryWorks, populate .env.production, and run deploy/oci/up.sh."
+echo "Then clone MemoryWorks, populate .env.production, and run deploy/server/up.sh."

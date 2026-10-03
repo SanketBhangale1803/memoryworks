@@ -44,6 +44,9 @@ services:
     volumes:
       - orgmemory_data:/workspace/runbook/data
       - generated_runbooks:/workspace/runbook/generated_runbooks
+      # OCI API-key config for CONNECTOR_OCI_KMS_AUTH=config-file (servers outside
+      # Oracle Cloud). Key paths written as ~/.oci/... resolve on the host and here.
+      - ${OCI_CONFIG_DIR:-./deploy/server/no-oci-config}:/root/.oci:ro
     depends_on:
       arcadedb:
         condition: service_healthy
@@ -87,7 +90,7 @@ services:
       - "443:443"
       - "443:443/udp"
     volumes:
-      - ./deploy/oci/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./deploy/server/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:

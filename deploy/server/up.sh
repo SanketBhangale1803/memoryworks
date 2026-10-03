@@ -25,7 +25,7 @@ done
 # api.<PUBLIC_DOMAIN> and mcp.<PUBLIC_DOMAIN>.
 compose=(docker compose --env-file .env.production -f compose.production.yml)
 if [[ -n ${SITE_URL:-} ]]; then
-  compose+=(-f deploy/oci/compose.api-only.yml)
+  compose+=(-f deploy/server/compose.api-only.yml)
 fi
 
 "${compose[@]}" config --quiet

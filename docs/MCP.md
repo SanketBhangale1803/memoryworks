@@ -1,6 +1,6 @@
 # MemoryWorks MCP server
 
-`mcp_server/server.py` exposes the real MemoryWorks HTTP API over FastMCP — stdio for a local bridge, or streamable HTTP with OAuth where the server is deployed (the Docker `mcp` profile, or the `mcp.` subdomain in `deploy/oci/`). The Vercel deployment at memoryworks.app does not run the MCP server yet, so connect to it over stdio with an API key. It does not contain canned answers: questions return authorized memory, evidence, a retrieval trace, and the persisted HCAG context envelope.
+`mcp_server/server.py` exposes the real MemoryWorks HTTP API over FastMCP — stdio for a local bridge, or streamable HTTP with OAuth where the server is deployed (the Docker `mcp` profile, or the `mcp.` subdomain in `deploy/server/`). The Vercel deployment at memoryworks.app does not run the MCP server yet, so connect to it over stdio with an API key. It does not contain canned answers: questions return authorized memory, evidence, a retrieval trace, and the persisted HCAG context envelope.
 
 ## Run
 

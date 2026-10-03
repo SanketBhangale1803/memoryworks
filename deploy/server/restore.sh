@@ -3,7 +3,7 @@
 # SQLite database and ArcadeDB graph. Run it as the restore drill on a fresh VM
 # before relying on the backups.
 #
-#   deploy/oci/restore.sh ~/memoryworks-backups/memoryworks-20261001T031500Z.tar.gz
+#   deploy/server/restore.sh ~/memoryworks-backups/memoryworks-20261001T031500Z.tar.gz
 set -euo pipefail
 
 archive=${1:?usage: restore.sh <memoryworks-*.tar.gz>}
@@ -17,7 +17,7 @@ set +a
 
 compose=(docker compose --env-file .env.production -f compose.production.yml)
 if [[ -n ${SITE_URL:-} ]]; then
-  compose+=(-f deploy/oci/compose.api-only.yml)
+  compose+=(-f deploy/server/compose.api-only.yml)
 fi
 project=$("${compose[@]}" config --format json | python3 -c 'import json,sys; print(json.load(sys.stdin)["name"])')
 database=${ARCADEDB_DATABASE:-runbook}
@@ -60,4 +60,4 @@ print(f"Restored runbook.db and {len(list(target.iterdir()))} graph files")
 PY
 
 "${compose[@]}" up -d
-echo "Restored. Run deploy/oci/verify.sh, then sign in and check your memories."
+echo "Restored. Run deploy/server/verify.sh, then sign in and check your memories."

@@ -4,9 +4,9 @@
 # first-party and the OAuth callbacks registered for SITE_URL keep working.
 #
 #   docker compose --env-file .env.production \
-#     -f compose.production.yml -f deploy/oci/compose.api-only.yml up -d
+#     -f compose.production.yml -f deploy/server/compose.api-only.yml up -d
 #
-# deploy/oci/up.sh adds this file automatically when SITE_URL is set.
+# deploy/server/up.sh adds this file automatically when SITE_URL is set.
 
 services:
   backend:
@@ -31,7 +31,7 @@ services:
 
   caddy:
     volumes: !override
-      - ./deploy/oci/Caddyfile.api-only:/etc/caddy/Caddyfile:ro
+      - ./deploy/server/Caddyfile.api-only:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on: !override

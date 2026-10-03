@@ -18,7 +18,7 @@ data/
 *.sqlite3
 :memory:.ses
 .connector_key
-deploy/oci/.keys/
+deploy/server/.keys/
 generated_runbooks/*/
 *.pyc
 __pycache__/
