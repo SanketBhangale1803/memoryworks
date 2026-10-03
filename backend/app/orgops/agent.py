@@ -17,6 +17,13 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from app.connectors.status import (
+    PROVIDER_NAMES,
+    is_connection_question,
+    mentioned_providers,
+    status_answer,
+)
+
 # Tool descriptions are written for the model, not for a docs page: each says
 # what the tool answers and when to reach for it, because a vague description is
 # what makes an agent call six tools to answer a one-tool question.
@@ -109,6 +116,17 @@ ORG_AGENT_TOOLS: list[dict[str, Any]] = [
         "name": "find_orgmemory_stale",
         "description": "Records older than a threshold that nothing newer supersedes.",
         "arguments": ["topic (optional)", "max_age_days (optional)"],
+    },
+    {
+        "name": "get_orgmemory_connections",
+        "description": (
+            "LIVE state of connected sources (GitHub, Google Drive, Slack, Notion, Teams): "
+            "which are connected and when they expire, recent connection attempts and "
+            "whether they came back, how the last imports went, and a diagnosis. Use for "
+            "any question about a connection, sign-in, sync or import failing — company "
+            "memory cannot answer those."
+        ),
+        "arguments": ["provider (optional: github, google_drive, slack, notion, teams)"],
     },
     {
         "name": "propose_orgmemory_changes",
@@ -335,6 +353,26 @@ def build_org_executor(
             )
             return f"{data['count']} aging record(s).", data
 
+        if name == "get_orgmemory_connections":
+            workspace_id = str(principal.get("active_workspace_id") or "")
+            if not workspace_id:
+                raise ValueError("No active workspace for this caller")
+            requested = _text(arguments.get("provider")).casefold().replace(" ", "_")
+            providers = (
+                [requested]
+                if requested in PROVIDER_NAMES
+                else mentioned_providers(requested)
+                if requested
+                else []
+            )
+            data = status_answer(workspace_id, providers)
+            reports = data.pop("_reports")
+            findings = [finding for report in reports for finding in report["findings"]]
+            return (
+                " ".join(findings[:3]) or "No source has been connected or attempted yet.",
+                {"reports": reports, "summary": data["answer"]},
+            )
+
         if name == "propose_orgmemory_changes":
             operations = arguments.get("operations")
             conflict_id = _text(arguments.get("conflict_id"))
@@ -404,10 +442,15 @@ _SEQUENCES: dict[str, list[str]] = {
     "reconcile": ["find_orgmemory_conflicts", "propose_orgmemory_changes"],
     "blockers": ["find_orgmemory_blockers", "get_orgmemory_readiness"],
     "search": ["search_orgmemory_records", "get_orgmemory_project_context"],
+    "connections": ["get_orgmemory_connections"],
 }
 
 
 def _classify(question: str) -> str:
+    # Checked first: "the Drive connection is failing, fix it" is about the live
+    # connection, which no memory tool can see.
+    if is_connection_question(question):
+        return "connections"
     if _RECONCILE_RE.search(question):
         return "reconcile"
     if _CATCHUP_RE.search(question):

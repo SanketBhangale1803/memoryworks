@@ -9,6 +9,12 @@ from dataclasses import asdict, replace
 from typing import Any
 
 from app.audit import AuditService
+from app.connectors.status import (
+    PROVIDER_NAMES,
+    is_connection_question,
+    mentioned_providers,
+    status_answer,
+)
 from app.core.config import settings
 from app.core.database import decode, rows
 from app.governance import ScopeService
@@ -183,16 +189,32 @@ class RetrievalService:
         )
         answer_shape = answer_intent(query)
         source_sweep_intents = {"runtime_record", "slack_messages"}
+        # "Why is the Drive connection failing?" is about the system's live
+        # state, which no document records. Read the connection records instead.
+        workspace_id = str((principal or {}).get("active_workspace_id") or "")
+        status_grounding = None
+        if workspace_id and is_connection_question(query):
+            providers = mentioned_providers(query)
+            step(
+                "Checking live connection records",
+                ", ".join(PROVIDER_NAMES.get(item, item) for item in providers)
+                or "Every source",
+            )
+            status_grounding = status_answer(workspace_id, providers, query)
         # A question naming a commit is answered with that commit, before any
         # search: the SHA identifies it exactly, and a search for a hash finds noise.
-        commit_grounding = self._ground_from_commit(
-            query,
-            sorted({project_id, *(workspace_project_ids or [])}),
-            commit_fetcher,
-            step,
+        commit_grounding = (
+            None
+            if status_grounding
+            else self._ground_from_commit(
+                query,
+                sorted({project_id, *(workspace_project_ids or [])}),
+                commit_fetcher,
+                step,
+            )
         )
         memory_grounding = None
-        if not commit_grounding:
+        if not commit_grounding and not status_grounding:
             step("Checking approved company memory")
             belief_grounding = (
                 None
@@ -204,7 +226,11 @@ class RetrievalService:
                 if answer_shape in source_sweep_intents
                 else self._ground_from_memories(project_id, query, current_memories, memory_service)
             )
-        if commit_grounding:
+        if status_grounding:
+            grounded, evidence, searched_projects = status_grounding, [], []
+            selected_memories = []
+            intent = "connection_status"
+        elif commit_grounding:
             grounded, evidence, searched_projects = commit_grounding
             selected_memories = []
             intent = "commit_lookup"
@@ -419,7 +445,7 @@ class RetrievalService:
         confidence = (
             trace["confidence"] if grounded["sufficient"] else min(trace["confidence"], 0.25)
         )
-        if answer_scope == "general_knowledge":
+        if answer_scope in {"general_knowledge", "system_state"}:
             # Graph confidence measures evidence support, and there is none here
             # by construction. Report the trust the general-knowledge lane claims.
             confidence = float(grounded.get("trust_score", {}).get("score") or 0.5)

@@ -969,10 +969,19 @@ function AnswerBlock({
         <MarkdownAnswer>{readable(answer.answer, sources)}</MarkdownAnswer>
       </div>
 
-      {(answer.resolved_subject || answer.answer_scope === "general_knowledge" || conflicts > 0) && (
+      {(answer.resolved_subject ||
+        answer.answer_scope === "general_knowledge" ||
+        answer.answer_scope === "system_state" ||
+        conflicts > 0) && (
         <p className="ws-scope">
           {answer.resolved_subject && <>Answered about {answer.resolved_subject}. </>}
           {answer.answer_scope === "general_knowledge" && <>General knowledge — not from your company&rsquo;s memory. </>}
+          {answer.answer_scope === "system_state" && (
+            <>
+              Live status from MemoryWorks&rsquo;s own connection records, checked just now —{" "}
+              <Link href="/connectors">open Sources</Link>.{" "}
+            </>
+          )}
           {conflicts > 0 && (
             <>
               {conflicts} source{conflicts === 1 ? " disagrees" : "s disagree"} —{" "}

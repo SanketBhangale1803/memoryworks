@@ -64,6 +64,7 @@ from app.connectors.base import WebhookRequest
 from app.connectors.github import GitHubConnector
 from app.connectors.runtime import ConnectorRuntime
 from app.connectors.slack import SlackConnector
+from app.connectors.status import record_auth_outcome
 from app.connectors.stubs.registry import connector_catalog as product_connector_catalog
 from app.connectors.sync import SyncEngine
 from app.core.config import settings
@@ -4162,12 +4163,31 @@ def _connect_github_from_sign_in(session: dict, identity: dict) -> None:
 
 
 @router.get("/connectors/{provider}/auth/callback")
-def connector_auth_callback(provider: str, code: str, state: str):
+def connector_auth_callback(
+    provider: str,
+    state: str = "",
+    code: str = "",
+    error: str = "",
+    error_description: str = "",
+):
+    # A provider that refuses consent redirects back with ?error=… and no code.
+    # That used to be a raw 422; it is the most useful thing to record, because
+    # it is exactly what someone asks about later ("why is Drive failing?").
+    if error or not code:
+        reason = error_description or error or "the provider returned no authorization code"
+        if state:
+            record_auth_outcome(state, provider, "denied" if error else "failed", reason)
+        query = urlencode(
+            {"error": f"{provider.replace('_', ' ').title()} refused the connection: {reason}"}
+        )
+        return RedirectResponse(f"{settings.frontend_url}/connectors?{query}")
     try:
         flow = OAuthStateStore().consume(provider, state)
         connector_runtime.complete_authorization(provider, flow, code)
+        record_auth_outcome(state, provider, "connected")
         return RedirectResponse(f"{settings.frontend_url}/connectors?connected={provider}")
     except Exception as exc:
+        record_auth_outcome(state, provider, "failed", str(exc))
         query = urlencode({"error": str(exc)})
         return RedirectResponse(f"{settings.frontend_url}/connectors?{query}")
 
