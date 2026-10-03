@@ -29,6 +29,7 @@ from app.swarm import ContextActivationSwarm
 
 from . import continuity
 from .clarify import clarification, clarification_answer
+from .commits import CommitFetcher, commit_answer, commit_evidence, commit_references, find_commit
 from .conversation import assistant_reply, general_knowledge_answer, is_company_question
 from .deliberation import deliberate
 from .handoff import build_handoff
@@ -55,6 +56,18 @@ def _emit(
     # A broken listener must not break the answer it is narrating.
     with contextlib.suppress(Exception):
         on_event(kind, payload)
+
+
+def _github_error(exc: Exception) -> str:
+    """Why GitHub refused, in words — never a token or a raw response body."""
+    status = getattr(getattr(exc, "response", None), "status_code", None)
+    if status in {401, 403}:
+        return "the GitHub connection needs to be renewed"
+    if status == 404:
+        return "GitHub no longer has this commit, or the connection cannot see it"
+    if "not connected" in str(exc).casefold():
+        return "GitHub is not connected for this workspace"
+    return "GitHub could not be reached"
 
 
 def _plural(count: int, noun: str) -> str:
@@ -114,6 +127,7 @@ class RetrievalService:
         scope: str = "auto",
         history: list[dict[str, Any]] | None = None,
         on_event: Callable[[str, dict[str, Any]], None] | None = None,
+        commit_fetcher: CommitFetcher | None = None,
     ) -> dict[str, Any]:
         """Answer ``query`` from company memory.
 
@@ -122,6 +136,9 @@ class RetrievalService:
         as ``text`` (and ``thinking``) pieces while it is being written. Without a
         listener the answer is deliberated across several candidates as before.
         Listener failures are swallowed — narrating must never break an answer.
+
+        ``commit_fetcher(repository, sha)`` lets a question that names a known
+        commit be answered with the commit's actual change, read live from GitHub.
         """
 
         def step(label: str, detail: str = "") -> None:
@@ -166,18 +183,32 @@ class RetrievalService:
         )
         answer_shape = answer_intent(query)
         source_sweep_intents = {"runtime_record", "slack_messages"}
-        step("Checking approved company memory")
-        belief_grounding = (
-            None
-            if answer_shape in source_sweep_intents
-            else self._ground_from_beliefs(project_id, query)
+        # A question naming a commit is answered with that commit, before any
+        # search: the SHA identifies it exactly, and a search for a hash finds noise.
+        commit_grounding = self._ground_from_commit(
+            query,
+            sorted({project_id, *(workspace_project_ids or [])}),
+            commit_fetcher,
+            step,
         )
-        memory_grounding = belief_grounding or (
-            None
-            if answer_shape in source_sweep_intents
-            else self._ground_from_memories(project_id, query, current_memories, memory_service)
-        )
-        if memory_grounding:
+        memory_grounding = None
+        if not commit_grounding:
+            step("Checking approved company memory")
+            belief_grounding = (
+                None
+                if answer_shape in source_sweep_intents
+                else self._ground_from_beliefs(project_id, query)
+            )
+            memory_grounding = belief_grounding or (
+                None
+                if answer_shape in source_sweep_intents
+                else self._ground_from_memories(project_id, query, current_memories, memory_service)
+            )
+        if commit_grounding:
+            grounded, evidence, searched_projects = commit_grounding
+            selected_memories = []
+            intent = "commit_lookup"
+        elif memory_grounding:
             grounded, evidence, selected_memories = memory_grounding
             project = rows("SELECT id,name,repository FROM projects WHERE id=?", (project_id,))
             searched_projects = [
@@ -569,6 +600,43 @@ class RetrievalService:
             # so a wrong binding is visible rather than silent.
             result["resolved_subject"] = thread["subject"]
         return result
+
+    @staticmethod
+    def _ground_from_commit(
+        query: str,
+        project_ids: list[str],
+        fetcher: CommitFetcher | None,
+        step: Callable[..., None],
+    ) -> tuple[dict[str, Any], list[GraphEvidence], list[dict[str, Any]]] | None:
+        for prefix in commit_references(query):
+            record = find_commit(prefix, project_ids)
+            if not record:
+                continue
+            project = rows(
+                "SELECT id,name,repository FROM projects WHERE id=?", (record["project_id"],)
+            )
+            name = str(project[0]["name"]) if project else record["slug"]
+            step(f"Found commit {record['sha'][:12]}", f"In {record['slug']}")
+            fetched: dict[str, Any] | None = None
+            error = ""
+            if fetcher:
+                step("Fetching the change from GitHub")
+                try:
+                    fetched = fetcher(record["slug"], record["sha"])
+                except Exception as exc:  # noqa: BLE001 - the stored record still answers
+                    error = _github_error(exc)
+            else:
+                error = "GitHub is not available to this caller"
+            grounded = commit_answer(record, fetched, error)
+            searched = [
+                {
+                    "project_id": record["project_id"],
+                    "project_name": name,
+                    "repository": project[0]["repository"] if project else "",
+                }
+            ]
+            return grounded, [commit_evidence(record, name)], searched
+        return None
 
     def _synthesize(
         self,

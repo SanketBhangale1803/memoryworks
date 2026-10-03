@@ -1762,7 +1762,20 @@ def ask(request: AskRequest, authorization: str | None = Header(default=None)):
         surface=request.surface,
         scope=request.scope,
         history=[turn.model_dump() for turn in request.history],
+        commit_fetcher=_commit_fetcher(principal),
     )
+
+
+def _commit_fetcher(principal: dict):
+    """Read one commit from GitHub with the caller's own workspace connection."""
+
+    def fetch(slug: str, sha: str) -> dict:
+        connector = GitHubConnector(
+            ConnectorSecrets(principal["active_workspace_id"], principal["id"])
+        )
+        return connector.commit(slug, sha)
+
+    return fetch
 
 
 @router.post("/ask/stream")
@@ -1793,6 +1806,7 @@ def ask_stream(request: AskRequest, authorization: str | None = Header(default=N
                 scope=request.scope,
                 history=[turn.model_dump() for turn in request.history],
                 on_event=lambda kind, payload: events.put((kind, payload)),
+                commit_fetcher=_commit_fetcher(principal),
             )
             events.put(("done", {"answer": result}))
         except Exception:  # noqa: BLE001 - the stream must end with an event
