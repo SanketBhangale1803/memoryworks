@@ -10,6 +10,8 @@ class GitHubIngestRequest(BaseModel):
     project_name: str
     workspace_id: str | None = None
     team_ids: list[str] = Field(default_factory=list, max_length=50)
+    # Return the job at once and ingest after the response (poll the job).
+    background: bool = False
 
 
 class GitHubBulkIngestRequest(BaseModel):

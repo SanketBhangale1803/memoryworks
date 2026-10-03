@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import random
+import time
 from typing import Any
 
 import httpx
@@ -69,10 +71,24 @@ class ArcadeClient:
             "result", []
         )
 
+    # Two writers touching the same page (an ingestion and a sync, say) make
+    # ArcadeDB reject one with ConcurrentModificationException and roll it
+    # back; the server's own message says to retry, so a short backoff does.
+    CONFLICT_RETRIES = 6
+
     def _request(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
-        response = httpx.post(
-            f"{self.config.arcadedb_url}{path}", json=payload, auth=self.auth, timeout=30
-        )
-        if response.status_code >= 400:
-            raise ArcadeDBError(f"ArcadeDB {response.status_code}: {response.text[:500]}")
-        return response.json()
+        for attempt in range(self.CONFLICT_RETRIES + 1):
+            response = httpx.post(
+                f"{self.config.arcadedb_url}{path}", json=payload, auth=self.auth, timeout=30
+            )
+            if (
+                response.status_code == 503
+                and "ConcurrentModificationException" in response.text
+                and attempt < self.CONFLICT_RETRIES
+            ):
+                time.sleep(0.05 * 2**attempt + random.uniform(0, 0.05))
+                continue
+            if response.status_code >= 400:
+                raise ArcadeDBError(f"ArcadeDB {response.status_code}: {response.text[:500]}")
+            return response.json()
+        raise AssertionError("unreachable")

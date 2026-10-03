@@ -242,7 +242,7 @@ CREATE TABLE IF NOT EXISTS ingestion_jobs (
   knowledge_chunks_created INTEGER NOT NULL DEFAULT 0, graph_nodes_created INTEGER NOT NULL DEFAULT 0,
   graph_edges_created INTEGER NOT NULL DEFAULT 0, warnings_json TEXT NOT NULL DEFAULT '[]',
   error TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
-  completed_at TEXT
+  completed_at TEXT, result_json TEXT NOT NULL DEFAULT '{}'
 );
 CREATE TABLE IF NOT EXISTS operational_memories (
   id TEXT PRIMARY KEY, project_id TEXT NOT NULL, statement TEXT NOT NULL,
@@ -668,6 +668,11 @@ def _migrate_columns(conn: sqlite3.Connection) -> None:
         conn.execute(
             "ALTER TABLE execution_runs ADD COLUMN skill_ids_json TEXT NOT NULL DEFAULT '[]'"
         )
+    job_columns = {
+        record[1] for record in conn.execute("PRAGMA table_info(ingestion_jobs)").fetchall()
+    }
+    if job_columns and "result_json" not in job_columns:
+        conn.execute("ALTER TABLE ingestion_jobs ADD COLUMN result_json TEXT NOT NULL DEFAULT '{}'")
 
 
 @contextmanager

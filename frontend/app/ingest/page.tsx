@@ -108,6 +108,17 @@ export default function Ingest() {
     return created.id;
   }
 
+  async function waitForJob(jobId: string) {
+    const deadline = Date.now() + 60 * 60 * 1000;
+    while (Date.now() < deadline) {
+      await new Promise(resolve => window.setTimeout(resolve, 2000));
+      const job = await api<any>(`/api/ingest/jobs/${jobId}`);
+      if (job.status === "succeeded") return {...job, ...(job.result || {})};
+      if (job.status === "failed") throw new Error(job.error || "Ingestion failed");
+    }
+    throw new Error("Ingestion is still running; check Sources for its status.");
+  }
+
   async function buildMemory() {
     setBusy(true);
     setError("");
@@ -116,10 +127,13 @@ export default function Ingest() {
       const team_ids = team ? [team] : [];
       let response: any;
       if (kind === "github") {
-        response = await api("/api/ingest/github", {
+        // A repository takes longer than a proxied request may stay open, so
+        // the API ingests in the background and the page polls the job.
+        const started = await api<{job_id: string}>("/api/ingest/github", {
           method: "POST",
-          body: JSON.stringify({repo_url_or_path: repo, project_name: repoName || selectedRepo?.full_name || selectedRepo?.name, team_ids}),
+          body: JSON.stringify({repo_url_or_path: repo, project_name: repoName || selectedRepo?.full_name || selectedRepo?.name, team_ids, background: true}),
         });
+        response = await waitForJob(started.job_id);
       } else if (kind === "website") {
         const projectId = await ensureProject();
         response = await api("/api/ingest/website", {

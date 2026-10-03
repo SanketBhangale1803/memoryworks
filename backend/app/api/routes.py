@@ -6,8 +6,9 @@ import json
 import logging
 import re
 import time
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from threading import Thread
+from threading import Lock, Thread
 from urllib.parse import urlencode
 
 import httpx
@@ -1372,43 +1373,97 @@ def semantic_change_detail(event_id: str, authorization: str | None = Header(def
     return change_intelligence.detail(event_id)
 
 
-@router.post("/ingest/github")
-def ingest_github(request: GitHubIngestRequest, authorization: str | None = Header(default=None)):
-    principal = _authorize_workspace(authorization, request.workspace_id or "")
-    team_ids = _validate_team_scope(principal, request.team_ids)
-    connector = GitHubConnector(ConnectorSecrets(principal["active_workspace_id"], principal["id"]))
-    job_id = _create_job(
-        source="github",
-        source_ref=request.repo_url_or_path,
-        workspace_id=principal["active_workspace_id"],
-    )
-    try:
+# Repository ingestions run one at a time: two at once collide on the clone
+# directory and on ArcadeDB pages, and one of them fails.
+_REPOSITORY_INGEST_LOCK = Lock()
+# A "running" job older than this is assumed dead (the process restarted
+# mid-ingestion) rather than joined.
+_RUNNING_JOB_REUSE_WINDOW = timedelta(hours=1)
+
+
+def _ingest_github_repository(
+    principal: dict, request: GitHubIngestRequest, team_ids: list[str], connector, job_id: str
+) -> dict:
+    with _REPOSITORY_INGEST_LOCK:
         result = RepositoryIngestor(ingestion, graph, connector).ingest(
             request.repo_url_or_path, request.project_name
         )
-        with connect() as conn:
-            conn.execute(
-                "INSERT OR IGNORE INTO workspace_projects VALUES (?,?)",
-                (principal["active_workspace_id"], result["project_id"]),
-            )
-        for team_id in team_ids:
-            scopes.assign_project(result["project_id"], team_id, "write")
-        repository_resource = (
-            GitHubConnector.slug(request.repo_url_or_path) or request.repo_url_or_path
+    with connect() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO workspace_projects VALUES (?,?)",
+            (principal["active_workspace_id"], result["project_id"]),
         )
-        connector_sync.enqueue(
-            "github",
-            principal["active_workspace_id"],
-            principal["id"],
-            repository_resource,
-            project_id=result["project_id"],
-            cursor={"repository": repository_resource},
-            idempotency_key=f"initial:{result['project_id']}:{repository_resource}",
+    for team_id in team_ids:
+        scopes.assign_project(result["project_id"], team_id, "write")
+    repository_resource = GitHubConnector.slug(request.repo_url_or_path) or request.repo_url_or_path
+    connector_sync.enqueue(
+        "github",
+        principal["active_workspace_id"],
+        principal["id"],
+        repository_resource,
+        project_id=result["project_id"],
+        cursor={"repository": repository_resource},
+        idempotency_key=f"initial:{result['project_id']}:{repository_resource}",
+    )
+    if result.get("change", {}).get("changed_files"):
+        result["change_impact"] = change_impacts.analyze(result["project_id"], result["change"])
+    _finish_job(job_id, "succeeded", result)
+    return {"job_id": job_id, **result}
+
+
+def _run_github_ingest_job(
+    principal: dict, request: GitHubIngestRequest, team_ids: list[str], connector, job_id: str
+) -> None:
+    try:
+        _ingest_github_repository(principal, request, team_ids, connector, job_id)
+    except Exception as exc:
+        logger.exception("GitHub ingestion job %s failed", job_id)
+        _fail_job(job_id, exc)
+
+
+@router.post("/ingest/github")
+def ingest_github(
+    request: GitHubIngestRequest,
+    background_tasks: BackgroundTasks,
+    authorization: str | None = Header(default=None),
+):
+    """Ingest one repository.
+
+    With ``background`` the call returns the job at once and the work runs
+    after the response; poll ``/api/ingest/jobs/{job_id}``. The web app uses
+    this because a repository takes longer than a proxied request may stay
+    open. Without it the call blocks and returns the full result, as before.
+    """
+    principal = _authorize_workspace(authorization, request.workspace_id or "")
+    team_ids = _validate_team_scope(principal, request.team_ids)
+    connector = GitHubConnector(ConnectorSecrets(principal["active_workspace_id"], principal["id"]))
+    workspace_id = principal["active_workspace_id"]
+    if request.background:
+        running = row(
+            """
+            SELECT id FROM ingestion_jobs
+            WHERE workspace_id=? AND source='github' AND source_ref=? AND status='running'
+              AND created_at>=?
+            ORDER BY created_at DESC LIMIT 1
+            """,
+            (
+                workspace_id,
+                request.repo_url_or_path,
+                (datetime.now(UTC) - _RUNNING_JOB_REUSE_WINDOW).isoformat(),
+            ),
         )
-        if result.get("change", {}).get("changed_files"):
-            result["change_impact"] = change_impacts.analyze(result["project_id"], result["change"])
-        _finish_job(job_id, "succeeded", result)
-        return {"job_id": job_id, **result}
+        if running:
+            return {"job_id": running["id"], "status": "running"}
+    job_id = _create_job(
+        source="github", source_ref=request.repo_url_or_path, workspace_id=workspace_id
+    )
+    if request.background:
+        background_tasks.add_task(
+            _run_github_ingest_job, principal, request, team_ids, connector, job_id
+        )
+        return {"job_id": job_id, "status": "running"}
+    try:
+        return _ingest_github_repository(principal, request, team_ids, connector, job_id)
     except Exception as exc:
         _fail_job(job_id, exc)
         fail(exc)
@@ -1488,7 +1543,8 @@ def _run_github_inventory(
     ingestor = RepositoryIngestor(ingestion, graph, connector)
     for item in queued:
         try:
-            result = ingestor.ingest(item["source"], item["repository"])
+            with _REPOSITORY_INGEST_LOCK:
+                result = ingestor.ingest(item["source"], item["repository"])
             # Without this link the repository is ingested but invisible: it never
             # appears in the workspace, and asking about it fails authorization.
             # The single-repository route has always done this; bulk did not.
@@ -4116,7 +4172,7 @@ def _finish_job(job_id: str, status: str, result: dict) -> None:
               files_scanned=?, issues_scanned=?, pull_requests_scanned=?,
               knowledge_items_created=?, knowledge_chunks_created=?,
               graph_nodes_created=?, graph_edges_created=?, warnings_json=?,
-              updated_at=?, completed_at=?
+              result_json=?, updated_at=?, completed_at=?
             WHERE id=?
             """,
             (
@@ -4130,6 +4186,7 @@ def _finish_job(job_id: str, status: str, result: dict) -> None:
                 int(result.get("graph_nodes_created", 0) or 0),
                 int(result.get("graph_edges_created", 0) or 0),
                 json.dumps(result.get("warnings", [])),
+                json.dumps(result, default=str),
                 now,
                 now,
                 job_id,
