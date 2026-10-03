@@ -4,11 +4,6 @@
     "frontend": {
       "root": "frontend",
       "framework": "nextjs"
-    },
-    "backend": {
-      "root": "backend",
-      "entrypoint": "Dockerfile.vercel",
-      "runtime": "container"
     }
   },
   "rewrites": [
@@ -20,15 +15,11 @@
     },
     {
       "source": "/api/:path*",
-      "destination": {
-        "service": "backend"
-      }
+      "destination": "https://api.memoryworks.app/api/:path*"
     },
     {
       "source": "/.well-known/:path*",
-      "destination": {
-        "service": "backend"
-      }
+      "destination": "https://api.memoryworks.app/.well-known/:path*"
     },
     {
       "source": "/:path*",
