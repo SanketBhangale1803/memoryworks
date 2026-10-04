@@ -6,7 +6,16 @@ import Page from "@/components/Page";
 import GitHubIcon from "@/components/icons/GitHubIcon";
 import { API, api } from "@/lib/api";
 
-type SourceKind = "paste" | "github" | "slack" | "website" | "files";
+type SourceKind = "paste" | "github" | "google_drive" | "slack" | "website" | "files";
+
+type DriveFile = {id: string; name: string; mime_type: string; modified_at: string; owner: string; url: string};
+
+const DRIVE_KINDS: Record<string, string> = {
+  "application/vnd.google-apps.document": "Doc",
+  "application/vnd.google-apps.spreadsheet": "Sheet",
+  "application/vnd.google-apps.presentation": "Slides",
+  "application/pdf": "PDF",
+};
 
 const DOCUMENT_ACCEPT = ".md,.markdown,.txt,.json,.yaml,.yml,.toml,.xml,.csv,.tsv,.log,.pdf,.docx,.xlsx,.pptx,.odt,.rtf,.html,.htm,.eml,.py,.js,.ts,.tsx,.jsx,.go,.rs,.java,.sh,.sql";
 
@@ -15,6 +24,7 @@ const sourceChoices = [
   {id: "files", icon: "📎", title: "Upload documents", note: "PDF · Office", description: "PDF, Word, Excel, PowerPoint, HTML, mail exports, code, and text."},
   {id: "website", icon: "🌐", title: "Ingest a website", note: "Public URL", description: "A web page or a hosted document becomes searchable memory."},
   {id: "github", icon: "github", title: "Connect a repository", note: "Automatic", description: "Code, docs, issues, pull requests, and ownership."},
+  {id: "google_drive", icon: "GD", title: "Import from Google Drive", note: "Docs · Sheets", description: "Pick the Docs, Sheets, Slides, and files to remember."},
   {id: "slack", icon: "SL", title: "Remember a channel", note: "Continuous", description: "Team decisions, conventions, and conversations."},
 ] as const;
 
@@ -27,6 +37,11 @@ export default function Ingest() {
   // reads as "you have no repositories" when the request actually failed.
   const [repositoriesError, setRepositoriesError] = useState("");
   const [channelsError, setChannelsError] = useState("");
+  const [driveFiles, setDriveFiles] = useState<DriveFile[] | null>(null);
+  const [driveError, setDriveError] = useState("");
+  const [driveSelected, setDriveSelected] = useState<string[]>([]);
+  const [driveQuery, setDriveQuery] = useState("");
+  const [driveProgress, setDriveProgress] = useState("");
   const [connections, setConnections] = useState<any[]>([]);
   const [teams, setTeams] = useState<any[]>([]);
   const [project, setProject] = useState("__new__");
@@ -88,6 +103,23 @@ export default function Ingest() {
     }).catch((cause: any) => setChannelsError(cause?.message || "Could not list channels."));
   }
 
+  function loadDriveFiles() {
+    setDriveError("");
+    setDriveFiles(null);
+    api<DriveFile[]>("/api/connectors/google_drive/resources")
+      .then(setDriveFiles)
+      .catch((cause: any) => {
+        setDriveFiles([]);
+        setDriveError(cause?.message || "Could not list your Drive files.");
+      });
+  }
+
+  // Drive is listed only when someone opens it: the listing is a live call to
+  // Google, and most visits to this page never need it.
+  useEffect(() => {
+    if (kind === "google_drive" && connected("google_drive") && driveFiles === null) loadDriveFiles();
+  }, [kind, connections]);
+
   useEffect(() => {
     if (!busy) { setPhase(0); return; }
     const timer = window.setInterval(() => setPhase(value => Math.min(value + 1, 2)), 850);
@@ -95,6 +127,10 @@ export default function Ingest() {
   }, [busy]);
 
   const connected = (provider: string) => connections.some(item => item.provider === provider && item.connected);
+  const shownDriveFiles = useMemo(() => {
+    const needle = driveQuery.trim().toLowerCase();
+    return (driveFiles || []).filter(item => !needle || item.name.toLowerCase().includes(needle));
+  }, [driveFiles, driveQuery]);
   const selectedRepo = useMemo(() => repositories.find(item => item.clone_url === repo), [repositories, repo]);
 
   async function ensureProject() {
@@ -119,6 +155,23 @@ export default function Ingest() {
     throw new Error("Ingestion is still running; check Sources for its status.");
   }
 
+  async function waitForSync(jobId: string) {
+    const deadline = Date.now() + 60 * 60 * 1000;
+    while (Date.now() < deadline) {
+      await new Promise(resolve => window.setTimeout(resolve, 2000));
+      const job = await api<any>(`/api/connector-sync-jobs/${jobId}`);
+      if (job.status === "succeeded") return job;
+      if (job.status === "failed") throw new Error(job.last_error || "The import failed");
+      // An expired grant won't fix itself between retries; say so now.
+      if (/reconnect/i.test(job.last_error || "")) throw new Error(job.last_error);
+      const done = Math.min(Number(job.cursor?.offset || 0), driveSelected.length);
+      setDriveProgress(job.status === "retrying"
+        ? `Retrying after: ${job.last_error}`
+        : `Reading ${done ? `${done} of ` : ""}${driveSelected.length} file${driveSelected.length === 1 ? "" : "s"}…`);
+    }
+    throw new Error("The import is still running; check Sync status for progress.");
+  }
+
   async function buildMemory() {
     setBusy(true);
     setError("");
@@ -134,6 +187,28 @@ export default function Ingest() {
           body: JSON.stringify({repo_url_or_path: repo, project_name: repoName || selectedRepo?.full_name || selectedRepo?.name, team_ids, background: true}),
         });
         response = await waitForJob(started.job_id);
+      } else if (kind === "google_drive") {
+        const projectId = await ensureProject();
+        setDriveProgress(`Queueing ${driveSelected.length} file${driveSelected.length === 1 ? "" : "s"}…`);
+        const job = await api<any>("/api/connectors/google_drive/sync", {
+          method: "POST",
+          body: JSON.stringify({
+            resource_id: "selected-files",
+            project_id: projectId,
+            cursor: {file_ids: driveSelected},
+            // Importing the same files again should read them again.
+            idempotency_key: `drive-${projectId}-${Date.now()}`,
+          }),
+        });
+        const finished = await waitForSync(job.id);
+        const failures: string[] = finished.cursor?.failures || [];
+        const names = new Map((driveFiles || []).map(item => [item.id, item.name]));
+        response = {
+          drive_files: driveSelected.length - new Set(failures.map(line => line.match(/^file (\S+):/)?.[1])).size,
+          warnings: failures.map(line => line.replace(/^file (\S+):/, (_, id) => `${names.get(id) || id}:`)),
+          project_id: projectId,
+        };
+        setDriveProgress("");
       } else if (kind === "website") {
         const projectId = await ensureProject();
         response = await api("/api/ingest/website", {
@@ -174,9 +249,14 @@ export default function Ingest() {
       setResult(response);
     } catch (exc: any) {
       setError(exc.message);
+      setDriveProgress("");
     } finally {
       setBusy(false);
     }
+  }
+
+  function toggleDriveFile(id: string) {
+    setDriveSelected(items => items.includes(id) ? items.filter(item => item !== id) : [...items, id]);
   }
 
   async function indexEverything() {
@@ -203,6 +283,8 @@ export default function Ingest() {
         ? Boolean(/^https?:\/\/.+\..+|^[^\s]+\.[^\s]+/.test(websiteUrl.trim()) && (project !== "__new__" || newProject.trim()))
         : kind === "files"
           ? Boolean(files.length && (project !== "__new__" || newProject.trim()))
+        : kind === "google_drive"
+          ? Boolean(driveSelected.length && (project !== "__new__" || newProject.trim()))
           : Boolean(channel && (project !== "__new__" || newProject.trim()));
   const memoryCount = result?.memory_units_created ?? result?.memory_unit_ids?.length ?? 0;
 
@@ -246,7 +328,7 @@ export default function Ingest() {
 
           {kind === "github" && <div className="quick-memory-form">
             <div className="builder-title"><span className="source-hero-icon"><GitHubIcon size={27}/></span><div><h2>Choose a repository</h2><p>MemoryWorks reads the repository and builds its project memory automatically.</p></div></div>
-            {!connected("github") ? <div className="builder-connect"><strong>Give MemoryWorks access to your repositories</strong><p>Authorize once, then pick repositories right here. Private repositories are supported.</p><a className="button" href={`${API}/api/connectors/github/auth/start`}>Continue with GitHub →</a></div> : <><select aria-label="GitHub repository" value={repo} onChange={event => {setRepo(event.target.value);const match=repositories.find(item=>item.clone_url===event.target.value);setRepoName(match?.full_name || match?.name || "");}}><option value="">Select a repository…</option>{repositories.map(item => <option key={item.id} value={item.clone_url}>{item.full_name}{item.private ? " · Private" : ""}</option>)}</select>{repositoriesError && <ListingError message={`Couldn't list your repositories: ${repositoriesError}`} onRetry={loadRepositories}/>}<p className="privacy-note"><i/> Private repositories supported. Existing source permissions are preserved.</p>
+            {!connected("github") ? <div className="builder-connect"><strong>Give MemoryWorks access to your repositories</strong><p>Authorize once, then pick repositories right here. Private repositories are supported.</p><a className="button" href={`${API}/api/connectors/github/auth/start`}>Continue with GitHub →</a></div> : <><select aria-label="GitHub repository" value={repo} onChange={event => {setRepo(event.target.value);const match=repositories.find(item=>item.clone_url===event.target.value);setRepoName(match?.full_name || match?.name || "");}}><option value="">Select a repository…</option>{repositories.map(item => <option key={item.id} value={item.clone_url}>{item.full_name}{item.private ? " · Private" : ""}</option>)}</select>{repositoriesError && <ListingError message={`Couldn't list your repositories: ${repositoriesError}`} onRetry={loadRepositories} provider="github"/>}<p className="privacy-note"><i/> Private repositories supported. Existing source permissions are preserved.</p>
               <div className="bulk-index">
                 <div>
                   <strong>Or index everything you have access to</strong>
@@ -262,9 +344,35 @@ export default function Ingest() {
               </div></>}
           </div>}
 
+          {kind === "google_drive" && <div className="quick-memory-form">
+            <div className="builder-title"><span className="source-hero-icon">GD</span><div><h2>Choose files from Google Drive</h2><p>Docs, Sheets, and Slides are exported as text; PDFs and Office files are parsed. Each memory links back to its file.</p></div></div>
+            {!connected("google_drive")
+              ? <div className="builder-connect"><strong>Connect Google Drive once</strong><p>MemoryWorks gets read-only access and only imports the files you pick.</p><a className="button" href={`${API}/api/connectors/google_drive/auth/start`}>Connect Google Drive →</a></div>
+              : <>
+                <input aria-label="Filter Drive files" value={driveQuery} onChange={event => setDriveQuery(event.target.value)} placeholder="Filter your recent files by name…" />
+                {driveError && <ListingError message={`Couldn't list your Drive files: ${driveError}`} onRetry={loadDriveFiles} provider="google_drive"/>}
+                {driveFiles === null
+                  ? <p className="privacy-note">Listing your Drive files…</p>
+                  : !driveError && <div className="drive-picker" role="group" aria-label="Google Drive files">
+                    {shownDriveFiles.length ? shownDriveFiles.map(item => <label key={item.id} className={driveSelected.includes(item.id) ? "selected" : ""}>
+                      <input type="checkbox" checked={driveSelected.includes(item.id)} onChange={() => toggleDriveFile(item.id)} />
+                      <span><strong>{item.name}</strong><small>{DRIVE_KINDS[item.mime_type] || "File"}{item.modified_at ? ` · edited ${new Date(item.modified_at).toLocaleDateString()}` : ""}{item.owner ? ` · ${item.owner}` : ""}</small></span>
+                    </label>) : <p className="privacy-note">{driveFiles.length ? "No files match that filter." : "No files found in this Drive."}</p>}
+                  </div>}
+                {!!driveFiles?.length && <div className="drive-picker-bar">
+                  <span>{driveSelected.length} selected · showing your {driveFiles.length} most recently edited files</span>
+                  <button className="text-button" onClick={() => {
+                    const ids = shownDriveFiles.map(item => item.id);
+                    const all = ids.every(id => driveSelected.includes(id));
+                    setDriveSelected(items => all ? items.filter(id => !ids.includes(id)) : [...new Set([...items, ...ids])]);
+                  }}>{shownDriveFiles.every(item => driveSelected.includes(item.id)) ? "Clear shown" : "Select all shown"}</button>
+                </div>}
+              </>}
+          </div>}
+
           {kind === "slack" && <div className="quick-memory-form">
             <div className="builder-title"><span className="source-hero-icon slack">SL</span><div><h2>Choose a Slack channel</h2><p>Remember team decisions and conventions with links back to each message.</p></div></div>
-            {!connected("slack") ? <div className="builder-connect"><strong>Connect Slack once</strong><p>Choose which channels MemoryWorks may read.</p><a className="button" href={`${API}/api/connectors/slack/auth/start`}>Connect Slack →</a></div> : <><select aria-label="Slack channel" value={channel} onChange={event => setChannel(event.target.value)}>{channels.map(item => <option key={item.id} value={item.id}>#{item.name}{item.is_private ? " · Private" : ""}</option>)}</select>{channelsError && <ListingError message={`Couldn't list your channels: ${channelsError}`} onRetry={loadChannels}/>}</>}
+            {!connected("slack") ? <div className="builder-connect"><strong>Connect Slack once</strong><p>Choose which channels MemoryWorks may read.</p><a className="button" href={`${API}/api/connectors/slack/auth/start`}>Connect Slack →</a></div> : <><select aria-label="Slack channel" value={channel} onChange={event => setChannel(event.target.value)}>{channels.map(item => <option key={item.id} value={item.id}>#{item.name}{item.is_private ? " · Private" : ""}</option>)}</select>{channelsError && <ListingError message={`Couldn't list your channels: ${channelsError}`} onRetry={loadChannels} provider="slack"/>}</>}
           </div>}
 
           {kind !== "github" && <div className="builder-project-row"><label>Save to</label><select value={project} onChange={event => setProject(event.target.value)}><option value="__new__">New memory space</option>{projects.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select>{project === "__new__" && <input aria-label="New memory space name" value={newProject} onChange={event => setNewProject(event.target.value)} />}</div>}
@@ -272,24 +380,31 @@ export default function Ingest() {
           <details className="builder-options"><summary>Options <span>Team visibility and source type</span></summary><div>{teams.length ? <div className="field"><label>Visible to</label><select value={team} onChange={event => setTeam(event.target.value)}><option value="">Everyone in this workspace</option>{teams.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div> : null}{kind === "paste" && <div className="field"><label>Source type</label><select value={sourceType} onChange={event => setSourceType(event.target.value)}>{["doc","report","slack_export","incident","log","text"].map(value => <option key={value}>{value.replace(/_/g," ")}</option>)}</select></div>}</div></details>
 
           {error && <div className="notice error">{error}</div>}
-          {busy ? <div className="memory-building"><div className="memory-pulse"><i/><i/><i/></div><div><strong>{kind === "files" && fileProgress ? fileProgress : ["Reading the source…","Extracting atomic memory…","Linking the memory graph…"][phase]}</strong><span>Source → chunks → memory → relationships</span></div></div> : <button className="button builder-submit" disabled={!canBuild} onClick={buildMemory}>{kind === "paste" ? "Remember this" : kind === "github" ? "Build repository memory" : kind === "website" ? "Ingest this page" : kind === "files" ? "Remember these files" : "Remember this channel"}<span>→</span></button>}
+          {busy ? <div className="memory-building"><div className="memory-pulse"><i/><i/><i/></div><div><strong>{kind === "files" && fileProgress ? fileProgress : kind === "google_drive" && driveProgress ? driveProgress : ["Reading the source…","Extracting atomic memory…","Linking the memory graph…"][phase]}</strong><span>Source → chunks → memory → relationships</span></div></div> : <button className="button builder-submit" disabled={!canBuild} onClick={buildMemory}>{kind === "paste" ? "Remember this" : kind === "github" ? "Build repository memory" : kind === "website" ? "Ingest this page" : kind === "files" ? "Remember these files" : kind === "google_drive" ? (driveSelected.length ? `Import ${driveSelected.length} file${driveSelected.length === 1 ? "" : "s"}` : "Import files") : "Remember this channel"}<span>→</span></button>}
         </div>
       </> : <section className="memory-success">
         <div className="success-rings"><i/><i/><i/><span>✓</span></div>
         <span className="panel-label">Memory is ready</span>
         <h2>MemoryWorks learned from this source.</h2>
-        <p>{memoryCount} atomic memories and {result.chunks_created ?? result.knowledge_chunks_created ?? 0} evidence chunks are now available to your agents.</p>
-        <div className="success-stats"><div><strong>{memoryCount}</strong><span>Memories</span></div><div><strong>{result.source_revision?.version || 1}</strong><span>Source version</span></div><div><strong>{result.change_set?.conflicts?.length || 0}</strong><span>Conflicts</span></div></div>
-        <div className="success-actions"><Link className="button" href="/workspace">Ask your memory →</Link><Link className="button secondary" href="/memories">See memories</Link><button className="text-button" onClick={() => {setResult(undefined);setContent("");setTitle("");}}>Add another source</button></div>
+        {result.drive_files !== undefined
+          ? <p>{result.drive_files} Drive file{result.drive_files === 1 ? " is" : "s are"} now in memory, each linked back to Google Drive.</p>
+          : <p>{memoryCount} atomic memories and {result.chunks_created ?? result.knowledge_chunks_created ?? 0} evidence chunks are now available to your agents.</p>}
+        {!!result.warnings?.length && result.drive_files !== undefined && <div className="notice"><strong>Some files couldn't be read:</strong><ul>{result.warnings.map((line: string) => <li key={line}>{line}</li>)}</ul></div>}
+        {result.drive_files === undefined && <div className="success-stats"><div><strong>{memoryCount}</strong><span>Memories</span></div><div><strong>{result.source_revision?.version || 1}</strong><span>Source version</span></div><div><strong>{result.change_set?.conflicts?.length || 0}</strong><span>Conflicts</span></div></div>}
+        <div className="success-actions"><Link className="button" href="/workspace">Ask your memory →</Link><Link className="button secondary" href="/memories">See memories</Link><button className="text-button" onClick={() => {setResult(undefined);setContent("");setTitle("");setDriveSelected([]);}}>Add another source</button></div>
       </section>}
     </section>
 
   </Page>;
 }
 
-function ListingError({message, onRetry}: {message: string; onRetry: () => void}) {
+/* A grant the provider stopped accepting won't list on retry; offer the
+   reconnect that fixes it instead. */
+function ListingError({message, onRetry, provider}: {message: string; onRetry: () => void; provider: string}) {
   return <div className="notice error listing-error" role="alert">
     <span>{message}</span>
-    <button className="text-button" onClick={onRetry}>Try again</button>
+    {/reconnect/i.test(message)
+      ? <a className="text-button" href={`${API}/api/connectors/${provider}/auth/start`}>Reconnect</a>
+      : <button className="text-button" onClick={onRetry}>Try again</button>}
   </div>;
 }

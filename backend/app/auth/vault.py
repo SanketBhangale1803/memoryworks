@@ -4,7 +4,9 @@ import base64
 import json
 import logging
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 
 from cryptography.fernet import Fernet
@@ -15,6 +17,32 @@ from app.core.config import settings
 from app.core.database import connect, new_id, rows, utcnow
 
 logger = logging.getLogger(__name__)
+
+# Renew a little before the provider's stated expiry so a token cannot lapse
+# between the check and the request it authorizes.
+EXPIRY_SKEW = timedelta(seconds=60)
+
+
+def expires_at_from(token_response: dict[str, Any]) -> str | None:
+    """The absolute expiry of an OAuth token response, or None if it never expires."""
+    seconds = token_response.get("expires_in")
+    if not seconds:
+        return None
+    return (datetime.now(UTC) + timedelta(seconds=int(seconds))).isoformat()
+
+
+def access_expired(account: ConnectorAccount, now: datetime | None = None) -> bool:
+    """Whether a stored access token is at (or within the skew of) its expiry."""
+    stamp = str(account.metadata.get("token_expires_at") or "")
+    if not stamp:
+        return False
+    try:
+        expires = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if expires.tzinfo is None:
+        expires = expires.replace(tzinfo=UTC)
+    return expires - EXPIRY_SKEW <= (now or datetime.now(UTC))
 
 
 class VaultCipher(Protocol):
@@ -359,6 +387,7 @@ class OAuthTokenVault:
             metadata={
                 **json.loads(record.get("metadata_json") or "{}"),
                 "scopes": json.loads(record.get("scopes_json") or "[]"),
+                "token_expires_at": record.get("token_expires_at") or "",
             },
         )
 
@@ -379,6 +408,62 @@ class OAuthTokenVault:
         if not records or not records[0].get("refresh_token_encrypted"):
             return ""
         return self.cipher.decrypt(records[0]["refresh_token_encrypted"], self._context(provider))
+
+    def renew(
+        self, provider: str, exchange: Callable[[str], dict[str, Any]]
+    ) -> ConnectorAccount | None:
+        """Trade the stored refresh token for a fresh access token.
+
+        ``exchange`` posts the refresh token to the provider and returns its
+        token response. The renewed grant replaces the stored one in place, so
+        every later ``account()`` sees it. Returns None when the grant cannot
+        be renewed: no refresh token was ever issued, or the provider refused
+        it — either way only a new authorization will fix it.
+        """
+        stored = self.account(provider)
+        refresh = self.refresh_token(provider)
+        if not stored or not refresh:
+            return None
+        try:
+            data = exchange(refresh)
+        except Exception as exc:  # noqa: BLE001 - a refused renewal means reconnect
+            logger.warning("Renewing the %s grant failed: %s", provider, exc)
+            return None
+        token = str(data.get("access_token") or "")
+        if not token:
+            logger.warning("Renewing the %s grant returned no access token", provider)
+            return None
+        expires_at = expires_at_from(data)
+        metadata = {key: value for key, value in stored.metadata.items() if key != "scopes"}
+        metadata["expires_at"] = expires_at
+        self.save(
+            provider,
+            stored.external_id,
+            stored.display_name,
+            token,
+            metadata,
+            # Providers that rotate refresh tokens return a new one; the rest
+            # keep accepting the original.
+            refresh_token=str(data.get("refresh_token") or refresh),
+            expires_at=expires_at,
+            scopes=list(stored.metadata.get("scopes") or []),
+        )
+        return self.account(provider)
+
+    def mark_expired(self, provider: str) -> int:
+        """Stop presenting a grant the provider no longer accepts as connected.
+
+        Sources then offers Reconnect instead of a "Connected" card whose every
+        call fails.
+        """
+        if not self.workspace_id or not self.user_id:
+            return 0
+        with connect() as conn:
+            return conn.execute(
+                """UPDATE oauth_token_grants SET status='expired',updated_at=?
+                WHERE workspace_id=? AND user_id=? AND provider=? AND status='connected'""",
+                (utcnow(), self.workspace_id, self.user_id, provider),
+            ).rowcount
 
     def status(self, provider: str) -> list[dict[str, Any]]:
         if not self.workspace_id:

@@ -15,6 +15,7 @@ from urllib.parse import urlencode, urlparse
 import httpx
 
 from app.auth import ConnectorSecrets
+from app.auth.vault import access_expired, expires_at_from
 from app.connectors.base import (
     Connector,
     ConnectorAccount,
@@ -96,9 +97,20 @@ class GitHubConnector(Connector):
         self.secrets = secrets or ConnectorSecrets()
 
     def token(self) -> str | None:
-        return self.secrets.token("github") or (
-            settings.github_token if not self.secrets.workspace_id else None
-        )
+        account = self.secrets.account("github")
+        if account and account.access_token:
+            # GitHub App user tokens last eight hours; OAuth App tokens never
+            # expire and carry no expiry, so this only fires for the former.
+            if access_expired(account):
+                return self._renew() or account.access_token
+            return account.access_token
+        return settings.github_token if not self.secrets.workspace_id else None
+
+    def _renew(self) -> str | None:
+        if not self.secrets.workspace_id or not self.secrets.user_id:
+            return None
+        renewed = self.secrets.renew("github", _refresh_exchange)
+        return renewed.access_token if renewed else None
 
     def connection_statuses(self) -> list[dict[str, Any]]:
         return self.secrets.status(self.manifest.id)
@@ -335,6 +347,9 @@ class GitHubConnector(Connector):
             "email": email,
             "avatar_url": user.get("avatar_url", ""),
             "scope": payload.get("scope", ""),
+            # Present only for GitHub Apps with expiring user tokens.
+            "refresh_token": payload.get("refresh_token", ""),
+            "expires_at": expires_at_from(payload),
         }
 
     def list_repositories(self) -> list[dict[str, Any]]:
@@ -413,15 +428,20 @@ class GitHubConnector(Connector):
         return urlparse(source).path.strip("/").removesuffix(".git")
 
     def _api(self, method: str, path: str, token: str | None = None):
+        stored = token is None
         token = token or self.token()
         if not token:
             raise ValueError("GitHub is not connected")
-        response = httpx.request(
-            method,
-            f"https://api.github.com{path}",
-            headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"},
-            timeout=30,
-        )
+        response = _send(method, path, token)
+        if response.status_code == 401 and stored and self.secrets.workspace_id:
+            # GitHub refused the saved grant: it expired, was revoked, or was
+            # replaced by a newer authorization. Renew it if GitHub issued a
+            # refresh token; otherwise stop showing GitHub as connected.
+            renewed = self._renew()
+            if not renewed:
+                self.secrets.mark_expired("github")
+                raise ValueError(RECONNECT_MESSAGE)
+            response = _send(method, path, renewed)
         response.raise_for_status()
         return response.json()
 
@@ -437,3 +457,34 @@ class GitHubConnector(Connector):
             if len(batch) < 100:
                 break
         return output
+
+
+RECONNECT_MESSAGE = (
+    "GitHub no longer accepts MemoryWorks' saved access (it expired or was revoked). "
+    "Reconnect GitHub on the Sources page."
+)
+
+
+def _send(method: str, path: str, token: str) -> httpx.Response:
+    return httpx.request(
+        method,
+        f"https://api.github.com{path}",
+        headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"},
+        timeout=30,
+    )
+
+
+def _refresh_exchange(refresh_token: str) -> dict[str, Any]:
+    response = httpx.post(
+        "https://github.com/login/oauth/access_token",
+        headers={"Accept": "application/json"},
+        data={
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token,
+            "client_id": settings.github_client_id,
+            "client_secret": settings.github_client_secret,
+        },
+        timeout=30,
+    )
+    response.raise_for_status()
+    return response.json()

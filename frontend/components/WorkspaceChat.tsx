@@ -7,6 +7,7 @@ import { applyEvent, AskTrace, emptyTrace, LiveDraft, streamAnswer, type Trace }
 import { BrandMark } from "@/components/BrandLogo";
 import CommandMenu, { useCommandMenu } from "@/components/CommandMenu";
 import GitHubIcon from "@/components/icons/GitHubIcon";
+import { IMPORT_HINT, ImportTurn, type ChatImport } from "@/components/ImportTurn";
 import MarkdownAnswer from "@/components/MarkdownAnswer";
 import { NavToggle } from "@/components/WorkspaceFrame";
 import { useWorkspaceTools } from "@/hooks/useWorkspaceTools";
@@ -83,6 +84,8 @@ type Turn = {
   agent?: AgentState;
   /* How an Ask answer was produced, kept with it so the trail can be reopened. */
   trace?: Trace;
+  /* Set when the message asked to import something and the import ran instead. */
+  imported?: ChatImport;
   error?: string;
 };
 
@@ -122,7 +125,7 @@ function threadHistory(turns: Turn[]) {
     const reply =
       turn.answer && turn.answer.answer_scope !== "clarification"
         ? turn.answer.answer
-        : turn.agent?.session?.answer;
+        : turn.imported?.message || turn.agent?.session?.answer;
     if (reply) history.push({ role: "assistant", content: reply.slice(0, 2000) });
   }
   return history;
@@ -379,8 +382,42 @@ export default function WorkspaceChat({ user }: { user: any }) {
     }
   }
 
-  function send(text = draft) {
+  /* "Import the docs from my Google Drive" should import them, in either mode.
+     The server decides whether a message is an import; anything else (or a
+     failed check) goes on to be answered as usual. */
+  async function startImport(prompt: string): Promise<boolean> {
+    const question = prompt.trim();
+    if (!IMPORT_HINT.test(question) || busy) return false;
+    setBusy(true);
+    try {
+      const reply = await api<ChatImport | { matched: false }>("/api/chat/import", {
+        method: "POST",
+        body: JSON.stringify({ text: question, project_id: project }),
+      });
+      if (!reply.matched) return false;
+      setDraft("");
+      setFollowups([]);
+      const { threadId, index } = beginTurn(question, mode, project, scope);
+      patchTurn(threadId, index, { imported: reply });
+      return true;
+    } catch {
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function updateImport(threadId: string, index: number, next: ChatImport) {
+    patchTurn(threadId, index, { imported: next });
+    // A repository import creates a memory space; list it so it can be asked.
+    if (next.status === "succeeded") {
+      api<Project[]>("/api/projects").then(setProjects).catch(() => undefined);
+    }
+  }
+
+  async function send(text = draft) {
     if (!text.trim()) return;
+    if (await startImport(text)) return;
     if (mode === "agent") void runAgent(text);
     else void askMemory(text).catch(() => undefined);
   }
@@ -441,7 +478,7 @@ export default function WorkspaceChat({ user }: { user: any }) {
         ? "Give the agent something to work on…"
         : "Ask anything about your company…";
   const lastTurn = turns.at(-1);
-  const lastDone = Boolean(lastTurn && (lastTurn.answer || lastTurn.error || lastTurn.agent?.done));
+  const lastDone = Boolean(lastTurn && (lastTurn.answer || lastTurn.error || lastTurn.imported || lastTurn.agent?.done));
 
   return (
     <div className="om-home ws-app ws-one">
@@ -536,6 +573,10 @@ export default function WorkspaceChat({ user }: { user: any }) {
                     const shown = streaming || turn.trace;
                     return shown ? <AskTrace trace={shown} running={Boolean(streaming)} /> : null;
                   })()}
+
+                {turn.imported && (
+                  <ImportTurn state={turn.imported} onUpdate={(next) => updateImport(active!.id, index, next)} />
+                )}
 
                 {turn.error && <div className="ws-alert">{turn.error}</div>}
 

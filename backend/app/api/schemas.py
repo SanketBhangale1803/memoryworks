@@ -88,6 +88,11 @@ class SlackIngestRequest(BaseModel):
     team_ids: list[str] = Field(default_factory=list, max_length=50)
 
 
+class ChatImportRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=2000)
+    project_id: str = Field(default="", max_length=128)
+
+
 class WebIngestRequest(BaseModel):
     project_id: str = Field(min_length=4, max_length=128)
     url: str = Field(min_length=4, max_length=2000)

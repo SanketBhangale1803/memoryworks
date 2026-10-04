@@ -38,14 +38,14 @@ const IMPORT_SOURCE: Record<string, string> = {
 /* Providers that are ways for agents to reach MemoryWorks, not sources of memory. */
 const AGENT_SURFACES = new Set(["mcp", "api_sdk_cli", "local_desktop_extension"]);
 /* OAuth sources whose next step after connecting is choosing what to import. */
-const IMPORT_AFTER_CONNECT: Record<string, string> = { github: "github", slack: "slack" };
+const IMPORT_AFTER_CONNECT: Record<string, string> = { github: "github", slack: "slack", google_drive: "google_drive" };
 
 type Card = {
   provider: string;
   label: string;
   category: string;
   reads: string[];
-  status: "connected" | "connect" | "setup_needed" | "import" | "agent" | "soon";
+  status: "connected" | "expired" | "connect" | "setup_needed" | "import" | "agent" | "soon";
   account?: { display_name: string; updated_at: string };
   connector?: any;
 };
@@ -60,6 +60,14 @@ function monogram(name: string) {
     .toUpperCase();
 }
 
+/* A grant the provider stopped accepting is not "ready to connect" — the person
+   connected it once and needs to know why it stopped working. */
+function connectorStatus(connector: any): Card["status"] {
+  if (connector.connected) return "connected";
+  if (connector.accounts?.some((item: any) => item.status === "expired")) return "expired";
+  return connector.available ? "connect" : "setup_needed";
+}
+
 function toCards(connectors: any[], catalog: any[]): Card[] {
   const byProvider = new Map(connectors.map((item) => [item.provider, item]));
   const cards: Card[] = catalog.map((entry) => {
@@ -72,8 +80,7 @@ function toCards(connectors: any[], catalog: any[]): Card[] {
     };
     if (connector) {
       const account = connector.accounts?.find((item: any) => item.status === "connected");
-      const status = connector.connected ? "connected" : connector.available ? "connect" : "setup_needed";
-      return { ...base, status, account, connector };
+      return { ...base, status: connectorStatus(connector), account, connector };
     }
     if (entry.provider in IMPORT_SOURCE) return { ...base, status: "import" };
     if (AGENT_SURFACES.has(entry.provider)) return { ...base, status: "agent" };
@@ -88,18 +95,19 @@ function toCards(connectors: any[], catalog: any[]): Card[] {
       label: connector.manifest?.name || connector.provider,
       category: "Custom MCP servers",
       reads: (connector.manifest?.resources || []).map((item: any) => item.label),
-      status: connector.connected ? "connected" : "connect",
+      status: connectorStatus(connector),
       account,
       connector,
     });
   }
   const order: Record<Card["status"], number> = {
     connected: 0,
-    connect: 1,
-    setup_needed: 2,
-    import: 3,
-    agent: 4,
-    soon: 5,
+    expired: 1,
+    connect: 2,
+    setup_needed: 3,
+    import: 4,
+    agent: 5,
+    soon: 6,
   };
   return cards.sort((a, b) => order[a.status] - order[b.status]);
 }
@@ -386,6 +394,7 @@ function SourceCard({
   const writes = tools.filter((tool: any) => tool.kind === "write").length;
   const state: Record<Card["status"], string> = {
     connected: "Connected",
+    expired: "Access expired",
     connect: "Ready to connect",
     setup_needed: "Needs admin setup",
     import: "Import",
@@ -444,6 +453,14 @@ function SourceCard({
           <a className="button" href={`${API}/api/connectors/${provider}/auth/start`}>
             Connect {card.label}
           </a>
+        )}
+        {card.status === "expired" && (
+          <>
+            <a className="button" href={`${API}/api/connectors/${provider}/auth/start`}>
+              Reconnect {card.label}
+            </a>
+            <span className="subtle">{card.label} stopped accepting the saved access.</span>
+          </>
         )}
         {card.status === "setup_needed" && (
           <span className="subtle">An admin has to add this provider’s OAuth app first.</span>

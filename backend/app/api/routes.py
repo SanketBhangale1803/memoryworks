@@ -78,6 +78,7 @@ from app.governance import ScopeService
 from app.graph import get_graph_store
 from app.hcag_adapter import HCAGAdapter
 from app.importers import NotConnectedError, get_importer, importer_statuses
+from app.ingestion.chat_import import DRIVE_KINDS, ImportIntent, parse_import
 from app.ingestion.documents import (
     SUPPORTED_UPLOAD_SUFFIXES,
     UnsupportedDocumentError,
@@ -139,6 +140,7 @@ from .schemas import (
     BriefingRequest,
     BulkAssertionReviewRequest,
     ChangeImpactAnalyzeRequest,
+    ChatImportRequest,
     ConnectorSyncRequest,
     ConnectorToolInvokeRequest,
     ConnectorToolResolveRequest,
@@ -1709,6 +1711,176 @@ def ingest_slack(request: SlackIngestRequest, authorization: str | None = Header
     except Exception as exc:
         _fail_job(job_id, exc)
         fail(exc)
+
+
+# A Drive import asked for in chat with no file named takes the most recently
+# edited files, a sync batch's worth, and says so.
+CHAT_DRIVE_LIMIT = 25
+
+
+@router.post("/chat/import")
+def chat_import(
+    request: ChatImportRequest,
+    background_tasks: BackgroundTasks,
+    authorization: str | None = Header(default=None),
+):
+    """Carry out an import typed into the chat ("import the docs from my Drive").
+
+    Anything that is not an unmistakable import request comes back
+    ``matched: false`` and the chat answers it as a question. A recognised
+    request always gets a reply the person can act on — started, needs a
+    connection, or why it failed — never an exception.
+    """
+    intent = parse_import(request.text)
+    if not intent:
+        return {"matched": False}
+    principal = _authorize_workspace(authorization)
+    reply = {"matched": True, "source": intent.source}
+    try:
+        return reply | _start_chat_import(
+            intent, request.project_id, principal, background_tasks, authorization
+        )
+    except HTTPException as exc:
+        return reply | {"status": "failed", "message": str(exc.detail)}
+    except Exception as exc:  # noqa: BLE001 - the chat shows why, it does not crash
+        logger.warning("Chat import of %s failed: %s", intent.source, exc)
+        return reply | {"status": "failed", "message": str(exc)}
+
+
+def _start_chat_import(
+    intent: ImportIntent,
+    project_id: str,
+    principal: dict,
+    background_tasks: BackgroundTasks,
+    authorization: str | None,
+) -> dict:
+    if intent.source == "github":
+        started = ingest_github(
+            GitHubIngestRequest(
+                repo_url_or_path=f"https://github.com/{intent.target}",
+                project_name=intent.target,
+                background=True,
+            ),
+            background_tasks,
+            authorization,
+        )
+        return {
+            "status": "running",
+            "label": intent.target,
+            "message": f"Importing {intent.target}: code, docs, issues, and pull requests.",
+            "job": {"kind": "ingest", "id": started["job_id"]},
+        }
+    if intent.source == "github_all":
+        queued = ingest_all_github(GitHubBulkIngestRequest(), background_tasks, authorization)
+        count = queued["repositories_queued"]
+        if not count:
+            return {
+                "status": "failed",
+                "message": "GitHub returned no repositories to import. Check the GitHub "
+                "connection on Sources.",
+                "action": {"label": "Open Sources", "href": "/connectors"},
+            }
+        return {
+            "status": "queued",
+            "message": f"Queued {count} repositor{'y' if count == 1 else 'ies'}. Each becomes "
+            "its own memory space as it finishes.",
+            "action": {"label": "Watch progress", "href": "/jobs"},
+        }
+    if intent.source == "website":
+        if not project_id:
+            raise ValueError("Choose a memory space to import into, then ask again.")
+        result = ingest_website(
+            WebIngestRequest(project_id=project_id, url=intent.target), authorization
+        )
+        memories = result.get("memory_units_created", 0)
+        chunks = result.get("chunks_created", 0)
+        return {
+            "status": "succeeded",
+            "label": result.get("final_url") or intent.target,
+            "message": f"Imported {result.get('final_url') or intent.target}: {chunks} passage"
+            f"{'' if chunks == 1 else 's'} indexed, {memories} memor"
+            f"{'y' if memories == 1 else 'ies'} recorded. Ask about it now.",
+            "result": {
+                "memories": result.get("memory_units_created", 0),
+                "chunks": result.get("chunks_created", 0),
+                "warnings": result.get("warnings", []),
+            },
+        }
+    if intent.source == "google_drive":
+        return _start_chat_drive_import(intent, project_id, principal, authorization)
+    label = {"slack": "Slack", "notion": "Notion", "teams": "Microsoft Teams"}[intent.source]
+    return {
+        "status": "unsupported",
+        "message": f"Importing from {label} isn't available from chat yet. Choose what to "
+        "import on Add knowledge.",
+        "action": {
+            "label": "Open Add knowledge",
+            "href": "/ingest?source=slack" if intent.source == "slack" else "/connectors",
+        },
+    }
+
+
+def _start_chat_drive_import(
+    intent: ImportIntent, project_id: str, principal: dict, authorization: str | None
+) -> dict:
+    vault = connector_runtime.vault(principal)
+    if not vault.account("google_drive"):
+        expired = any(item["status"] == "expired" for item in vault.status("google_drive"))
+        return {
+            "status": "needs_connection",
+            "message": (
+                "Google Drive access has expired. Reconnect it, then ask again."
+                if expired
+                else "Google Drive isn't connected. Connect it once (read-only), then ask again."
+            ),
+            "action": {
+                "label": "Reconnect Google Drive" if expired else "Connect Google Drive",
+                "href": "/api/connectors/google_drive/auth/start",
+            },
+        }
+    if not project_id:
+        raise ValueError("Choose a memory space to import into, then ask again.")
+    _authorize_project(project_id, authorization, write=True)
+    files = connector_runtime.discover("google_drive", principal)
+    if intent.kinds:
+        wanted = {mime for kind in intent.kinds for mime in DRIVE_KINDS[kind]}
+        files = [item for item in files if item.get("mime_type") in wanted]
+    if intent.target:
+        needle = intent.target.casefold()
+        files = [item for item in files if needle in str(item.get("name") or "").casefold()]
+    if not files:
+        named = f" matching “{intent.target}”" if intent.target else ""
+        return {
+            "status": "nothing",
+            "message": f"No Drive files{named} turned up among your recently edited files. "
+            "Pick them by hand on Add knowledge.",
+            "action": {"label": "Choose Drive files", "href": "/ingest?source=google_drive"},
+        }
+    chosen = files[:CHAT_DRIVE_LIMIT]
+    job = connector_sync.enqueue(
+        "google_drive",
+        principal["active_workspace_id"],
+        principal["id"],
+        "selected-files",
+        project_id=project_id,
+        cursor={"file_ids": [item["id"] for item in chosen]},
+        idempotency_key=f"chat-drive:{project_id}:{new_id('import')}",
+    )
+    more = len(files) - len(chosen)
+    return {
+        "status": "running",
+        "label": "Google Drive",
+        "message": f"Importing {len(chosen)} file{'' if len(chosen) == 1 else 's'} from Google "
+        "Drive"
+        + (
+            f" (your {len(chosen)} most recently edited; {more} more can be picked on Add "
+            "knowledge)."
+            if more
+            else "."
+        ),
+        "files": [{"id": item["id"], "name": item["name"], "url": item["url"]} for item in chosen],
+        "job": {"kind": "sync", "id": job["id"]},
+    }
 
 
 @router.get("/ingest/jobs")
@@ -3412,6 +3584,16 @@ def connector_sync_jobs(status: str = "", authorization: str | None = Header(def
     return connector_sync.list(principal["active_workspace_id"], status)
 
 
+@router.get("/connector-sync-jobs/{job_id}")
+def connector_sync_job(job_id: str, authorization: str | None = Header(default=None)):
+    """One sync job, so a page that queued an import can follow it to the end."""
+    principal = _authorize_workspace(authorization)
+    job = connector_sync.get(job_id)
+    if not job or job["workspace_id"] != principal["active_workspace_id"]:
+        raise HTTPException(404, "Sync job not found")
+    return job
+
+
 def _public_repository_refresh_request(record: dict) -> dict:
     result = {}
     try:
@@ -4151,6 +4333,8 @@ def _connect_github_from_sign_in(session: dict, identity: dict) -> None:
                 "avatar_url": identity.get("avatar_url", ""),
                 "scope": identity.get("scope", ""),
             },
+            refresh_token=str(identity.get("refresh_token") or ""),
+            expires_at=identity.get("expires_at"),
         )
         audit.record(
             "connector.connected",
