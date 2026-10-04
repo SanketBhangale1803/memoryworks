@@ -418,8 +418,22 @@ class GoogleDriveConnector(Connector):
                 self.secrets.mark_expired(self.manifest.id)
                 raise ValueError(RECONNECT_MESSAGE)
             response = _send(renewed, method, path, params)
+        if response.status_code == 403:
+            # A 403 is about the account or the Google Cloud project (the Drive
+            # API disabled, a missing scope, a quota), never one file — and only
+            # Google's own reason tells someone which of those to fix.
+            raise ValueError(f"Google Drive refused the request: {_google_reason(response)}")
         response.raise_for_status()
         return response.json()
+
+
+def _google_reason(response: httpx.Response) -> str:
+    try:
+        error = response.json().get("error") or {}
+    except ValueError:
+        return f"HTTP {response.status_code}"
+    message = str(error.get("message") or "").strip()
+    return message or f"HTTP {response.status_code}"
 
 
 RECONNECT_MESSAGE = (

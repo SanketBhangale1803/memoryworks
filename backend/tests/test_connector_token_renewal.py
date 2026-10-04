@@ -185,3 +185,18 @@ def test_drive_imports_exactly_the_selected_files_in_batches(monkeypatch):
     assert not second.has_more
     assert requested == ["a1", "missing", "b2"]
     assert [line.split(":")[0] for line in second.next_cursor["failures"]] == ["file missing"]
+
+
+def test_drive_403_carries_googles_reason(graph, monkeypatch):
+    vault = _vault("drive-forbidden@example.com")
+    vault.save("google_drive", "ext", "Google Drive", "valid-token")
+    reason = "Google Drive API has not been used in project 123 before or it is disabled."
+    monkeypatch.setattr(
+        "app.connectors.google_drive.client.httpx.request",
+        lambda *args, **kwargs: _Response({"error": {"code": 403, "message": reason}}, 403),
+    )
+
+    with pytest.raises(ValueError, match="has not been used in project 123"):
+        GoogleDriveConnector(vault).discover(vault.account("google_drive"))
+    # A refusal is not an expired grant; the connection stays.
+    assert vault.account("google_drive") is not None
