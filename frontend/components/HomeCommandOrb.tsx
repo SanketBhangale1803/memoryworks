@@ -4,8 +4,8 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 const EXAMPLE_QUESTIONS = [
-  "Why is payments failing again?",
-  "What changed in checkout this week?",
+  "Why did the last deploy roll back?",
+  "What changed in the auth service this week?",
   "Who owns the ingestion pipeline?",
 ];
 

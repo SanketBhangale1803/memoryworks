@@ -1,50 +1,57 @@
 # MemoryWorks identity
 
-The mark is a glowing **M**: one continuous ribbon that folds over itself, lit
-from within in a blue → violet → pink → peach gradient on black. It was drawn
-as a raster, so it is used as an image, not rebuilt in vector.
+The mark is three slanted, rounded bars rising left to right — read as a
+stylised **M** — above the **MemoryWorks** wordmark. It is one colour: black on
+light, white on dark. Both the symbol and the wordmark are traced vector
+outlines, so no font is needed to draw the logo.
 
 Use **MemoryWorks** as the product name and **memoryworks.app** as the address.
 
 ## Files
 
-All live in `frontend/public/memoryworks/`:
+The master is `frontend/public/memoryworks/logo.svg` (symbol stacked over the
+wordmark, black, transparent). `build-from-svg.py` in this folder derives
+everything else from it — rerun it after changing the master:
+
+    python3 docs/assets/memoryworks/build-from-svg.py
+
+All live in `frontend/public/memoryworks/` unless noted:
 
 | File | Use |
 |---|---|
-| `logo-source.png` | The original 1254 × 1254 artwork on black. The master; everything below is derived from it. |
-| `mark.png` | The mark with transparency (alpha from its own brightness). For dark backgrounds — the public site uses it. |
-| `mark-on-black.png` | The mark on black, square, edges faded to true black. For dark media such as video and social posts. |
-| `app-icon.png`, `app-icon-512.png` | The mark on a black rounded tile. For light backgrounds, the app sidebar, and anywhere an icon is expected. |
-| `apple-icon.png`, `favicon-64.png` | Small tiles. `frontend/app/icon.png` and `apple-icon.png` serve the browser icons. |
+| `logo.svg`, `logo-white.svg` | The stacked logo. The master, and the same in white for dark backgrounds. |
+| `logo.png`, `logo-transparent.png` | The stacked logo as supplied, 4096 × 3186 — on white, and on transparent. |
+| `symbol.svg`, `symbol-white.svg` | The three bars alone, tightly cropped. |
+| `lockup.svg`, `lockup-white.svg` | Horizontal: the symbol beside the wordmark. For navigation bars. |
+| `app-icon.png`, `app-icon-512.png`, `apple-icon.png`, `favicon-64.png` | The white symbol on a near-black rounded tile. |
+| `frontend/components/brandPaths.ts` | The path data the site draws inline (`BrandMark`, `BrandLockup` in `BrandLogo.tsx`). Generated — do not edit. |
 
+`frontend/app/icon.png` and `apple-icon.png` serve the browser icons;
 `frontend/public/og.png` is the 1200 × 630 social preview; `logo.png`,
-`logo-icon.png`, and `logo.jpg` in `frontend/public/` are the same mark at the
-paths older links used.
+`logo-icon.png`, and `logo.jpg` in `frontend/public/` are the tile at the paths
+older links used.
 
-## Colour
+## In the site
 
-Sampled from the mark: blue `#50A8FC`, violet `#A168FA`, lavender `#EAB8FA`,
-pink `#F485AD`, coral `#FC786D`, peach `#FECB91`, deep violet `#360B78`, navy
-`#0C1F77`.
+`BrandMark` and `BrandLockup` draw in `currentColor`, so they take the colour of
+the text around them: ink in the light app, white on the dark public site and
+sign-in page. Size the symbol by width and the lockup by height.
 
-- **Public site** (`frontend/app/site.css`): near-black `#050507`, the full
-  gradient used sparingly — one headline phrase, one border, the light behind
-  the hero.
-- **App** (`frontend/app/globals.css`): light neutrals with a faint violet cast;
-  the accent is violet `#4F2CC7`, the logo's deep violet made dark enough to read
-  on white. Sign-in uses the dark site palette.
+The site palette is separate from the logo: the public site
+(`frontend/app/site.css`) is near-black `#050507` with a blue → violet → pink →
+peach gradient used sparingly; the app (`frontend/app/globals.css`) is light
+neutrals with a violet `#4F2CC7` accent.
 
 ## Rules
 
-- Show the mark on black or near-black, or inside its tile. On a light
-  background, always use the tile — the bare mark's dark folds wash out.
-- Keep clear space of at least a quarter of the mark's width around it.
-- Do not recolour, outline, add a second glow, or rotate it.
+- Black or white only. Do not recolour it, fill it with the gradient, outline,
+  or rotate it.
+- On a busy or mid-tone background, use the app-icon tile.
+- Keep clear space of at least the height of one bar around it.
 
-## The previous mark
+## Previous marks
 
-The folded, two-ribbon **M** in teal and aqua (`build-brand.py`,
-`render-brand.mjs`, `memoryworks-brand-board.png`, and the brand-kit zip in this
-folder) is superseded. It is kept as a record; its exported files were removed
-from the site.
+The glowing gradient **M** (2026-09-30) and, before it, the folded two-ribbon
+**M** in teal and aqua (`build-brand.py`, `render-brand.mjs`,
+`memoryworks-brand-board.png`, and the brand-kit zip in this folder) are
+superseded. Their files were removed from the site.

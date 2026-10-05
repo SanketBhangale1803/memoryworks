@@ -205,9 +205,14 @@ test("authenticated entry opens quickly while still showing a securing state", (
 test("the MemoryWorks mark is the one identity", () => {
   const logo = read("../components/BrandLogo.tsx");
   const frame = read("../components/WorkspaceFrame.tsx");
+  const home = read("../app/page.tsx");
   assert.match(logo, /brand-mark/);
-  assert.match(logo, />memoryworks</);
+  // The wordmark is the traced outline from the logo, not live text.
+  assert.match(logo, /WORDMARK_PATHS/);
+  assert.match(logo, /fill="currentColor"/);
   assert.match(frame, /<BrandMark \/>/);
+  assert.match(home, /<BrandLockup \/>/);
+  assert.doesNotMatch(home, /memoryworks\/mark\.png/);
 });
 
 test("browser API calls use the secure session cookie instead of local storage tokens", () => {

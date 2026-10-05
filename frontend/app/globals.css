@@ -114,11 +114,9 @@ a { color: inherit; text-decoration: none; }
 .shell { min-height: 100vh; }
 .brand-logo { display: inline-flex; align-items: center; gap: 11px; color: var(--ink-strong); }
 .brand-logo.inverted { color: var(--ink); }
-.brand-mark { width: 38px; height: 38px; display: block; flex: 0 0 auto; fill: var(--signal); }
+.brand-mark { width: 38px; height: 38px; display: block; flex: 0 0 auto; }
+.brand-lockup { display: block; width: auto; height: 22px; flex: 0 0 auto; }
 .brand-logo.compact .brand-mark { width: 34px; height: 34px; }
-.brand-wordmark { display: flex; flex-direction: column; gap: 3px; }
-.brand-wordmark strong { color: currentColor; font-size: 17px; font-weight: 650; line-height: 1; letter-spacing: -.045em; }
-.brand-wordmark small { color: var(--ink-3); font-size: 10px; line-height: 1; letter-spacing: .015em; }
 .status-dot { display: inline-block; width: 7px; height: 7px; flex: 0 0 auto; background: var(--accent); border-radius: 50%; box-shadow: 0 0 0 3px var(--accent-soft); }
 .main { min-width: 0; }
 .content { max-width: 1500px; margin: 0 auto; padding: 30px 32px 60px; }
@@ -905,8 +903,7 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
 }
 .om-nav:before { content:""; position:absolute; left:50%; top:0; bottom:0; width:1px; background:transparent; opacity:.55; }
 .om-nav .brand-mark { width:31px; height:31px; }
-.om-nav .brand-wordmark strong { font-size:16px; }
-.om-nav .brand-wordmark small { color:var(--ink-3); font-size:11px; }
+.om-nav .brand-lockup { height:21px; }
 .om-nav nav { display:flex; align-items:center; gap:30px; }
 .om-nav nav a,.om-nav-login { color:var(--ink-3); font-size:11px; font-weight:650; transition:color .2s ease; }
 .om-nav nav a:hover,.om-nav-login:hover { color:var(--ink); }
@@ -1028,7 +1025,7 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
 }
 @media (max-width:760px) {
   .om-nav { width:min(100% - 34px,1420px) }
-  .om-nav { height:68px }.om-nav-login { display:none }.om-nav .brand-wordmark small { display:none }
+  .om-nav { height:68px }.om-nav-login { display:none }
   .om-button.small { min-height:33px }
   .memory-ecosystem { min-height:580px;grid-template-columns:1fr }.source-cloud { width:52%;height:220px;position:absolute;left:-7%;top:30px;opacity:.75 }
   .swarm-core { position:absolute;left:50%;top:185px;transform:translateX(-50%);width:205px;height:205px }
@@ -1107,8 +1104,6 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
   box-shadow:none;
 }
 .brain-site .om-button:hover { border-color:var(--accent);background:var(--accent);color:var(--on-accent);transform:translateY(-1px) }
-.brain-site .brand-mark { fill:var(--brain-red) }
-.brain-site .brand-wordmark small { color:var(--ink-3) }
 
 /* Calm, explicit authentication */
 .login-memory-lines{margin-top:52px;max-width:490px;display:flex;flex-direction:column}.login-memory-lines span{min-height:62px;display:grid;grid-template-columns:34px auto 1fr;gap:13px;align-items:center}.login-memory-lines i{width:34px;height:34px;display:grid;place-items:center;border:1px solid var(--accent);border-radius:8px;color:var(--accent);font:normal 750 11px/1 ui-monospace,monospace}.login-memory-lines b{color:var(--ink-3);font-size:11px}.login-memory-lines em{height:1px;background:var(--accent-soft)}.oauth-stack{display:flex;flex-direction:column;gap:9px}.provider-g{font:800 14px/1 sans-serif}.login-divider{height:54px;display:flex;align-items:center;color:var(--ink-2);font:700 11px/1 var(--font-inter), system-ui, sans-serif;text-transform:uppercase}.login-divider:before,.login-divider:after{content:"";height:1px;flex:1;background:var(--surface-3)}.login-divider span{padding:0 12px}
@@ -1203,9 +1198,7 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
 .home-nav.stuck { border-bottom-color:var(--line); }
 .home-nav > div { width:min(1180px,calc(100% - 56px)); height:74px; margin:0 auto; display:flex; align-items:center; gap:38px; }
 .home-nav .brand-logo { color:var(--ink); }
-.home-nav .brand-mark { width:32px; height:32px; fill:var(--maroon); }
-.home-nav .brand-wordmark strong { font-size:16px; letter-spacing:-.045em; }
-.home-nav .brand-wordmark small { color:var(--ink-faint); }
+.home-nav .brand-lockup { height:21px; }
 .home-nav nav { display:flex; align-items:center; gap:30px; margin-left:12px; }
 .home-nav nav a { color:var(--ink-soft); font-size:13px; font-weight:520; transition:color .25s var(--ease); }
 .home-nav nav a:hover { color:var(--maroon); }
@@ -1223,7 +1216,7 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
 @keyframes chat-settle { from{opacity:0;transform:translateY(26px) scale(.985)} to{opacity:1;transform:none} }
 .chat-bar { min-height:60px; padding:0 18px; display:flex; align-items:center; gap:14px; border-bottom:1px solid var(--line); background:var(--surface); }
 .chat-bar-id { display:flex; align-items:center; gap:10px; }
-.chat-bar-id .brand-mark { width:24px; height:24px; fill:var(--maroon); }
+.chat-bar-id .brand-mark { width:28px; height:24px; }
 .chat-bar-id strong { font-size:13px; font-weight:640; letter-spacing:-.01em; }
 .chat-bar-id small { padding:3px 7px; border-radius:5px; background:var(--red-wash); color:var(--ink-3); font:700 11px/1 var(--font-inter), system-ui, sans-serif; letter-spacing:.09em; text-transform:uppercase; }
 
@@ -1256,7 +1249,7 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
 /* Resting state: an invitation, not an empty box. */
 .chat-rest { min-height:312px; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:8px; }
 .chat-rest-mark { width:58px; height:58px; margin-bottom:16px; display:grid; place-items:center; position:relative; }
-.chat-rest-mark .brand-mark { width:30px; height:30px; fill:var(--maroon); position:relative; z-index:2; }
+.chat-rest-mark .brand-mark { width:34px; height:30px; position:relative; z-index:2; }
 .chat-rest-mark i { position:absolute; inset:0; border:1px solid var(--accent-line); border-radius:50%; animation:rest-ripple 4.5s var(--ease) infinite; }
 .chat-rest-mark i:nth-child(2) { animation-delay:-1.5s; }
 .chat-rest-mark i:nth-child(3) { animation-delay:-3s; }
@@ -1306,7 +1299,7 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
 .chat-answer { padding:22px; border:1px solid var(--line-firm); border-radius:10px; background:var(--surface); box-shadow:var(--shadow-rest); animation:rise .6s var(--ease) both; }
 .answer-head { display:flex; align-items:center; justify-content:space-between; gap:14px; margin-bottom:15px; }
 .answer-head > span { display:inline-flex; align-items:center; gap:8px; color:var(--ink-3); font:700 11px/1 var(--font-inter), system-ui, sans-serif; letter-spacing:.1em; text-transform:uppercase; }
-.answer-head > span .brand-mark { width:16px; height:16px; fill:var(--maroon); }
+.answer-head > span .brand-mark { width:20px; height:16px; }
 .answer-grounded { display:inline-flex; align-items:center; gap:7px; padding:5px 9px; border-radius:999px; background:var(--red-wash); color:var(--maroon); font:700 11px/1 ui-monospace,monospace; }
 .answer-grounded i { width:5px; height:5px; border-radius:50%; background:var(--red); }
 .chat-answer > p { margin:0; color:var(--ink); font-size:15px; line-height:1.75; }
@@ -1401,8 +1394,7 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
 .login-page { display:flex; flex-direction:column; }
 .login-nav { width:min(1180px,calc(100% - 56px)); height:74px; margin:0 auto; display:flex; align-items:center; justify-content:space-between; position:relative; z-index:2; border-bottom:1px solid var(--line); }
 .login-nav .brand-logo { color:var(--ink); }
-.login-nav .brand-mark { width:32px; height:32px; fill:var(--maroon); }
-.login-nav .brand-wordmark small { color:var(--ink-faint); }
+.login-nav .brand-lockup { height:21px; }
 .login-nav > a:last-child { color:var(--ink-soft); font-size:13px; font-weight:560; }
 .login-nav > a:last-child:hover { color:var(--maroon); }
 
@@ -1476,7 +1468,7 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
 
 .ws-bar { position:relative; z-index:5; display:flex; align-items:center; justify-content:space-between; gap:18px; padding:14px max(20px,calc((100vw - 1080px)/2)); border-bottom:1px solid var(--line); background:var(--bg); }
 .ws-id { display:inline-flex; align-items:center; gap:11px; color:var(--ink); }
-.ws-id .brand-mark { width:28px; height:28px; fill:var(--maroon); }
+.ws-id .brand-mark { width:32px; height:28px; }
 .ws-id span { display:flex; flex-direction:column; gap:1px; }
 .ws-id strong { font-size:13.5px; font-weight:650; letter-spacing:-.02em; }
 .ws-id small { color:var(--ink-faint); font-size:11px; letter-spacing:.04em; text-transform:uppercase; }
@@ -1563,7 +1555,7 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
 .ws-onboard .home-btn { margin-top:26px; }
 .ws-orb { position:relative; display:inline-flex; align-items:center; justify-content:center; width:60px; height:60px; }
 .ws-orb i { position:absolute; inset:0; border-radius:50%; background:transparent; animation:ws-breathe 5.5s var(--ease) infinite; }
-.ws-orb .brand-mark { position:relative; width:28px; height:28px; fill:var(--maroon); }
+.ws-orb .brand-mark { position:relative; width:34px; height:28px; }
 @keyframes ws-breathe { 0%,100%{transform:scale(1);opacity:.8} 50%{transform:scale(1.18);opacity:1} }
 
 .ws-starters { margin-top:26px; display:flex; flex-wrap:wrap; justify-content:center; gap:8px; }
@@ -2510,7 +2502,7 @@ select:focus, .project-select:focus { outline:none; border-color:var(--ink-4); b
 
 .nav-brand { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:4px 6px 2px; }
 .nav-brand a { min-width:0; display:inline-flex; align-items:center; gap:10px; color:var(--ink); }
-.nav-brand .brand-mark { flex:none; width:26px; height:26px; fill:var(--accent); }
+.nav-brand .brand-mark { flex:none; width:30px; height:26px; }
 .nav-brand span { min-width:0; display:flex; flex-direction:column; gap:1px; }
 .nav-brand strong { font-size:13.5px; font-weight:650; letter-spacing:-.02em; }
 .nav-brand small { overflow:hidden; color:var(--ink-3); font-size:11.5px; text-overflow:ellipsis; white-space:nowrap; }
@@ -2815,7 +2807,7 @@ select:focus, .project-select:focus { outline:none; border-color:var(--ink-4); b
 /* ---- Empty states */
 .ws-one .ws-rest, .ws-one .ws-onboard { padding:48px 0 24px; }
 .ws-one .ws-orb { width:40px; height:40px; border-radius:var(--r-lg); background:var(--surface); box-shadow:var(--shadow-sm); }
-.ws-one .ws-orb .brand-mark { width:22px; height:22px; fill:var(--accent); }
+.ws-one .ws-orb .brand-mark { width:26px; height:22px; }
 .ws-one .ws-rest h1, .ws-one .ws-onboard h1 { margin-top:18px; font-size:clamp(22px,2.6vw,28px); }
 .ws-one .ws-starters { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; width:100%; max-width:560px; }
 .ws-one .ws-starters button { min-height:44px; padding:10px 14px; border-color:var(--line); border-radius:var(--r-lg); color:var(--ink-2); font-size:13px; text-align:left; box-shadow:none; }
@@ -2871,8 +2863,7 @@ select:focus, .project-select:focus { outline:none; border-color:var(--ink-4); b
 
 /* The mark is its own dark tile now; no second tile around it. */
 .ws-one .ws-orb { width: 56px; height: 56px; background: none; box-shadow: none; }
-.ws-one .ws-orb .brand-mark { width: 56px; height: 56px; filter: drop-shadow(0 10px 24px rgba(79, 44, 199, .22)); }
-.nav-brand .brand-mark { border-radius: 7px; }
+.ws-one .ws-orb .brand-mark { width: 56px; height: 56px; }
 
 /* ==========================================================================
    Sign-in, in the public site's dark: the step between memoryworks.app and
@@ -2900,7 +2891,6 @@ select:focus, .project-select:focus { outline:none; border-color:var(--ink-4); b
 .login-page .email-login-form input { background: rgba(255, 255, 255, .03); color: var(--ink); }
 .login-page .login-stage aside h1 { background: linear-gradient(100deg, #f4f3fb 0%, #f4f3fb 45%, #eab8fa 75%, #fecb91 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .login-page .login-memory-lines i { background: rgba(255, 255, 255, .03); }
-.login-page .login-nav .brand-mark { border-radius: 8px; }
 .login-page .dev-access .stack, .login-page .provider-setup { background: var(--surface); }
 
 /* Docs on light: the logo's gradient, deepened so it reads on white. */
