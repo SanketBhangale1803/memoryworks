@@ -57,9 +57,12 @@ envelopes, artifacts, skills), [`CONTEXT_ACTIVATION_SWARM.md`](CONTEXT_ACTIVATIO
               state, 66 tables                          75 vertex / 94 edge types
 ```
 
+In production the web app runs on Vercel and everything below the clients box
+runs on one durable server; see [Deployment](#deployment).
+
 | Layer | Technology |
 |---|---|
-| Frontend | Next.js 15 app router, React 19, TypeScript, no UI framework |
+| Frontend | Next.js 15 app router, React 19, TypeScript, no UI framework; three.js, GSAP, and Lenis on the public landing page only, loaded lazily |
 | Backend | FastAPI, Python 3.13, `pydantic-settings` |
 | Application state | SQLite in WAL mode (`backend/app/core/database.py`) |
 | Graph | ArcadeDB over HTTP; an in-memory store with the same contract for tests |
@@ -75,19 +78,21 @@ envelopes, artifacts, skills), [`CONTEXT_ACTIVATION_SWARM.md`](CONTEXT_ACTIVATIO
 ```text
 backend/app/
   main.py               app factory, middleware order, lifespan workers
-  api/                  routes.py (/api, 152 routes), org_routes.py (/api/org, 31), schemas.py
+  api/                  routes.py (/api, 155 routes), org_routes.py (/api/org, 31), schemas.py
   core/                 config, SQLite schema + column migrations, API guard, logging
   auth/                 sessions, dev/demo/email/OAuth login, API keys, MCP OAuth, token vault
   governance/           teams, project grants, source/memory scope binding
   connectors/           GitHub, Slack, Notion, Google Drive, Teams, remote MCP, REST pull,
-                        signed package registry, runtime, sync engine
-  ingestion/            one ingest path, repository scanner, documents, web fetch, sanitizer
+                        signed package registry, runtime, sync engine, record → memory
+                        applier, connection diagnosis (status.py)
+  ingestion/            one ingest path, repository scanner, documents, web fetch, sanitizer,
+                        chat import (chat_import.py)
   graph/                GraphStore contract, ArcadeDB + in-memory stores, ranker, traversal
   hcag_adapter/         routing, context windows, context store, memory dynamics
   swarm/                concurrent specialist retrieval + context compiler
   memory/               atomic memory, beliefs, authority, change sets,
                         revisions/envelopes/artifacts/skill specs, briefings
-  retrieval/            the ask pipeline and its lanes, memory_search ranking
+  retrieval/            the ask pipeline and its lanes, memory_search ranking, live commit lookup
   intelligence/         trust, drift, correlation, simulation, blast radius
   outcomes/             context → action → outcome ledger
   skills/               learned skills distilled from verified execution runs
@@ -99,13 +104,14 @@ backend/app/
   llm/                  model provider catalog and grounded JSON generation
   approvals/ agentgate_adapter/ audit/   action proposals, policy, audit trail
   runbooks/ reliability/ importers/      legacy procedure extraction and assertions (no UI), incident importers
-backend/tests/          51 pytest modules
+backend/tests/          59 pytest modules
 backend/evals/          briefing evaluation with known-answer cases
-frontend/               Next.js app (20 routes), components, lib, node:test suites
+frontend/               Next.js app (20 routes), components, lib, node:test suites;
+                        components/landing + lib/landing hold the public page's 3D scenes
 mcp_server/             standalone MCP server + contract tests
 python_sdk/             typed sync/async client and the `orgmemory` CLI
 desktop/                Tauri 2 OS bridge (keychain, folders, local MCP sidecar)
-deploy/server/          Caddy + bootstrap scripts for a single-server deployment
+deploy/server/          Caddy, compose overrides, up/verify/backup/restore scripts for one server
 ```
 
 ---
@@ -175,13 +181,15 @@ catch the omission.
 ## Acquisition: connectors
 
 ```text
-provider OAuth / token ─► OAuthTokenVault (Fernet locally, AWS KMS or OCI Vault in production)
+provider OAuth / token ─► OAuthTokenVault (Fernet with an explicit key, AWS KMS, or OCI Vault)
                                   │
 ConnectorRegistry (signed, version-pinned manifests)
                                   │
 ConnectorRuntime ── authorize · discover · invoke · request_write → approval → execute_approved
                                   │
-SyncEngine ── enqueue / verified webhook ─► connector_sync_jobs ─► sync worker ─► ingest_item
+SyncEngine ── enqueue / verified webhook ─► connector_sync_jobs ─► sync worker
+                                  │
+MemoryWorksSyncApplier ── record → ingestion source type ─► ingest_item
 ```
 
 - **Built-in connectors:** GitHub, Slack, Notion, Google Drive, Microsoft Teams.
@@ -192,6 +200,27 @@ SyncEngine ── enqueue / verified webhook ─► connector_sync_jobs ─► s
   (`url_security.py`).
 - **Webhooks:** GitHub and Slack events are signature-verified, deduplicated in
   `connector_webhook_deliveries`, and trigger incremental reconciliation.
+- **Picking what to import:** `GET /api/connectors/{provider}/resources` lists
+  what a connection can see (for Drive, the 100 most recently edited files, read
+  live). Chosen Drive files are imported as a `selected-files` sync job whose
+  cursor carries the file ids; Docs, Sheets, and Slides are exported as text and
+  PDFs and Office files are parsed.
+- **Records to memory:** `connectors/application.py` maps each record to an
+  ingestion source type by provider and kind (a Drive PDF → `pdf`, a GitHub
+  commit → `github_commit`, a Teams message → `text`, anything unknown →
+  `document`). Ingestion rejects source types it does not know, so passing the
+  provider name instead refused every connector except Slack.
+- **Token renewal:** Drive and GitHub grants renew from their refresh tokens
+  before expiry and once after a 401. A grant the provider refuses is marked
+  expired, so Sources offers Reconnect instead of a connection whose every call
+  fails. A Drive 403 carries Google's own reason (API disabled, missing scope,
+  quota) through to the person.
+- **Connection diagnosis:** `connectors/status.py` reads connection records —
+  status, expiry, refreshability, scopes (never tokens), connection attempts from
+  the last 14 days and how each ended, and recent imports — and names the likely
+  fault: an attempt that never came back from the provider (Google's Testing mode
+  or a restricted scope), a refusal, a failed exchange, an expired or revoked
+  grant, or a connection with nothing imported.
 - **Writes:** a connector write is a `connector_tool_calls` row in
   `pending_approval`; it executes only after an admin resolves it.
 - **Importers:** incident-tool migration interfaces (PagerDuty live; others
@@ -216,6 +245,21 @@ raw item
   → scope binding             the source's team grants copied to every derived memory
   → stale marking             dependent artifacts and skill specs flagged, never rewritten
 ```
+
+Two entry points sit in front of it:
+
+- **Repository ingestion** (`POST /api/ingest/github`) runs in the background
+  when called with `background: true`: it returns the job at once and the web
+  app polls `/api/ingest/jobs/{job_id}`, because a request that outlives the
+  site's proxy is cut off while the server keeps working. A second request for a
+  repository already in progress joins that job; repository ingestions run one at
+  a time, and the ArcadeDB client retries `ConcurrentModificationException` with
+  backoff. Without the flag (SDK, MCP) the call blocks and returns the result.
+- **Chat import** (`POST /api/chat/import`, `ingestion/chat_import.py`)
+  recognises an instruction to import plus a nameable source — a GitHub
+  repository or all of them, a URL, Google Drive — and starts that import; the
+  chat follows the job to the end. Questions about importing still go to the
+  answer path.
 
 Repository code is read structurally: manifests, service tables, routes,
 config schemas, and docstrings can become memory; CSS, JSX fragments, and
@@ -281,6 +325,9 @@ general knowledge as company truth.
 question (+ thread history)
   │
   ├─ assistant_reply            greetings, thanks, "what is MemoryWorks" → deterministic, no model
+  ├─ connection questions       answered from connectors/status.py, before any search
+  ├─ commit lookup              a SHA prefix matching one stored commit → read live from
+  │                             GitHub (message, files, bounded patch); stored record if refused
   │
   ├─ continuity.resolve         bind pronouns to the thread's subject;
   │                             a dangling reference is asked about, not guessed
@@ -307,6 +354,24 @@ question (+ thread history)
   └─ record_context             opens an outcome-ledger row; returns context_event_id
 ```
 
+Two entry points share this pipeline:
+
+- `POST /api/ask` (API, SDK, MCP) deliberates: the candidates run in parallel
+  under a wall-clock deadline (`ORG_MEMORY_ANSWER_DEADLINE_SECONDS`, default 40);
+  whatever finished is judged and stragglers are dropped.
+- `POST /api/ask/stream` (the chat) narrates each stage as it starts — checking
+  approved memory, searching, which sources were read, writing, checking against
+  sources, widening, falling back to general knowledge — and streams the model's
+  words as they are written, ending with exactly what `/api/ask` would return.
+  Because the answer you watch is the answer you get, it writes one answer
+  instead of judged candidates. Step details name sources, never scores or ids.
+
+GLM calls ask for low reasoning effort (`GLM_REASONING_EFFORT`, default `low`);
+at the provider's default effort one call took minutes, longer than the site's
+proxy waits. The deterministic keyword fallback first finds the question's
+subject and only quotes lines near a mention of it, so framing words like
+"setup" cannot pull in unrelated code.
+
 When evidence is insufficient for a company question, the pipeline abstains
 rather than fabricates. The model provider only changes who writes the
 answer; every provider receives the same retrieved evidence
@@ -316,14 +381,24 @@ Agent mode in the chat is a separate entry point: `/api/org/ask` runs a
 tool-using agent over the organizational-operations surface (below), and
 `/api/org/ask/stream` — what the chat calls — streams that session as NDJSON
 within one request, so a load-balanced deployment cannot lose the
-process-local run mid-answer. After each turn, `/api/org/followups` drafts the
-suggested next questions from what the turn found.
+process-local run mid-answer. Both streams send a keep-alive every 10 seconds so
+a proxy never sees an idle connection. The run also stores each step as it goes:
+if the stream drops after the run started, the chat polls
+`/api/org/ask/{run_id}` and shows what finished instead of a network error.
+After each turn, `/api/org/followups` drafts the suggested next questions from
+what the turn found.
+
+Plans the agent proposes need a `space_id`; the executor fills it from the
+top-level or only space, resolves a space name or repository path when exactly
+one space fits, refuses spaces outside the caller's access, and otherwise
+returns the valid choices. A run that ends after refused proposals says nothing
+was filed.
 
 ---
 
 ## Pre-action briefings
 
-`memory/briefing.py` answers an intent ("restart the payments pool") rather
+`memory/briefing.py` answers an intent ("raise worker concurrency on the ingest queue") rather
 than a question. It is deliberately model-free, so the same intent produces
 the same verdict twice:
 
@@ -533,15 +608,30 @@ stays in the backend.
 - **Post-login surface.** `/workspace` renders `WorkspaceChat`, the one window:
   a composer with Ask/Agent mode, memory-space, and model chips; answers with
   folded evidence; Agent turns rendered by `components/AgentTurn.tsx` with
-  their steps, citations, and inline plan approval. Chat history is kept per
-  workspace in the browser (`lib/threads.ts`).
+  their steps, citations, and inline plan approval. Ask answers are narrated
+  (`components/AskTrace.tsx`, with the draft streaming in as it is written), and
+  an import instruction becomes an `ImportTurn` that follows its job. Chat
+  history is kept per workspace in the browser (`lib/threads.ts`); words live in
+  component state and only the finished trail is saved with the thread.
 - **Retired routes.** `/webmcp`, `/ask`, `/runbooks`, `/simulation`,
   `/benchmarks`, `/updates`, `/drift`, `/reliability`, and `/admin` redirect
   (`next.config.ts`) to the chat or Approvals.
 - **Public surfaces.** The landing page, `/docs`, and `/login` render outside
   the frame.
-- **Design.** A custom token-based design system in `app/globals.css`; no
-  component library.
+- **Landing page.** `app/page.tsx` is server-rendered text; each moving part is
+  a small client island in `components/landing/`. The hero's 3D logo and the
+  interactive memory graph (`lib/landing/heroScene.ts`, `graphScene.ts`) load
+  three.js when the browser is idle or the section approaches, and render only
+  while on screen in a visible tab. GSAP ScrollTrigger and Lenis
+  (`LandingMotion.tsx`) load after hydration and drive the scroll reveals and the
+  pinned loop section. Nothing is hidden before that JavaScript runs, and
+  `prefers-reduced-motion` keeps the page still.
+- **Brand.** `public/memoryworks/logo.svg` is the master;
+  `docs/assets/memoryworks/build-from-svg.py` generates `components/brandPaths.ts`,
+  the symbol and lockup SVGs, the icons, and `og.png` from it. `BrandMark` and
+  `BrandLockup` draw inline in `currentColor`.
+- **Design.** A custom token-based design system in `app/globals.css`, and the
+  public site's own tokens in `app/site.css`; no component library.
 
 ---
 
@@ -550,14 +640,45 @@ stays in the backend.
 | Target | Shape |
 |---|---|
 | Local | `docker-compose.yml`: `arcadedb`, `backend`, `frontend`, `mcp` (profile). Or `make backend` / `make frontend` against a local ArcadeDB. |
-| Single server | `compose.production.yml` adds Caddy with automatic TLS: `app.`, `api.`, and `mcp.` subdomains, with proxy-level body caps (128 MB API, 10 MB MCP). Connector grants are encrypted through OCI Vault (`CONNECTOR_VAULT_PROVIDER=oci-kms`). See `deploy/server/`. |
-| Vercel (memoryworks.app) | `vercel.json` runs the frontend and a containerized backend (`Dockerfile.vercel`), routing `/api/*` and `/.well-known/*` to the backend. Production runs here with real sign-in (`PUBLIC_DEMO_MODE=false`), the in-memory graph, and SQLite at `/tmp/orgmemory/`. Vercel containers are stateless, so that state is **not durable** — a new container starts empty apart from what sessions rebuild. The single-VM target is the durable option. `PUBLIC_DEMO_MODE=true` is a stricter profile for a shared, disposable demo. |
+| Single server | `compose.production.yml` adds Caddy with automatic TLS: `app.`, `api.`, and `mcp.` subdomains, with proxy-level body caps (128 MB API, 10 MB MCP). See `deploy/server/`. |
+| memoryworks.app | Split: Vercel serves the web app; one VPS runs the API, MCP, and data (below). |
+
+memoryworks.app runs like this:
+
+```text
+browser ──► memoryworks.app (Vercel: Next.js only)
+              │  /api/*, /.well-known/*  ── external rewrite ──┐
+              │                                                ▼
+              │                     api.memoryworks.app  ─► Caddy ─► backend ─► SQLite (WAL)
+MCP clients ──────────────────────► mcp.memoryworks.app  ─► Caddy ─► mcp          ArcadeDB
+                                    (one VPS, deploy/server/compose.api-only.yml)
+```
+
+- The browser only ever talks to memoryworks.app, so cookies and the registered
+  OAuth callbacks (`https://memoryworks.app/api/auth/*/callback`) stay
+  same-origin. `vercel.json` has only the frontend service plus the two rewrites.
+- `compose.api-only.yml` overrides the production compose: backend, MCP,
+  ArcadeDB, and Caddy (`Caddyfile.api-only`, streaming responses flushed
+  immediately); the frontend service is not started. SQLite and ArcadeDB live on
+  volumes, so state survives restarts and redeploys.
+- Deploy with `git pull && ./deploy/server/up.sh && ./deploy/server/verify.sh`
+  on the server. `up.sh` refuses to start without the secrets the configured
+  vault needs. Vercel builds the web app from `main` on every push.
+- Connector grants are encrypted with `CONNECTOR_VAULT_PROVIDER=local` and an
+  explicit Fernet `INTEGRATION_ENCRYPTION_KEY` kept outside the server (a copy is
+  needed to restore). AWS KMS or OCI Vault are the alternatives.
+- `backup.sh` runs nightly from cron and keeps 14 days of archives on the
+  server; `restore.sh` restores one.
+- The rewrite cuts off requests that run too long, so anything slow that the web
+  app calls must either stream with keep-alives (the Ask and Agent streams) or
+  return a job and be polled (repository ingestion, connector sync).
+- `PUBLIC_DEMO_MODE=true` is a stricter profile for a shared, disposable demo.
 
 `settings.assert_safe_for_environment()` refuses to start with
 `ENVIRONMENT=production` when development trust boundaries remain: dev login,
 a default or short `JWT_SECRET`, a default ArcadeDB password, deterministic
-embeddings, no real sign-in provider, a local connector vault instead of AWS
-KMS or OCI Vault, non-HTTPS public URLs, or execution enabled without an
+embeddings, no real sign-in provider, a local connector vault without an
+explicit Fernet `INTEGRATION_ENCRYPTION_KEY`, non-HTTPS public URLs, or execution enabled without an
 isolated profile. Public demo mode has its own, stricter checklist.
 
 CI (`.github/workflows/ci.yml`) runs four jobs on every push: backend (ruff,
