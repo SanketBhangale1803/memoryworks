@@ -176,7 +176,7 @@ html.lenis { scroll-behavior: auto; }
 
 .mw-brief { --v: var(--s-coral); position: relative; padding: 26px 28px 22px; border-radius: 0 0 22px 22px; background: linear-gradient(180deg, #0f0d1a, #09090f) padding-box, var(--s-grad) border-box; border: 1px solid transparent; box-shadow: 0 40px 100px rgba(0, 0, 0, .5), 0 30px 90px rgba(161, 104, 250, .14); }
 .mw-brief.v-proceed { --v: var(--s-blue); }
-.mw-brief.v-blocked { --v: var(--s-coral); }
+.mw-brief.v-proceed_with_context { --v: var(--s-violet); }
 .mw-brief.v-requires_approval { --v: var(--s-pink); }
 .mw-brief-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .mw-brief-head span { display: inline-flex; align-items: center; gap: 10px; color: var(--s-ink-2); font-size: 14px; font-weight: 600; }
@@ -221,7 +221,7 @@ html.lenis { scroll-behavior: auto; }
 .mw-verdicts b { flex: none; color: var(--v); font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
 .mw-verdicts .v-proceed { --v: var(--s-blue); }
 .mw-verdicts .v-requires_approval { --v: var(--s-pink); }
-.mw-verdicts .v-blocked { --v: var(--s-coral); }
+.mw-verdicts .v-proceed_with_context { --v: var(--s-violet); }
 .mw-verdicts .v-none { --v: var(--s-ink-2); }
 
 .mw-owners { display: grid; gap: 10px; }

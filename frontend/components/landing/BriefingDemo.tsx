@@ -3,7 +3,7 @@
 import { BrandMark } from "@/components/BrandLogo";
 import { useEffect, useRef, useState } from "react";
 
-type Verdict = "proceed" | "requires_approval" | "blocked";
+type Verdict = "proceed" | "proceed_with_context" | "requires_approval";
 
 type Scenario = {
   tab: string;
@@ -35,7 +35,7 @@ const SCENARIOS: Scenario[] = [
     tab: "Cluster upgrade",
     task: "upgrade the search cluster to the next major version",
     service: "search-cluster",
-    verdict: "blocked",
+    verdict: "requires_approval",
     title: "A recorded decision holds this upgrade until the analyzer migration ships.",
     rows: [
       ["Decision", "ADR-014: stay on the current major until analyzers are migrated"],
@@ -61,7 +61,7 @@ const SCENARIOS: Scenario[] = [
     tab: "Webhook retry",
     task: "add retries to the outbound email webhook",
     service: "notifications",
-    verdict: "proceed",
+    verdict: "proceed_with_context",
     title: "This matches a change that worked — with one thing to keep.",
     rows: [
       ["Precedent", "Same retry policy shipped for SMS; recorded outcome: succeeded"],
@@ -75,7 +75,7 @@ const SCENARIOS: Scenario[] = [
 const VERDICT_LABEL: Record<Verdict, string> = {
   proceed: "Proceed",
   requires_approval: "Requires approval",
-  blocked: "Blocked",
+  proceed_with_context: "Proceed with context",
 };
 
 const CYCLE_MS = 7000;

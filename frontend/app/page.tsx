@@ -111,7 +111,7 @@ export default function HomePage() {
             </p>
             <ul className="mw-checks">
               <li>One call before any consequential change</li>
-              <li>A verdict: proceed, requires approval, or blocked</li>
+              <li>A verdict: proceed, proceed with context, or requires approval</li>
               <li>Every line cited to the source it came from</li>
             </ul>
           </div>
@@ -160,9 +160,9 @@ export default function HomePage() {
                 <p>Every briefing ends in a call an agent can act on.</p>
               </div>
               <ul className="mw-verdicts" aria-label="Briefing verdicts">
-                <li className="v-proceed"><b>Proceed</b>matches what worked before</li>
+                <li className="v-proceed"><b>Proceed</b>nothing on record says wait</li>
+                <li className="v-proceed_with_context"><b>With context</b>go ahead, knowing this</li>
                 <li className="v-requires_approval"><b>Requires approval</b>a person decides</li>
-                <li className="v-blocked"><b>Blocked</b>a recorded decision says no</li>
                 <li className="v-none"><b>No memory</b>nothing known — not a yes</li>
               </ul>
             </article>
