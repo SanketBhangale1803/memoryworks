@@ -24,6 +24,15 @@ if [[ ${mcp_status} != 401 ]]; then
   exit 1
 fi
 
+# Imports run in the worker; with it down they queue up and never finish.
+compose=(docker compose --env-file .env.production -f compose.production.yml)
+[[ -n ${SITE_URL:-} ]] && compose+=(-f deploy/server/compose.api-only.yml)
+if [[ -z $("${compose[@]}" ps --status running -q worker) ]]; then
+  echo "The worker is not running: imports and syncs will queue without finishing." >&2
+  echo "Check it with: ${compose[*]} logs worker" >&2
+  exit 1
+fi
+
 if [[ -n ${SITE_URL:-} ]]; then
   # Only meaningful after the site forwards /api/* here.
   if curl -fsS "${SITE_URL}/api/health" | grep -q '"storage":"durable"'; then
@@ -36,4 +45,4 @@ else
 fi
 
 echo
-echo "API, OAuth discovery, durable storage, and MCP checks passed."
+echo "API, OAuth discovery, durable storage, MCP, and worker checks passed."

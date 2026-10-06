@@ -1,3 +1,4 @@
+from .limits import LLMUnavailable, carry_budget, current_budget, llm_budget
 from .providers import (
     configured_model,
     generate_grounded_json,
@@ -7,6 +8,10 @@ from .providers import (
 )
 
 __all__ = [
+    "LLMUnavailable",
+    "carry_budget",
+    "current_budget",
+    "llm_budget",
     "configured_model",
     "generate_grounded_json",
     "model_catalog",

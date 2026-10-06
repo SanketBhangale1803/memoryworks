@@ -117,10 +117,11 @@ function withoutDraftCitations(text: string) {
   return text.replace(/\s*\[S\d+\]/g, "");
 }
 
-export function AskTrace({ trace, running }: { trace: Trace; running: boolean }) {
-  const [open, setOpen] = useState(running);
+export function AskTrace({ trace, running, stalled = false }: { trace: Trace; running: boolean; stalled?: boolean }) {
+  const [open, setOpen] = useState(running || stalled);
   // Open while it works, so the work is visible; folded once the answer lands.
-  useEffect(() => setOpen(running), [running]);
+  // A failed answer stays open on the step where it stopped.
+  useEffect(() => setOpen(running || stalled), [running, stalled]);
 
   if (!trace.steps.length) return null;
   const current = trace.steps.at(-1)!;
@@ -134,6 +135,11 @@ export function AskTrace({ trace, running }: { trace: Trace; running: boolean })
           <>
             <span className="ws-working-dots" aria-hidden="true"><i /><i /><i /></span>
             {current.label}…
+          </>
+        ) : stalled ? (
+          <>
+            Stopped at: {current.label}
+            <small>{seconds}s</small>
           </>
         ) : (
           <>

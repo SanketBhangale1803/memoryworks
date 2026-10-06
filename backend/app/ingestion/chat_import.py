@@ -46,7 +46,20 @@ _REPO_WORD = re.compile(r"\b(?:repo|repos|repository|repositories|github)\b", re
 # named as a place things come from.
 _DRIVE = re.compile(
     r"\b(?:google\s+drive|gdrive|google\s+docs|my\s+drive"
-    r"|(?:from|in|on|out\s+of)\s+(?:my\s+|our\s+|the\s+)?drive)\b",
+    r"|(?:from|in|on|out\s+of)\s+(?:my\s+|our\s+|the\s+)?(?:drive|gd))\b",
+    re.IGNORECASE,
+)
+# "first 3 files", "the latest five docs", "2 sheets": how many to import.
+_NUMBER_WORDS = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+}  # fmt: skip
+_COUNT = re.compile(
+    r"\b(?:(?:first|latest|last|newest|top|recent|most\s+recent)\s+)?"
+    r"(\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten)\s+"
+    r"(?:(?:most\s+)?(?:recent|recently\s+edited|latest|new(?:est)?)\s+)?"
+    r"(?:google\s+)?(?:files?|docs?|documents?|pdfs?|sheets?|spreadsheets?|slides?"
+    r"|decks?|presentations?)\b",
     re.IGNORECASE,
 )
 _QUOTED = re.compile(r"[\"“”'‘’]([^\"“”'‘’]{2,120})[\"“”'‘’]")
@@ -94,12 +107,15 @@ class ImportIntent:
     ``source`` is ``github`` (one repository), ``github_all``, ``website``,
     ``google_drive``, or another named provider that chat cannot import from
     yet. ``target`` is the repository slug, URL, or Drive name filter.
-    ``kinds`` narrows a Drive import to documents, spreadsheets, or slides.
+    ``kinds`` narrows a Drive import to documents, spreadsheets, or slides, and
+    ``limit`` is how many files were asked for ("the first 3 files"); 0 means
+    no number was given.
     """
 
     source: str
     target: str = ""
     kinds: tuple[str, ...] = ()
+    limit: int = 0
 
 
 def parse_import(text: str) -> ImportIntent | None:
@@ -121,11 +137,23 @@ def parse_import(text: str) -> ImportIntent | None:
     if _REPO_WORD.search(instruction) and (match := _SLUG.search(instruction)):
         return ImportIntent("github", match.group(1).removesuffix(".git"))
     if _DRIVE.search(instruction):
-        return ImportIntent("google_drive", _drive_name(instruction), _drive_kinds(instruction))
+        return ImportIntent(
+            "google_drive",
+            _drive_name(instruction),
+            _drive_kinds(instruction),
+            _count(instruction),
+        )
     for provider, pattern in _OTHER_SOURCES.items():
         if pattern.search(instruction):
             return ImportIntent(provider)
     return None
+
+
+def _count(instruction: str) -> int:
+    if not (match := _COUNT.search(instruction)):
+        return 0
+    value = match.group(1).casefold()
+    return _NUMBER_WORDS.get(value) or int(value)
 
 
 def _drive_name(instruction: str) -> str:

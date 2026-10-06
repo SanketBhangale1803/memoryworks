@@ -19,7 +19,7 @@ from concurrent.futures import ThreadPoolExecutor, wait
 from typing import Any
 
 from app.graph.base import GraphEvidence
-from app.llm import generate_grounded_json
+from app.llm import carry_budget, generate_grounded_json
 
 from .reasoner import llm_answer
 
@@ -96,8 +96,9 @@ def deliberate(
     futures = [
         (
             lens["id"],
+            # Each candidate's call counts against the answer's model budget.
             pool.submit(
-                llm_answer,
+                carry_budget(llm_answer),
                 query,
                 evidence,
                 compiled_context=compiled_context,

@@ -39,6 +39,10 @@ OAUTH_TOKEN = "https://oauth2.googleapis.com/token"
 DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
 MAX_FILE_BYTES = 25 * 1024 * 1024
 FILES_PER_BATCH = 25
+# Picked files are imported one per batch: a large PDF can take minutes, and the
+# job's progress, its lease, and the worker's pause for answers all happen
+# between batches.
+SELECTED_FILES_PER_BATCH = 1
 FOLDER_MIME = "application/vnd.google-apps.folder"
 FILE_FIELDS = "id,name,mimeType,modifiedTime,webViewLink,owners,size"
 # Google-native editors export to these plain formats; binaries are parsed by
@@ -224,13 +228,13 @@ class GoogleDriveConnector(Connector):
         offset = int(cursor.get("offset") or 0)
         failures = list(cursor.get("failures") or [])
         files = []
-        for file_id in file_ids[offset : offset + FILES_PER_BATCH]:
+        for file_id in file_ids[offset : offset + SELECTED_FILES_PER_BATCH]:
             try:
                 files.append(self._api(token, "GET", f"/files/{file_id}", {"fields": FILE_FIELDS}))
             except httpx.HTTPError as exc:
                 failures.append(f"file {file_id}: {exc}")
         records = self._records(token, files, failures)
-        offset += FILES_PER_BATCH
+        offset += SELECTED_FILES_PER_BATCH
         return SyncBatch(
             tuple(records),
             {

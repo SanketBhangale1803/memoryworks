@@ -20,6 +20,8 @@ import time
 from collections.abc import Callable
 from typing import Any
 
+from app.core.config import settings
+from app.llm import llm_budget
 from app.llm.providers import configured_model, generate_grounded_json
 
 MAX_STEPS = 8
@@ -115,7 +117,13 @@ class WebMCPAgentRunner:
         # which is worse than no fallback at all.
         self._guided = guided or self._guided_decider
 
-    def run(
+    def run(self, **kwargs: Any) -> dict:
+        """Run one Agent session (see :meth:`_run`) under its own model budget:
+        at most one call per step plus a few retries, and a wall-clock limit."""
+        with llm_budget(settings.org_agent_llm_budget_seconds, settings.org_agent_max_llm_calls):
+            return self._run(**kwargs)
+
+    def _run(
         self,
         *,
         principal: dict,

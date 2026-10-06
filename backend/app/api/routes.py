@@ -10,6 +10,7 @@ import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import Lock, Thread
+from typing import Any
 from urllib.parse import urlencode
 
 import httpx
@@ -27,6 +28,7 @@ from fastapi import (
 )
 from fastapi.responses import RedirectResponse, StreamingResponse
 
+from app import jobs as background_jobs
 from app.approvals import ApprovalService
 from app.audit import AuditService
 from app.auth import (
@@ -1276,11 +1278,14 @@ async def github_change_webhook(
         payload,
     )
     if created:
-        background_tasks.add_task(
-            _process_github_webhook_event,
-            event["id"],
-            payload,
-            str(project.get("workspace_id") or ""),
+        background_jobs.enqueue(
+            "github.webhook",
+            {
+                "event_id": event["id"],
+                "payload": payload,
+                "workspace_id": str(project.get("workspace_id") or ""),
+            },
+            background_tasks=background_tasks,
         )
     return {**event, "accepted": created, "replayed": not created}
 
@@ -1319,7 +1324,7 @@ async def slack_memory_webhook(
         return {"challenge": payload.get("challenge", "")}
     event = payload.get("event") or {}
     if event.get("type") == "message":
-        background_tasks.add_task(_process_slack_memory_event, event)
+        background_jobs.enqueue("slack.event", {"event": event}, background_tasks=background_tasks)
     return {"accepted": True}
 
 
@@ -1462,8 +1467,16 @@ def ingest_github(
         source="github", source_ref=request.repo_url_or_path, workspace_id=workspace_id
     )
     if request.background:
-        background_tasks.add_task(
-            _run_github_ingest_job, principal, request, team_ids, connector, job_id
+        background_jobs.enqueue(
+            "github.ingest",
+            {
+                "job_id": job_id,
+                "user_id": principal["id"],
+                "workspace_id": workspace_id,
+                "request": request.model_dump(),
+                "team_ids": team_ids,
+            },
+            background_tasks=background_tasks,
         )
         return {"job_id": job_id, "status": "running"}
     try:
@@ -1527,14 +1540,11 @@ def _queue_github_inventory(
         queued.append({"job_id": job_id, "repository": full_name, "source": source})
     if not queued:
         return 0
-    if background_tasks is not None:
-        background_tasks.add_task(_run_github_inventory, queued, connector, workspace_id)
-    else:
-        Thread(
-            target=_run_github_inventory,
-            args=(queued, connector, workspace_id),
-            daemon=True,
-        ).start()
+    background_jobs.enqueue(
+        "github.inventory",
+        {"queued": queued, "workspace_id": workspace_id, "user_id": user_id},
+        background_tasks=background_tasks,
+    )
     return len(queued)
 
 
@@ -1856,7 +1866,9 @@ def _start_chat_drive_import(
             "Pick them by hand on Add knowledge.",
             "action": {"label": "Choose Drive files", "href": "/ingest?source=google_drive"},
         }
-    chosen = files[:CHAT_DRIVE_LIMIT]
+    # "Import the first 3 files" means three, newest first; never more than the cap.
+    asked = min(intent.limit, CHAT_DRIVE_LIMIT) if intent.limit else CHAT_DRIVE_LIMIT
+    chosen = files[:asked]
     job = connector_sync.enqueue(
         "google_drive",
         principal["active_workspace_id"],
@@ -1866,7 +1878,8 @@ def _start_chat_drive_import(
         cursor={"file_ids": [item["id"] for item in chosen]},
         idempotency_key=f"chat-drive:{project_id}:{new_id('import')}",
     )
-    more = len(files) - len(chosen)
+    # Mention the rest only when the cap, not the asker, decided the number.
+    more = 0 if intent.limit else len(files) - len(chosen)
     return {
         "status": "running",
         "label": "Google Drive",
@@ -1951,6 +1964,26 @@ def _commit_fetcher(principal: dict):
     return fetch
 
 
+def _busy_message(workspace_id: str) -> str:
+    """Why an answer took too long, when the reason is visible: imports in progress."""
+    running = row(
+        """SELECT
+             (SELECT COUNT(*) FROM connector_sync_jobs
+               WHERE workspace_id=? AND status IN ('queued','running','retrying'))
+           + (SELECT COUNT(*) FROM ingestion_jobs
+               WHERE workspace_id=? AND status IN ('queued','running')) AS n""",
+        (workspace_id, workspace_id),
+    )
+    count = int((running or {}).get("n") or 0)
+    if count:
+        noun = "import is" if count == 1 else "imports are"
+        return (
+            f"MemoryWorks is busy: {count} {noun} still running, and answers are slow until "
+            "they finish. Try again in a few minutes."
+        )
+    return "This answer took too long. Try again, or ask something narrower."
+
+
 @router.post("/ask/stream")
 def ask_stream(request: AskRequest, authorization: str | None = Header(default=None)):
     """``/ask``, narrated while it happens.
@@ -1989,13 +2022,14 @@ def ask_stream(request: AskRequest, authorization: str | None = Header(default=N
     Thread(target=worker, daemon=True).start()
 
     def stream():
-        deadline = time.monotonic() + 240
+        deadline = time.monotonic() + settings.org_memory_answer_stream_timeout_seconds
         while True:
             try:
                 kind, payload = events.get(timeout=10)
             except queue.Empty:
                 if time.monotonic() > deadline:
-                    yield json.dumps({"type": "error", "message": "The answer timed out."}) + "\n"
+                    message = _busy_message(principal["active_workspace_id"])
+                    yield json.dumps({"type": "error", "message": message}) + "\n"
                     return
                 yield json.dumps({"type": "ping"}) + "\n"
                 continue
@@ -3796,7 +3830,9 @@ def resolve_repository_refresh(
         payload={"refresh_request_id": request_id},
     )
     if request.approved:
-        background_tasks.add_task(_run_repository_refresh, request_id)
+        background_jobs.enqueue(
+            "repository.refresh", {"request_id": request_id}, background_tasks=background_tasks
+        )
     return _public_repository_refresh_request(
         row("SELECT * FROM repository_refresh_requests WHERE id=?", (request_id,)) or {}
     )
@@ -4509,3 +4545,45 @@ def _fail_job(job_id: str, exc: Exception) -> None:
         )
     except Exception:
         logger.exception("Could not record failure for ingestion job %s", job_id)
+
+
+# ---- background job handlers (app.jobs). Payloads carry ids, not live objects,
+# so whichever process claims the job — this API or `python -m app.worker` —
+# can rebuild what it needs.
+
+
+@background_jobs.handler("github.ingest")
+def _github_ingest_job(payload: dict[str, Any]) -> None:
+    workspace_id, user_id = payload["workspace_id"], payload["user_id"]
+    _run_github_ingest_job(
+        {"id": user_id, "active_workspace_id": workspace_id},
+        GitHubIngestRequest(**payload["request"]),
+        list(payload.get("team_ids") or []),
+        GitHubConnector(ConnectorSecrets(workspace_id, user_id)),
+        payload["job_id"],
+    )
+
+
+@background_jobs.handler("github.inventory")
+def _github_inventory_job(payload: dict[str, Any]) -> None:
+    workspace_id = payload["workspace_id"]
+    _run_github_inventory(
+        payload["queued"],
+        GitHubConnector(ConnectorSecrets(workspace_id, payload["user_id"])),
+        workspace_id,
+    )
+
+
+@background_jobs.handler("github.webhook")
+def _github_webhook_job(payload: dict[str, Any]) -> None:
+    _process_github_webhook_event(payload["event_id"], payload["payload"], payload["workspace_id"])
+
+
+@background_jobs.handler("slack.event")
+def _slack_event_job(payload: dict[str, Any]) -> None:
+    _process_slack_memory_event(payload["event"])
+
+
+@background_jobs.handler("repository.refresh")
+def _repository_refresh_job(payload: dict[str, Any]) -> None:
+    _run_repository_refresh(payload["request_id"])

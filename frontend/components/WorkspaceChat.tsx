@@ -343,7 +343,12 @@ export default function WorkspaceChat({ user }: { user: any }) {
       }
       return response;
     } catch (error: any) {
-      patchTurn(threadId, index, { error: error.message });
+      // Keep the steps it got through: where an answer stopped is the first
+      // thing anyone needs to know about why it failed.
+      patchTurn(threadId, index, {
+        error: error.message,
+        trace: trace.steps.length ? { ...trace, draft: "", ms: Date.now() - trace.started } : undefined,
+      });
       throw error;
     } finally {
       setLive(null);
@@ -571,7 +576,9 @@ export default function WorkspaceChat({ user }: { user: any }) {
                   (() => {
                     const streaming = live?.key === `${active?.id}:${index}` ? live.trace : undefined;
                     const shown = streaming || turn.trace;
-                    return shown ? <AskTrace trace={shown} running={Boolean(streaming)} /> : null;
+                    return shown ? (
+                      <AskTrace trace={shown} running={Boolean(streaming)} stalled={Boolean(turn.error)} />
+                    ) : null;
                   })()}
 
                 {turn.imported && (

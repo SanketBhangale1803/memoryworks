@@ -95,6 +95,13 @@ class Settings(BaseSettings):
     # off. At the provider's default effort a grounded answer took ~140 s, which
     # outlives the web proxy; "low" answered the same question in ~5 s.
     glm_reasoning_effort: str = "low"
+    # Process-wide caps on model requests, whatever asked for them: at most this
+    # many in flight, at most this many started per minute, and no single call
+    # longer than this when nothing tighter applies. A call waits for a slot only
+    # as long as its own budget allows, then gives up and its caller falls back.
+    llm_max_concurrent_requests: int = 4
+    llm_max_requests_per_minute: int = 60
+    llm_request_max_seconds: float = 90.0
     xai_api_key: str = ""
     grok_model: str = "grok-4.5"
     kimi_api_key: str = ""
@@ -108,6 +115,16 @@ class Settings(BaseSettings):
     # Wall-clock budget for the parallel candidates. Whatever finished in time is
     # judged; a slow candidate is dropped rather than holding the answer hostage.
     org_memory_answer_deadline_seconds: float = 40.0
+    # One budget per answer, shared by every model call it makes (drafts, the
+    # judged candidates, the general-knowledge fallback): the calls stop when
+    # either runs out, and the answer falls back to what it already has.
+    org_memory_answer_llm_budget_seconds: float = 75.0
+    org_memory_answer_max_llm_calls: int = 8
+    # How long the chat's stream waits for an answer before saying it is busy.
+    org_memory_answer_stream_timeout_seconds: float = 150.0
+    # An Agent-mode run may take one model call per step plus a few to recover.
+    org_agent_max_llm_calls: int = 12
+    org_agent_llm_budget_seconds: float = 300.0
     # When company memory holds nothing relevant and the question is not about
     # the company, answer from the model's own knowledge instead of refusing.
     org_memory_general_knowledge_enabled: bool = True
@@ -221,7 +238,15 @@ class Settings(BaseSettings):
     connector_oci_config_profile: str = "DEFAULT"
     connector_manifest_public_keys_json: str = "{}"
     connector_sync_worker_enabled: bool = True
+    # Slow work — imports, connector syncs, webhook processing, watches, the
+    # startup backfill — runs in this process when true (one container does
+    # everything). Set it false on the API and run `python -m app.worker` beside
+    # it, so answering never competes with importing for this process's CPU.
+    background_work_enabled: bool = True
     connector_sync_poll_seconds: int = 2
+    # Imports wait up to this long between files while an answer is being
+    # written, so a large import never starves the person who is asking.
+    connector_sync_yield_to_answers_seconds: float = 60.0
     # How often standing organizational watches are re-evaluated.
     org_watch_poll_seconds: int = 120
     connector_custom_mcp_enabled: bool = True

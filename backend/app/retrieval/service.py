@@ -15,6 +15,7 @@ from app.connectors.status import (
     mentioned_providers,
     status_answer,
 )
+from app.core.activity import answering
 from app.core.config import settings
 from app.core.database import decode, rows
 from app.governance import ScopeService
@@ -25,7 +26,7 @@ from app.hcag_adapter import HCAGAdapter
 from app.hcag_adapter.models import RouteResult
 from app.intelligence.correlation import correlate_changes
 from app.intelligence.trust import trust_score
-from app.llm import configured_model, model_runtime
+from app.llm import configured_model, llm_budget, model_runtime
 from app.memory.beliefs import BeliefStore
 from app.memory.brain import CompanyBrainService
 from app.memory.change_intelligence import ChangeIntelligenceService
@@ -34,6 +35,7 @@ from app.outcomes import record_context
 from app.swarm import ContextActivationSwarm
 
 from . import continuity
+from .capabilities import capability_reply
 from .clarify import clarification, clarification_answer
 from .commits import CommitFetcher, commit_answer, commit_evidence, commit_references, find_commit
 from .conversation import assistant_reply, general_knowledge_answer, is_company_question
@@ -119,7 +121,24 @@ class RetrievalService:
         self.audit = audit or AuditService()
         self.swarm = ContextActivationSwarm(hcag)
 
-    def ask(
+    def ask(self, project_id: str, query: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        """Answer ``query`` from company memory (see :meth:`_ask`).
+
+        Every model call the answer makes shares one budget — a wall-clock limit
+        and a maximum number of calls — so a slow provider or a busy server ends
+        in a fallback answer rather than a request that never returns.
+        """
+        # Background imports pause between files while this runs (app.core.activity).
+        with (
+            answering(),
+            llm_budget(
+                settings.org_memory_answer_llm_budget_seconds,
+                settings.org_memory_answer_max_llm_calls,
+            ),
+        ):
+            return self._ask(project_id, query, *args, **kwargs)
+
+    def _ask(
         self,
         project_id: str,
         query: str,
@@ -152,7 +171,9 @@ class RetrievalService:
 
         # "hello" is not a retrieval failure. Conversational turns are answered
         # before any lane runs, so they never consume evidence or a model call.
-        conversational = assistant_reply(query)
+        # "Can you import from Drive?" is about MemoryWorks itself, which company
+        # memory does not record; it is answered from the product's own sources.
+        conversational = assistant_reply(query) or capability_reply(query)
         if conversational:
             return self._unsourced_result(
                 project_id,
@@ -197,8 +218,7 @@ class RetrievalService:
             providers = mentioned_providers(query)
             step(
                 "Checking live connection records",
-                ", ".join(PROVIDER_NAMES.get(item, item) for item in providers)
-                or "Every source",
+                ", ".join(PROVIDER_NAMES.get(item, item) for item in providers) or "Every source",
             )
             status_grounding = status_answer(workspace_id, providers, query)
         # A question naming a commit is answered with that commit, before any

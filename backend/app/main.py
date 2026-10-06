@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-import asyncio
-import logging
 from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.org_routes import org_router, watches
-from app.api.routes import company_memory, connector_sync, graph, hcag, ingestion, router
+from app import background
+from app.api.org_routes import org_router
+from app.api.routes import company_memory, graph, ingestion, router
 from app.auth.app_auth import (
     PUBLIC_DEMO_IDENTITIES,
     PUBLIC_DEMO_WORKSPACE_ID,
@@ -20,7 +19,6 @@ from app.core.api_guard import APIGuardMiddleware
 from app.core.config import settings
 from app.core.database import init_db
 from app.core.logging import configure_logging
-from app.ingestion.maintenance import sanitize_existing_index
 from app.orgops.seed import seed_launch_scenario
 
 
@@ -42,50 +40,12 @@ async def lifespan(_: FastAPI):
             ingestion.create_project,
             company_memory,
         )
-    with suppress(Exception):
-        sanitize_existing_index(graph, hcag)
-    # Legacy-vector migration can touch thousands of chunks. Run it in a
-    # background worker so health checks and the read path become available
-    # immediately; mixed-model chunks remain safe because dense scoring only
-    # compares vectors produced by the active model.
-    backfill_task = asyncio.create_task(asyncio.to_thread(hcag.backfill_existing_chunks))
-    sync_worker_task = None
-    if settings.connector_sync_worker_enabled:
-
-        async def run_connector_sync_worker() -> None:
-            # The worker outlives any single failed job: a raised error (a
-            # transient DB lock, a broken connector) must not kill the loop,
-            # or the whole deployment silently stops syncing.
-            while True:
-                try:
-                    await asyncio.to_thread(connector_sync.run_once)
-                except asyncio.CancelledError:
-                    raise
-                except Exception as exc:
-                    logging.getLogger(__name__).warning(
-                        "connector sync worker iteration failed: %s", exc
-                    )
-                await asyncio.sleep(max(1, settings.connector_sync_poll_seconds))
-
-        sync_worker_task = asyncio.create_task(run_connector_sync_worker())
-
-    # Standing watches are the autonomous half of the product: the same
-    # organizational checks, run without anyone asking. They only ever record a
-    # finding and draft a plan — applying one still needs a person.
-    async def run_watch_worker() -> None:
-        while True:
-            with suppress(Exception):
-                await asyncio.to_thread(watches.run_due)
-            await asyncio.sleep(max(30, settings.org_watch_poll_seconds))
-
-    watch_worker_task = asyncio.create_task(run_watch_worker())
+    # Imports, syncs, webhooks, watches, and the backfill run here only when
+    # this process also does background work; otherwise `python -m app.worker`
+    # runs them beside the API (see app.background).
+    tasks = background.start(sanitize=True) if settings.background_work_enabled else []
     yield
-    if not backfill_task.done():
-        backfill_task.cancel()
-    if sync_worker_task and not sync_worker_task.done():
-        sync_worker_task.cancel()
-    if not watch_worker_task.done():
-        watch_worker_task.cancel()
+    await background.stop(tasks)
 
 
 app = FastAPI(title="MemoryWorks API", version="1.0.0", lifespan=lifespan)

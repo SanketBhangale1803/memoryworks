@@ -164,6 +164,17 @@ CREATE TABLE IF NOT EXISTS connector_sync_jobs (
   FOREIGN KEY(workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
   FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS background_jobs (
+  id TEXT PRIMARY KEY, kind TEXT NOT NULL, payload_json TEXT NOT NULL DEFAULT '{}',
+  status TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0,
+  max_attempts INTEGER NOT NULL DEFAULT 2, error TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL, heartbeat_at TEXT,
+  completed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS background_jobs_due ON background_jobs(status, created_at);
+CREATE TABLE IF NOT EXISTS answer_activity (
+  id TEXT PRIMARY KEY, started_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS repository_refresh_requests (
   id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, user_id TEXT NOT NULL,
   project_id TEXT NOT NULL, repository TEXT NOT NULL, reason TEXT NOT NULL,

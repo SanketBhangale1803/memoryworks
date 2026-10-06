@@ -190,3 +190,50 @@ def test_drive_import_with_an_expired_grant_says_reconnect(graph):
     assert body["status"] == "needs_connection"
     assert "expired" in body["message"]
     assert body["action"]["label"] == "Reconnect Google Drive"
+
+
+@pytest.mark.parametrize(
+    ("message", "limit"),
+    [
+        ("Ingest first 3 files from Drive", 3),
+        ("import the latest five docs from my Google Drive", 5),
+        ("Import 2 sheets from GD", 2),
+        ("import the docs from my google drive", 0),
+    ],
+)
+def test_a_number_of_files_is_how_many_get_imported(message, limit):
+    intent = parse_import(message)
+    assert intent and intent.source == "google_drive"
+    assert intent.limit == limit
+
+
+def test_drive_import_takes_only_as_many_files_as_asked(graph, monkeypatch):
+    """ "Ingest first 3 files" queued 25 (the cap), which flooded the server."""
+    client, headers, me = _session("chat-drive-count@example.com")
+    OAuthTokenVault(me["active_workspace_id"], me["id"]).save(
+        "google_drive", "ext", "Google Drive", "token"
+    )
+    listing = [
+        {
+            "id": f"f{index}",
+            "name": f"File {index}",
+            "mime_type": "application/pdf",
+            "url": f"https://drive.google.com/f{index}",
+        }
+        for index in range(10)
+    ]
+    monkeypatch.setattr(
+        "app.api.routes.connector_runtime.discover", lambda provider, principal: listing
+    )
+
+    body = client.post(
+        "/api/chat/import",
+        json={"text": "Ingest first 3 files from Drive", "project_id": me["project_id"]},
+        headers=headers,
+    ).json()
+
+    assert body["status"] == "running"
+    assert [item["id"] for item in body["files"]] == ["f0", "f1", "f2"]
+    assert "more can be picked" not in body["message"]
+    job = client.get(f"/api/connector-sync-jobs/{body['job']['id']}", headers=headers).json()
+    assert job["cursor"]["file_ids"] == ["f0", "f1", "f2"]

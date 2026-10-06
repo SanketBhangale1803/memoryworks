@@ -11,6 +11,8 @@ import httpx
 
 from app.core.config import settings
 
+from .limits import LLMUnavailable, llm_slot
+
 
 @dataclass(frozen=True)
 class ModelProvider:
@@ -135,27 +137,46 @@ def generate_grounded_json(
     provider = configured_model(provider_id)
     if not provider:
         return None
-    if provider.family == "anthropic":
-        payload = _anthropic(provider, prompt)
-    elif provider.family == "gemini":
-        payload = _gemini(provider, prompt)
-    else:
-        payload = _openai_compatible(provider, prompt)
+    with llm_slot() as seconds:
+        if provider.family == "anthropic":
+            payload = _anthropic(provider, prompt, seconds)
+        elif provider.family == "gemini":
+            payload = _gemini(provider, prompt, seconds)
+        else:
+            payload = _openai_compatible(provider, prompt, seconds)
     parsed = _parse_json(payload)
     return (parsed, provider) if parsed else None
 
 
-def _openai_compatible(provider: ModelProvider, prompt: str) -> str:
-    headers, payload = _openai_compatible_request(provider, prompt)
-    payload["response_format"] = {"type": "json_object"}
-    response = httpx.post(
-        f"{provider.base_url}/chat/completions",
+def _post_json(url: str, headers: dict[str, str], payload: dict[str, Any], seconds: float) -> Any:
+    """POST and parse the JSON reply, giving up after ``seconds`` in total.
+
+    httpx's own timeout bounds the gap between bytes, not the request, and a
+    provider that keeps a slow call alive with whitespace never trips it. The
+    body is read in pieces so the wall-clock limit is checked as it arrives.
+    """
+    deadline = time.monotonic() + seconds
+    body = bytearray()
+    with httpx.stream(
+        "POST",
+        url,
         headers=headers,
         json=payload,
-        timeout=60,
-    )
-    response.raise_for_status()
-    return str(response.json()["choices"][0]["message"]["content"] or "")
+        timeout=httpx.Timeout(min(60.0, max(1.0, seconds)), connect=10),
+    ) as response:
+        for chunk in response.iter_bytes():
+            body.extend(chunk)
+            if time.monotonic() > deadline:
+                raise LLMUnavailable("The model did not answer in time.")
+        response.raise_for_status()
+    return json.loads(bytes(body))
+
+
+def _openai_compatible(provider: ModelProvider, prompt: str, seconds: float) -> str:
+    headers, payload = _openai_compatible_request(provider, prompt)
+    payload["response_format"] = {"type": "json_object"}
+    reply = _post_json(f"{provider.base_url}/chat/completions", headers, payload, seconds)
+    return str(reply["choices"][0]["message"]["content"] or "")
 
 
 def _openai_compatible_request(
@@ -211,12 +232,23 @@ def stream_text(
     provider = configured_model(provider_id)
     if not provider:
         return None
+    with llm_slot() as seconds:
+        return _stream_text(provider, prompt, on_text, on_reasoning, min(deadline_seconds, seconds))
+
+
+def _stream_text(
+    provider: ModelProvider,
+    prompt: str,
+    on_text: Callable[[str], None],
+    on_reasoning: Callable[[str], None] | None,
+    deadline_seconds: float,
+) -> tuple[str, ModelProvider]:
     if provider.family == "anthropic":
-        text = _anthropic(provider, prompt)
+        text = _anthropic(provider, prompt, deadline_seconds)
         on_text(text)
         return text, provider
     if provider.family == "gemini":
-        text = _gemini(provider, prompt)
+        text = _gemini(provider, prompt, deadline_seconds)
         on_text(text)
         return text, provider
 
@@ -260,47 +292,45 @@ def stream_text(
     return "".join(pieces), provider
 
 
-def _anthropic(provider: ModelProvider, prompt: str) -> str:
-    response = httpx.post(
+def _anthropic(provider: ModelProvider, prompt: str, seconds: float) -> str:
+    reply = _post_json(
         "https://api.anthropic.com/v1/messages",
-        headers={
+        {
             "x-api-key": provider.api_key,
             "anthropic-version": "2023-06-01",
             "Content-Type": "application/json",
         },
-        json={
+        {
             "model": provider.model,
             "max_tokens": 1600,
             "temperature": 0,
             "messages": [{"role": "user", "content": prompt}],
         },
-        timeout=60,
+        seconds,
     )
-    response.raise_for_status()
-    blocks = response.json().get("content", [])
+    blocks = reply.get("content", [])
     return "\n".join(
         str(block.get("text") or "") for block in blocks if block.get("type") == "text"
     )
 
 
-def _gemini(provider: ModelProvider, prompt: str) -> str:
-    response = httpx.post(
+def _gemini(provider: ModelProvider, prompt: str, seconds: float) -> str:
+    reply = _post_json(
         "https://generativelanguage.googleapis.com/v1beta/"
         f"models/{provider.model}:generateContent",
-        headers={
+        {
             "x-goog-api-key": provider.api_key,
             "Content-Type": "application/json",
         },
-        json={
+        {
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {
                 "responseMimeType": "application/json",
             },
         },
-        timeout=60,
+        seconds,
     )
-    response.raise_for_status()
-    candidates = response.json().get("candidates", [])
+    candidates = reply.get("candidates", [])
     parts = candidates[0].get("content", {}).get("parts", []) if candidates else []
     return "\n".join(str(part.get("text") or "") for part in parts)
 

@@ -17,13 +17,16 @@ services:
       retries: 30
       start_period: 30s
 
-  backend:
+  backend: &backend
     build:
       context: backend
     restart: unless-stopped
     env_file: ${ORGMEMORY_ENV_FILE:-.env.production}
-    environment:
+    environment: &backend-env
       ENVIRONMENT: production
+      # Imports, syncs, webhooks, and watches run in the worker below, so
+      # answering never competes with importing for this process's CPU.
+      BACKGROUND_WORK_ENABLED: "false"
       # The runner is not sandboxed; production stays fail-closed unless the
       # deployment explicitly opts into the isolated-executor profile.
       ORGMEMORY_EXECUTION_ENABLED: "false"
@@ -53,6 +56,24 @@ services:
       timeout: 5s
       retries: 30
       start_period: 30s
+
+  # The slow half: repository and connector imports, webhooks, watches, the
+  # startup backfill. Same image, settings, and data as the API; no HTTP.
+  # Scale it with `--scale worker=N` — claiming a job is atomic.
+  worker:
+    <<: *backend
+    command: ["python", "-m", "app.worker"]
+    environment:
+      <<: *backend-env
+      BACKGROUND_WORK_ENABLED: "true"
+      # Model-request caps are per process; leave most of them to answers.
+      LLM_MAX_CONCURRENT_REQUESTS: "2"
+      LLM_MAX_REQUESTS_PER_MINUTE: "30"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os; os.kill(1, 0)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
   frontend:
     build:

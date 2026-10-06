@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from urllib.parse import parse_qs, urlparse
 
 from fastapi.testclient import TestClient
@@ -162,16 +163,26 @@ def test_openai_compatible_and_gemini_requests_use_current_provider_contracts(gr
     calls: list[dict] = []
 
     class Response:
+        """A streamed reply: model calls read the body in pieces to bound total time."""
+
         def __init__(self, payload):
-            self.payload = payload
+            self.body = json.dumps(payload).encode()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
 
         def raise_for_status(self):
             return None
 
-        def json(self):
-            return self.payload
+        def iter_bytes(self):
+            yield self.body[:10]
+            yield self.body[10:]
 
-    def post(url, **kwargs):
+    def stream(method, url, **kwargs):
+        assert method == "POST"
         calls.append({"url": url, **kwargs})
         if "generativelanguage" in url:
             return Response(
@@ -179,7 +190,7 @@ def test_openai_compatible_and_gemini_requests_use_current_provider_contracts(gr
             )
         return Response({"choices": [{"message": {"content": '{"answer":"compatible"}'}}]})
 
-    monkeypatch.setattr("app.llm.providers.httpx.post", post)
+    monkeypatch.setattr("app.llm.providers.httpx.stream", stream)
     monkeypatch.setattr(settings, "kimi_api_key", "kimi-secret")
     monkeypatch.setattr(settings, "openrouter_api_key", "openrouter-secret")
     monkeypatch.setattr(settings, "google_api_key", "google-secret")

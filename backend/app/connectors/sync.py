@@ -11,6 +11,8 @@ from typing import Any
 
 from app.audit import AuditService
 from app.auth.vault import OAuthTokenVault
+from app.core.activity import wait_for_answers
+from app.core.config import settings
 from app.core.database import connect, new_id, row, rows, utcnow
 
 from .base import SyncRecord, WebhookEvent, WebhookRequest
@@ -282,6 +284,9 @@ class SyncEngine:
         )
         processed = 0
         for item in due:
+            # Someone waiting on an answer reads the same graph an import writes;
+            # let the answer go first.
+            wait_for_answers(settings.connector_sync_yield_to_answers_seconds)
             with connect() as conn:
                 claimed = conn.execute(
                     """UPDATE connector_sync_jobs SET status='running',updated_at=?

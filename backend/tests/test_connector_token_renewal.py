@@ -171,7 +171,7 @@ def test_drive_imports_exactly_the_selected_files_in_batches(monkeypatch):
         "app.connectors.google_drive.client.httpx.get",
         lambda url, **kwargs: _Response(b"Decision: ship on Fridays."),
     )
-    monkeypatch.setattr("app.connectors.google_drive.client.FILES_PER_BATCH", 2)
+    monkeypatch.setattr("app.connectors.google_drive.client.SELECTED_FILES_PER_BATCH", 2)
     from app.connectors.base import ConnectorAccount
 
     account = ConnectorAccount("a", "w", "u", "google_drive", "ext", "Drive", "token")

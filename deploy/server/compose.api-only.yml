@@ -21,6 +21,18 @@ services:
       # Host-only cookie on SITE_URL, set through the forwarded /api path.
       SESSION_COOKIE_DOMAIN: ""
 
+  # The worker builds the same OAuth and API URLs as the backend.
+  worker:
+    environment:
+      API_URL: ${SITE_URL:?set SITE_URL}
+      FRONTEND_URL: ${SITE_URL:?set SITE_URL}
+      APP_BASE_URL: ${SITE_URL:?set SITE_URL}
+      GITHUB_REDIRECT_URI: ${SITE_URL:?set SITE_URL}/api/auth/github/callback
+      SLACK_REDIRECT_URI: ${SITE_URL:?set SITE_URL}/api/auth/slack/callback
+      GOOGLE_REDIRECT_URI: ${SITE_URL:?set SITE_URL}/api/auth/google/callback
+      MCP_OAUTH_ISSUER_URL: ${SITE_URL:?set SITE_URL}
+      SESSION_COOKIE_DOMAIN: ""
+
   mcp:
     environment:
       MCP_OAUTH_ISSUER_URL: ${SITE_URL:?set SITE_URL}
