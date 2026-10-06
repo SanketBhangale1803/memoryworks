@@ -341,8 +341,11 @@ class SyncEngine:
                 next_time, status, completed = now, "succeeded", now
             with connect() as conn:
                 conn.execute(
+                    # attempts counts consecutive failures: a successful page
+                    # resets it, so a long import is not failed outright by its
+                    # first error after many good pages.
                     """UPDATE connector_sync_jobs SET cursor_json=?,status=?,
-                    attempts=attempts+1,next_attempt_at=?,last_error='',updated_at=?,completed_at=?
+                    attempts=0,next_attempt_at=?,last_error='',updated_at=?,completed_at=?
                     WHERE id=?""",
                     (
                         json.dumps(batch.next_cursor),

@@ -44,6 +44,24 @@ FILES_PER_BATCH = 25
 # between batches.
 SELECTED_FILES_PER_BATCH = 1
 FOLDER_MIME = "application/vnd.google-apps.folder"
+# Media and archives hold no text to remember. They are skipped from the file's
+# metadata, before anything is downloaded: a camera JPEG or a video used to be
+# fetched in full and parsed as text for minutes.
+SKIPPED_MIME_PREFIXES = ("image/", "video/", "audio/")
+SKIPPED_MIME = {
+    "application/zip",
+    "application/x-zip-compressed",
+    "application/x-rar-compressed",
+    "application/x-7z-compressed",
+    "application/x-tar",
+    "application/gzip",
+    "application/octet-stream",
+    "application/vnd.google-apps.shortcut",
+    "application/vnd.google-apps.drawing",
+    "application/vnd.google-apps.form",
+    "application/vnd.google-apps.map",
+    "application/vnd.google-apps.site",
+}
 FILE_FIELDS = "id,name,mimeType,modifiedTime,webViewLink,owners,size"
 # Google-native editors export to these plain formats; binaries are parsed by
 # the shared document extractor instead.
@@ -257,6 +275,10 @@ class GoogleDriveConnector(Connector):
             file_id = str(item.get("id") or "")
             if not file_id or mime == FOLDER_MIME:
                 continue
+            skipped = _skip_reason(item)
+            if skipped:
+                failures.append(f"file {file_id}: {skipped}")
+                continue
             content = self._file_content(token, file_id, mime, failures)
             modified = str(item.get("modifiedTime") or "")
             if content is None:
@@ -444,6 +466,21 @@ RECONNECT_MESSAGE = (
     "Google Drive access has expired and could not be renewed. "
     "Reconnect Google Drive on the Sources page."
 )
+
+
+def _skip_reason(item: dict[str, Any]) -> str:
+    """Why a Drive file is not imported, decided from its metadata alone."""
+    mime = str(item.get("mimeType") or "")
+    if mime.startswith(SKIPPED_MIME_PREFIXES) or mime in SKIPPED_MIME:
+        kind = mime.split("/", 1)[0] if "/" in mime else "file"
+        return f"skipped — {kind} files have no text to remember"
+    try:
+        size = int(item.get("size") or 0)
+    except (TypeError, ValueError):
+        size = 0
+    if size > MAX_FILE_BYTES:
+        return f"skipped — {size // (1024 * 1024)} MB is over the {MAX_FILE_BYTES // (1024 * 1024)} MB limit"
+    return ""
 
 
 def _send(token: str, method: str, path: str, params: dict[str, Any]) -> httpx.Response:

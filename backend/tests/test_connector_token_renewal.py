@@ -200,3 +200,54 @@ def test_drive_403_carries_googles_reason(graph, monkeypatch):
         GoogleDriveConnector(vault).discover(vault.account("google_drive"))
     # A refusal is not an expired grant; the connection stays.
     assert vault.account("google_drive") is not None
+
+
+def test_drive_skips_media_and_oversized_files_without_downloading_them(monkeypatch):
+    """A camera JPEG used to be downloaded and parsed as text for minutes."""
+    listing = {
+        "photo": {"mimeType": "image/jpeg", "size": "18000000"},
+        "clip": {"mimeType": "video/mp4", "size": "900000000"},
+        "huge": {"mimeType": "application/pdf", "size": str(60 * 1024 * 1024)},
+        "notes": {"mimeType": "text/plain", "size": "40"},
+    }
+
+    def fake_request(method, url, **kwargs):
+        file_id = url.rsplit("/", 1)[-1]
+        return _Response(
+            {
+                "id": file_id,
+                "name": file_id,
+                "modifiedTime": "2026-10-01T00:00:00Z",
+                "webViewLink": f"https://drive.google.com/{file_id}",
+                **listing[file_id],
+            }
+        )
+
+    downloaded: list[str] = []
+
+    def fake_get(url, **kwargs):
+        downloaded.append(url.split("/files/", 1)[1].split("/", 1)[0].split("?", 1)[0])
+        return _Response(b"Decision: ship on Fridays.")
+
+    monkeypatch.setattr("app.connectors.google_drive.client.httpx.request", fake_request)
+    monkeypatch.setattr("app.connectors.google_drive.client.httpx.get", fake_get)
+    monkeypatch.setattr("app.connectors.google_drive.client.SELECTED_FILES_PER_BATCH", 10)
+    from app.connectors.base import ConnectorAccount
+
+    account = ConnectorAccount("a", "w", "u", "google_drive", "ext", "Drive", "token")
+    batch = GoogleDriveConnector().sync(account, {"file_ids": list(listing)})
+
+    assert [record.id for record in batch.records] == ["gdrive-file:notes"]
+    assert downloaded == ["notes"]
+    reasons = " | ".join(batch.next_cursor["failures"])
+    assert "image files have no text" in reasons and "video files have no text" in reasons
+    assert "over the 25 MB limit" in reasons
+
+
+def test_binary_bytes_are_refused_rather_than_read_as_text():
+    from app.ingestion.documents import UnsupportedDocumentError, extract_document
+
+    jpeg = b"\xff\xd8\xff\xe0\x00\x10JFIF" + bytes(range(256)) * 400
+    with pytest.raises(UnsupportedDocumentError, match="not a text document"):
+        extract_document("drive-file", jpeg)
+    assert extract_document("notes", b"Decision: ship on Fridays.").text.startswith("Decision")

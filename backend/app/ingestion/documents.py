@@ -127,6 +127,24 @@ def _clip(text: str) -> str:
     return text[:MAX_EXTRACTED_CHARS]
 
 
+def _looks_binary(data: bytes) -> bool:
+    """True for images, audio, video, archives, and other non-text bytes.
+
+    Without this, a JPEG fell through to plain text: almost any even-length
+    byte string decodes as UTF-16, so a photo became megabytes of noise that
+    was chunked, embedded, and scanned for secrets — minutes of CPU per file.
+    UTF-16 text is recognised by its byte-order mark; NUL bytes or a high share
+    of control bytes mean the data is not text.
+    """
+    sample = data[:8192]
+    if sample.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return False
+    if b"\x00" in sample:
+        return True
+    control = sum(1 for byte in sample if byte < 32 and byte not in (9, 10, 12, 13))
+    return control > len(sample) * 0.1
+
+
 def _decode_text(data: bytes) -> str:
     for encoding in ("utf-8-sig", "utf-16"):
         try:
@@ -731,6 +749,11 @@ def extract_document(filename: str, data: bytes) -> ExtractedDocument:
         title = extra.pop("title", "")
         metadata.update(extra)
     elif fmt == "text":
+        if _looks_binary(data):
+            raise UnsupportedDocumentError(
+                "This is not a text document (it looks like an image, audio, video, or "
+                "archive), so there is nothing to read"
+            )
         text = _clip(_decode_text(data))
     else:
         raise UnsupportedDocumentError(
