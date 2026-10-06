@@ -74,6 +74,9 @@ class Settings(BaseSettings):
     execution_dir: Path = ROOT / "data" / "executions"
 
     graph_backend: str = "arcadedb"
+    # Chunks held prepared in memory for ranking (app/graph/project_index.py),
+    # ~15 KB each: 40,000 is about 600 MB.
+    graph_index_max_chunks: int = 40_000
     arcadedb_host: str = "localhost"
     arcadedb_port: int = 2480
     arcadedb_user: str = "root"

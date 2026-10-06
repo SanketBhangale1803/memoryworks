@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
@@ -20,6 +21,13 @@ from app.core.config import settings
 from app.core.database import init_db
 from app.core.logging import configure_logging
 from app.orgops.seed import seed_launch_scenario
+
+
+def _warm_indexes() -> None:
+    warm = getattr(graph, "warm_indexes", None)  # the ArcadeDB store only
+    if warm:
+        with suppress(Exception):
+            warm()
 
 
 @asynccontextmanager
@@ -44,6 +52,9 @@ async def lifespan(_: FastAPI):
     # this process also does background work; otherwise `python -m app.worker`
     # runs them beside the API (see app.background).
     tasks = background.start(sanitize=True) if settings.background_work_enabled else []
+    # Answers rank from per-project indexes held in this process; build them
+    # before the first question instead of during it.
+    threading.Thread(target=_warm_indexes, daemon=True, name="warm-indexes").start()
     yield
     await background.stop(tasks)
 

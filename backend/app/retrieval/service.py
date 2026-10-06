@@ -42,6 +42,7 @@ from .conversation import assistant_reply, general_knowledge_answer, is_company_
 from .deliberation import deliberate
 from .handoff import build_handoff
 from .hypotheses import extract_hypotheses
+from .inventory import inventory_reply, is_inventory_question
 from .reasoner import (
     answer_intent,
     evidence_answer,
@@ -174,6 +175,15 @@ class RetrievalService:
         # "Can you import from Drive?" is about MemoryWorks itself, which company
         # memory does not record; it is answered from the product's own sources.
         conversational = assistant_reply(query) or capability_reply(query)
+        if not conversational and is_inventory_question(query):
+            # "Which repos are connected?" is answered by the workspace's own
+            # records, not by searching every chunk for the words.
+            step("Reading this workspace's repositories and connections")
+            conversational = inventory_reply(
+                query,
+                sorted({project_id, *(workspace_project_ids or [])}),
+                str((principal or {}).get("active_workspace_id") or ""),
+            )
         if conversational:
             return self._unsourced_result(
                 project_id,

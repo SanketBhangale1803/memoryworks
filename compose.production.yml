@@ -4,6 +4,10 @@ services:
   arcadedb:
     image: arcadedata/arcadedb:26.5.1
     restart: unless-stopped
+    # Memory caps keep one runaway process inside its own container: the kernel
+    # stops it there instead of the whole server running out (2026-10-06).
+    # Heap is 2 GB (JAVA_OPTS); the rest is JVM overhead and page cache.
+    mem_limit: 2800m
     environment:
       JAVA_OPTS: >-
         -Xms512m -Xmx2g
@@ -21,6 +25,8 @@ services:
     build:
       context: backend
     restart: unless-stopped
+    # Holds the per-project ranking indexes (~15 KB a chunk, capped by GRAPH_INDEX_MAX_CHUNKS).
+    mem_limit: 2300m
     env_file: ${ORGMEMORY_ENV_FILE:-.env.production}
     environment: &backend-env
       ENVIRONMENT: production
@@ -63,6 +69,7 @@ services:
   worker:
     <<: *backend
     command: ["python", "-m", "app.worker"]
+    mem_limit: 1800m
     environment:
       <<: *backend-env
       BACKGROUND_WORK_ENABLED: "true"
@@ -89,6 +96,7 @@ services:
     build:
       context: mcp_server
     restart: unless-stopped
+    mem_limit: 256m
     environment:
       RUNBOOK_API_URL: http://backend:8000
       MCP_PUBLIC_URL: https://mcp.${PUBLIC_DOMAIN:?set PUBLIC_DOMAIN}
@@ -100,6 +108,7 @@ services:
   caddy:
     image: caddy:2.10-alpine
     restart: unless-stopped
+    mem_limit: 192m
     environment:
       PUBLIC_DOMAIN: ${PUBLIC_DOMAIN:?set PUBLIC_DOMAIN}
       TLS_EMAIL: ${TLS_EMAIL:?set TLS_EMAIL}
