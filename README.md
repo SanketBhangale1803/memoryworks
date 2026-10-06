@@ -655,6 +655,7 @@ Service matching is against `scope.service`, the subject, and the body. If the e
 | Document | Covers |
 |---|---|
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | System architecture |
+| [`docs/SCALING.md`](docs/SCALING.md) | Ceilings and the staged path to large scale |
 | [`docs/COMPANY_BRAIN_ARCHITECTURE.md`](docs/COMPANY_BRAIN_ARCHITECTURE.md) | The continuous memory loop |
 | [`docs/HCAG_MEMORY_ARCHITECTURE.md`](docs/HCAG_MEMORY_ARCHITECTURE.md) | Context assembly engine |
 | [`docs/CONTEXT_ACTIVATION_SWARM.md`](docs/CONTEXT_ACTIVATION_SWARM.md) | The specialist swarm and context envelopes |

@@ -1,0 +1,222 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1640 1072" width="1640" height="1072" role="img" aria-label="MemoryWorks agent harness: a coding agent host with ten primitives briefs itself from MemoryWorks before acting, holds approval-gated actions for a person, and records outcomes that become learned skills.">
+<style>
+.h1{font:700 28px "IBM Plex Sans","Helvetica Neue",Arial,sans-serif;fill:#17151f}
+.sub{font:400 15px "IBM Plex Sans","Helvetica Neue",Arial,sans-serif;fill:#5d5970}
+.frame{fill:#ffffff;stroke:#cfc9dd;stroke-width:1.4;stroke-dasharray:7 6}
+.mw{fill:#fbf9ff;stroke:#4f2cc7;stroke-width:1.6}
+.frame-l{font:500 11.5px "IBM Plex Mono",Menlo,Consolas,monospace;letter-spacing:.06em;fill:#6b6780}
+.frame-l.hot{fill:#4f2cc7}
+.box{fill:#faf9fc;stroke:#d9d4e6;stroke-width:1.2}
+.box.hot{fill:#f1ecfe;stroke:#4f2cc7;stroke-width:1.6}
+.box.soft{fill:#ffffff;stroke:#b9aee6;stroke-width:1.2}
+.title{font:600 16px "IBM Plex Sans","Helvetica Neue",Arial,sans-serif;fill:#17151f}
+.body{font:400 13.5px "IBM Plex Sans","Helvetica Neue",Arial,sans-serif;fill:#3f3b4f}
+.note{font:400 12.5px "IBM Plex Sans","Helvetica Neue",Arial,sans-serif;fill:#6b6780}
+.mono{font:500 12.5px "IBM Plex Mono",Menlo,Consolas,monospace;fill:#4f2cc7}
+.num{fill:#f1ecfe;stroke:#4f2cc7;stroke-width:1.2}
+.num-t{font:600 12px "IBM Plex Mono",Menlo,Consolas,monospace;fill:#4f2cc7}
+.state{fill:#ffffff;stroke:#b4adc6;stroke-width:1.2}
+.state.hot{fill:#f1ecfe;stroke:#4f2cc7}
+.state.warn{fill:#fff6ef;stroke:#d6915c}
+.state-t{font:500 13px "IBM Plex Mono",Menlo,Consolas,monospace;fill:#17151f}
+.state-t.hot{fill:#4f2cc7}
+.chip{fill:#f3f1f8;stroke:#e1dcec}
+.chip.hot{fill:#f1ecfe;stroke:#c9bdf5}
+.chip-t{font:500 12px "IBM Plex Mono",Menlo,Consolas,monospace;fill:#3f3b4f}
+.chip-t.hot{fill:#4f2cc7}
+.ln{fill:none;stroke:#6b6780;stroke-width:1.4}
+.ln.hot{stroke:#4f2cc7;stroke-width:1.6}
+.ln.dash{stroke-dasharray:5 5}
+.lbl{font:500 11.5px "IBM Plex Mono",Menlo,Consolas,monospace;fill:#6b6780;paint-order:stroke;stroke:#ffffff;stroke-width:6px;stroke-linejoin:round}
+.lbl.hot{fill:#4f2cc7}
+</style>
+<defs>
+<marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path fill="#6b6780" d="M0 0 L10 5 L0 10 z"/></marker>
+<marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path fill="#4f2cc7" d="M0 0 L10 5 L0 10 z"/></marker>
+</defs>
+<rect width="1640" height="1072" fill="#faf9fc"/>
+<text class="h1" x="40" y="52">MemoryWorks agent harness</text>
+<text class="sub" x="40" y="80">How a coding agent works on MemoryWorks with the orgmemory-harness skill, and where MemoryWorks sits in that loop.</text>
+<rect class="frame" x="40" y="104" width="1120" height="924" rx="18"/>
+<text class="frame-l" x="62" y="138">CODING AGENT HOST · CLAUDE CODE · CURSOR · CODEX</text>
+<rect class="box" x="64" y="152" width="340" height="168" rx="12"/>
+<circle class="num" cx="96" cy="181" r="11"/>
+<text class="num-t" x="96" y="185" text-anchor="middle">1</text>
+<text class="title" x="114" y="186">Instructions</text>
+<text class="body" x="84" y="216">AGENTS.md and repository rules</text>
+<text class="body" x="84" y="235">SKILL.md: orgmemory-harness</text>
+<text class="body" x="84" y="254">Task contract: outcome, component,</text>
+<text class="body" x="84" y="273">acceptance check, overlapping edits</text>
+<rect class="box" x="424" y="152" width="340" height="168" rx="12"/>
+<circle class="num" cx="456" cy="181" r="11"/>
+<text class="num-t" x="456" y="185" text-anchor="middle">2</text>
+<text class="title" x="474" y="186">Context delivery</text>
+<text class="body" x="444" y="216">Passive: task contract, current code,</text>
+<text class="body" x="444" y="235">a few source-backed memories</text>
+<text class="body" x="444" y="254">Active: one file, citation, or log,</text>
+<text class="body" x="444" y="273">fetched only to settle a named question</text>
+<rect class="box" x="784" y="152" width="352" height="168" rx="12"/>
+<circle class="num" cx="816" cy="181" r="11"/>
+<text class="num-t" x="816" y="185" text-anchor="middle">3</text>
+<text class="title" x="834" y="186">Context management</text>
+<text class="body" x="804" y="216">Packet: intent, facts, decisions,</text>
+<text class="body" x="804" y="235">changed files, checks, next action</text>
+<text class="body" x="804" y="254">Compaction keeps citations and blockers</text>
+<text class="body" x="804" y="273">Memory budget ≤ ~20k tokens (a cap)</text>
+<rect class="box" x="64" y="344" width="300" height="184" rx="12"/>
+<circle class="num" cx="96" cy="373" r="11"/>
+<text class="num-t" x="96" y="377" text-anchor="middle">4</text>
+<text class="title" x="114" y="378">Tool interfaces</text>
+<text class="body" x="84" y="408">Repository read and edit</text>
+<text class="body" x="84" y="427">Shell checks and test runners</text>
+<text class="body" x="84" y="446">MemoryWorks MCP, discovered first:</text>
+<text class="mono" x="84" y="465">get_orgmemory_briefing</text>
+<text class="mono" x="84" y="484">record_orgmemory_outcome</text>
+<text class="mono" x="84" y="503">orgmemory_ask · search · profiles</text>
+<rect class="box" x="64" y="546" width="300" height="128" rx="12"/>
+<circle class="num" cx="96" cy="575" r="11"/>
+<text class="num-t" x="96" y="579" text-anchor="middle">9</text>
+<text class="title" x="114" y="580">Reusable procedures</text>
+<text class="body" x="84" y="610">Skill steps, repository map,</text>
+<text class="body" x="84" y="629">execution protocol, check list</text>
+<text class="body" x="84" y="648">Changed only by a reviewed fix</text>
+<rect class="box" x="384" y="344" width="520" height="330" rx="12"/>
+<circle class="num" cx="416" cy="373" r="11"/>
+<text class="num-t" x="416" y="377" text-anchor="middle">7</text>
+<text class="title" x="434" y="378">Orchestration · run states</text>
+<rect class="state" x="404" y="414" width="82" height="40" rx="20"/>
+<text class="state-t" x="445.0" y="439" text-anchor="middle">scoping</text>
+<rect class="state" x="502" y="414" width="72" height="40" rx="20"/>
+<text class="state-t" x="538.0" y="439" text-anchor="middle">ready</text>
+<rect class="state" x="590" y="414" width="96" height="40" rx="20"/>
+<text class="state-t" x="638.0" y="439" text-anchor="middle">executing</text>
+<rect class="state" x="702" y="414" width="96" height="40" rx="20"/>
+<text class="state-t" x="750.0" y="439" text-anchor="middle">verifying</text>
+<rect class="state hot" x="814" y="414" width="74" height="40" rx="20"/>
+<text class="state-t hot" x="851.0" y="439" text-anchor="middle">complete</text>
+<polyline class="ln" points="486,434 500,434" marker-end="url(#a)"/>
+<polyline class="ln" points="574,434 588,434" marker-end="url(#a)"/>
+<polyline class="ln" points="686,434 700,434" marker-end="url(#a)"/>
+<polyline class="ln" points="798,434 812,434" marker-end="url(#a)"/>
+<polyline class="ln" points="750,454 750,494 638,494 638,457" marker-end="url(#a)"/>
+<text class="lbl" x="694" y="512" text-anchor="middle">repair, using the failure evidence</text>
+<rect class="state warn" x="404" y="588" width="88" height="40" rx="20"/>
+<text class="state-t" x="448" y="613" text-anchor="middle">blocked</text>
+<rect class="state" x="514" y="588" width="112" height="40" rx="20"/>
+<text class="state-t" x="570" y="613" text-anchor="middle">revalidate</text>
+<polyline class="ln dash" points="448,548 448,585" marker-end="url(#a)"/>
+<text class="lbl" x="448" y="542" text-anchor="middle">from any active state</text>
+<polyline class="ln" points="492,608 511,608" marker-end="url(#a)"/>
+<polyline class="ln" points="570,588 570,540 538,540 538,457" marker-end="url(#a)"/>
+<text class="lbl" x="652" y="612" text-anchor="start">compare saved HEAD, diff,</text>
+<text class="lbl" x="652" y="628" text-anchor="start">and contract with reality</text>
+<text class="note" x="404" y="658">A saved approval covers only its original scope and revision.</text>
+<rect class="box" x="924" y="344" width="212" height="166" rx="12"/>
+<circle class="num" cx="956" cy="373" r="11"/>
+<text class="num-t" x="956" y="377" text-anchor="middle">5</text>
+<text class="title" x="974" y="378">Execution env.</text>
+<text class="body" x="944" y="408">Current checkout</text>
+<text class="body" x="944" y="427">Worktree when isolation</text>
+<text class="body" x="944" y="446">helps; the host sandbox</text>
+<text class="body" x="944" y="465">owns network, credentials,</text>
+<text class="body" x="944" y="484">and subprocesses</text>
+<rect class="box" x="924" y="528" width="212" height="146" rx="12"/>
+<circle class="num" cx="956" cy="557" r="11"/>
+<text class="num-t" x="956" y="561" text-anchor="middle">8</text>
+<text class="title" x="974" y="562">Specialists</text>
+<text class="body" x="944" y="592">Optional, only when</text>
+<text class="body" x="944" y="611">authorized. Task card:</text>
+<text class="body" x="944" y="630">objective, owned paths,</text>
+<text class="body" x="944" y="649">checks, return contract</text>
+<rect class="box" x="64" y="698" width="540" height="306" rx="12"/>
+<circle class="num" cx="96" cy="727" r="11"/>
+<text class="num-t" x="96" y="731" text-anchor="middle">6</text>
+<text class="title" x="114" y="732">Durable state</text>
+<text class="mono" x="84" y="762">data/harness-runs/&lt;run-id&gt;/checkpoint.yaml</text>
+<rect class="chip" x="84" y="782" width="101" height="24" rx="12"/>
+<text class="chip-t" x="135" y="798" text-anchor="middle">task contract</text>
+<rect class="chip" x="193.3" y="782" width="172" height="24" rx="12"/>
+<text class="chip-t" x="279" y="798" text-anchor="middle">HEAD + diff fingerprint</text>
+<rect class="chip" x="373.6" y="782" width="94" height="24" rx="12"/>
+<text class="chip-t" x="421" y="798" text-anchor="middle">capabilities</text>
+<rect class="chip" x="84" y="816" width="201" height="24" rx="12"/>
+<text class="chip-t" x="184" y="832" text-anchor="middle">routing: keep current model</text>
+<rect class="chip hot" x="292.7" y="816" width="236" height="24" rx="12"/>
+<text class="chip-t hot" x="411" y="832" text-anchor="middle">orgmemory: briefing_id · verdict</text>
+<rect class="chip" x="84" y="850" width="94" height="24" rx="12"/>
+<text class="chip-t" x="131" y="866" text-anchor="middle">outcome_sync</text>
+<rect class="chip" x="186.2" y="850" width="108" height="24" rx="12"/>
+<text class="chip-t" x="240" y="866" text-anchor="middle">verification[]</text>
+<rect class="chip" x="302.59999999999997" y="850" width="80" height="24" rx="12"/>
+<text class="chip-t" x="343" y="866" text-anchor="middle">failures[]</text>
+<rect class="chip" x="390.59999999999997" y="850" width="87" height="24" rx="12"/>
+<text class="chip-t" x="434" y="866" text-anchor="middle">next_action</text>
+<text class="body" x="84" y="906">Resume from the earliest invalidated step; never repeat</text>
+<text class="body" x="84" y="925">a completed external write because of an old status.</text>
+<text class="body" x="84" y="944">Never stores secrets, customer records, or private source.</text>
+<rect class="box" x="624" y="698" width="512" height="306" rx="12"/>
+<circle class="num" cx="656" cy="727" r="11"/>
+<text class="num-t" x="656" y="731" text-anchor="middle">10</text>
+<text class="title" x="674" y="732">Verification &amp; observability</text>
+<text class="body" x="644" y="762">Evidence: command · cwd · exit code · revision covered</text>
+<text class="body" x="644" y="781">UI work: inspect the rendered page as well</text>
+<text class="body" x="644" y="800">Failure ratchet: symptom → cause → repair → regression test</text>
+<text class="body" x="644" y="819">A local pass is not production success</text>
+<text class="lbl" x="644" y="858">OUTCOME LABELS (PRODUCT VOCABULARY)</text>
+<rect class="chip hot" x="644" y="870" width="73" height="24" rx="12"/>
+<text class="chip-t hot" x="680" y="886" text-anchor="middle">succeeded</text>
+<rect class="chip hot" x="724.9" y="870" width="52" height="24" rx="12"/>
+<text class="chip-t hot" x="751" y="886" text-anchor="middle">failed</text>
+<rect class="chip hot" x="784.5" y="870" width="59" height="24" rx="12"/>
+<text class="chip-t hot" x="814" y="886" text-anchor="middle">partial</text>
+<rect class="chip hot" x="851.2" y="870" width="73" height="24" rx="12"/>
+<text class="chip-t hot" x="888" y="886" text-anchor="middle">abandoned</text>
+<rect class="chip hot" x="932.1" y="870" width="59" height="24" rx="12"/>
+<text class="chip-t hot" x="961" y="886" text-anchor="middle">unknown</text>
+<text class="body" x="644" y="922">Workflow state and outcome label are separate:</text>
+<text class="body" x="644" y="941">a run can be complete with an outcome of partial.</text>
+<rect class="mw" x="1196" y="104" width="404" height="700" rx="18"/>
+<text class="frame-l hot" x="1218" y="138">MEMORYWORKS · API + MCP</text>
+<rect class="box hot" x="1220" y="152" width="356" height="176" rx="12"/>
+<text class="title" x="1240" y="186">Pre-action briefing</text>
+<text class="body" x="1240" y="210">POST /api/briefings · no model call</text>
+<text class="body" x="1240" y="229">same intent, same verdict</text>
+<rect class="chip" x="1240" y="248" width="59" height="24" rx="12"/>
+<text class="chip-t" x="1269" y="264" text-anchor="middle">proceed</text>
+<rect class="chip" x="1306.7" y="248" width="151" height="24" rx="12"/>
+<text class="chip-t" x="1382" y="264" text-anchor="middle">proceed_with_context</text>
+<rect class="chip" x="1240" y="280" width="130" height="24" rx="12"/>
+<text class="chip-t" x="1305" y="296" text-anchor="middle">requires_approval</text>
+<rect class="chip" x="1377.7" y="280" width="73" height="24" rx="12"/>
+<text class="chip-t" x="1414" y="296" text-anchor="middle">no_memory</text>
+<text class="note" x="1240" y="316">Cited memories · opens a ledger row</text>
+<rect class="box soft" x="1220" y="358" width="356" height="96" rx="12"/>
+<text class="title" x="1240" y="392">Approvals</text>
+<text class="body" x="1240" y="416">requires_approval holds the action;</text>
+<text class="body" x="1240" y="435">a person decides here</text>
+<rect class="box soft" x="1220" y="484" width="356" height="96" rx="12"/>
+<text class="title" x="1240" y="518">Outcome ledger</text>
+<text class="body" x="1240" y="542">context → action → outcome, tied to</text>
+<text class="body" x="1240" y="561">the briefing that came before it</text>
+<rect class="box soft" x="1220" y="610" width="356" height="112" rx="12"/>
+<text class="title" x="1240" y="644">Learned skills</text>
+<text class="body" x="1240" y="668">precedent from verified runs; retired</text>
+<text class="body" x="1240" y="687">when it precedes failures; feeds</text>
+<text class="body" x="1240" y="706">the next briefing</text>
+<polyline class="ln hot" points="1398,328 1398,356" marker-end="url(#ah)"/>
+<polyline class="ln hot" points="1398,580 1398,608" marker-end="url(#ah)"/>
+<text class="lbl hot" x="1406" y="598" text-anchor="start">distils</text>
+<polyline class="ln hot" points="1576,666 1588,666 1588,240 1578,240" marker-end="url(#ah)"/>
+<text class="note" x="1220" y="752">Agents can read, propose, and record. Changing</text>
+<text class="note" x="1220" y="771">memory, plans, or a connected tool waits for a person.</text>
+<rect class="box soft" x="1296" y="850" width="252" height="90" rx="12"/>
+<text class="title" x="1316" y="882">A person</text>
+<text class="body" x="1316" y="904">approves or declines, on Approvals</text>
+<text class="body" x="1316" y="923">or inline in the chat</text>
+<polyline class="ln" points="1220,406 1208,406 1208,886 1294,886" marker-end="url(#a)"/>
+<polyline class="ln hot" points="594,152 594,118 1468,118 1468,150" marker-end="url(#ah)" marker-start="url(#ah)"/>
+<text class="lbl hot" x="900" y="112" text-anchor="middle">get_orgmemory_briefing(task, service)  ⇄  verdict + cited memories</text>
+<polyline class="ln hot" points="1136,790 1170,790 1170,532 1218,532" marker-end="url(#ah)"/>
+<text class="lbl hot" x="1189" y="660" text-anchor="middle" transform="rotate(-90 1189 660)">record_orgmemory_outcome</text>
+<text class="note" x="40" y="1056">Numbers follow the ten harness primitives in .agents/skills/orgmemory-harness/SKILL.md. Violet: the MemoryWorks loop the harness plugs into.</text>
+</svg>

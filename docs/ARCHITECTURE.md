@@ -143,18 +143,25 @@ and role (`owner`, `admin`, `member`):
   (`/oauth/*`, dynamic client registration optional) and introspected by the
   MCP server.
 
-### Lifespan workers
+### Background work and the worker
 
 On startup the backend asserts the configuration is safe for the environment,
 creates or migrates the SQLite schema, initializes the graph, and — in public
 demo mode — recreates the deterministic demo identities and launch scenario on
-every cold start. It then runs three background tasks:
+every cold start.
 
-| Worker | What it does |
+Slow work runs in a set of loops (`app/background.py`): in the API process when
+`BACKGROUND_WORK_ENABLED` is true (one container doing everything, and tests),
+or in a separate process, `python -m app.worker`, when the API sets it false —
+which is how production runs, so an import never competes with an answer for
+the API's CPU. Every loop survives a failed iteration.
+
+| Loop | What it does |
 |---|---|
-| Vector backfill | Re-embeds legacy chunks off the request path. Mixed-model chunks stay safe because dense scoring only compares vectors from the active model. |
-| Connector sync | Drains `connector_sync_jobs` every `CONNECTOR_SYNC_POLL_SECONDS`. A failed iteration is logged and the loop continues. |
+| Queued jobs | Claims `background_jobs` rows one at a time (`app/jobs.py`): repository ingestion, bulk GitHub imports, GitHub webhooks, Slack events, approved refreshes. The API only records them — and, with background work enabled, also runs them right after the response. Claiming is one conditional UPDATE, so a job runs once; a job whose heartbeat stops is queued again up to `max_attempts`. Payloads are ids, so any process can rebuild the work. |
+| Connector sync | Drains `connector_sync_jobs` every `CONNECTOR_SYNC_POLL_SECONDS`, yielding between jobs while answers are in progress. |
 | Standing watches | Runs due org watches every `ORG_WATCH_POLL_SECONDS`. Watches record findings and draft plans; they never apply one. |
+| Maintenance | Once at start: sanitize the index, then re-embed legacy chunks. Mixed-model chunks stay safe because dense scoring only compares vectors from the active model. |
 
 ### Storage split
 
@@ -170,6 +177,14 @@ ArcadeDB holds relationships and retrieval memory: repository structure
 windows, memory units and their entities, beliefs, revisions, envelopes, and
 provenance edges. Everything reaches it through the `GraphStore` contract in
 `graph/base.py`; `GraphStoreProxy` lets tests swap in `InMemoryGraphStore`.
+
+Writes to ArcadeDB made inside `graph.batch()` are buffered and committed as
+one SQL script per 200 statements instead of one HTTP request and transaction
+each; ingestion batches each document's chunks, edges, and windows that way,
+and writes each window and project→service edge once per document. Every edge
+type indexes `edge_key` (which `link()` deletes by to stay idempotent), and
+chunks and items index the ids re-imports delete by. `list_edges` walks out
+from the project's own vertices, which are indexed by `project_id`.
 
 Schema changes to an existing table must also be added to `_migrate_columns`
 in `core/database.py`. `CREATE TABLE IF NOT EXISTS` never adds a column to a
@@ -203,8 +218,14 @@ MemoryWorksSyncApplier ── record → ingestion source type ─► ingest_ite
 - **Picking what to import:** `GET /api/connectors/{provider}/resources` lists
   what a connection can see (for Drive, the 100 most recently edited files, read
   live). Chosen Drive files are imported as a `selected-files` sync job whose
-  cursor carries the file ids; Docs, Sheets, and Slides are exported as text and
-  PDFs and Office files are parsed.
+  cursor carries the file ids, one file per batch, so progress, the job's lease,
+  and the pause for answers all fall between files. Docs, Sheets, and Slides are
+  exported as text and PDFs and Office files are parsed.
+- **Answers first:** an import writes heavily to the graph that an answer has to
+  read. Answers register in `core/activity.py` — a table in the shared
+  database, so a worker in another process sees them — and the sync worker waits
+  between jobs while one is in progress (`CONNECTOR_SYNC_YIELD_TO_ANSWERS_SECONDS`,
+  default 60, so questions cannot stall an import forever).
 - **Records to memory:** `connectors/application.py` maps each record to an
   ingestion source type by provider and kind (a Drive PDF → `pdf`, a GitHub
   commit → `github_commit`, a Teams message → `text`, anything unknown →
@@ -259,7 +280,8 @@ Two entry points sit in front of it:
   recognises an instruction to import plus a nameable source — a GitHub
   repository or all of them, a URL, Google Drive — and starts that import; the
   chat follows the job to the end. Questions about importing still go to the
-  answer path.
+  answer path. A number is honoured — "import the first 3 files from Drive"
+  imports three, newest first — and an import never takes more than 25 files.
 
 Repository code is read structurally: manifests, service tables, routes,
 config schemas, and docstrings can become memory; CSS, JSX fragments, and
@@ -325,6 +347,8 @@ general knowledge as company truth.
 question (+ thread history)
   │
   ├─ assistant_reply            greetings, thanks, "what is MemoryWorks" → deterministic, no model
+  ├─ capability_reply           "can you import from Drive?" → from the sources the product
+  │                             supports (retrieval/capabilities.py), deterministic, no model
   ├─ connection questions       answered from connectors/status.py, before any search
   ├─ commit lookup              a SHA prefix matching one stored commit → read live from
   │                             GitHub (message, files, bounded patch); stored record if refused
@@ -366,6 +390,14 @@ Two entry points share this pipeline:
   Because the answer you watch is the answer you get, it writes one answer
   instead of judged candidates. Step details name sources, never scores or ids.
 
+Every answer opens one model budget (`ORG_MEMORY_ANSWER_LLM_BUDGET_SECONDS`,
+default 75, and `ORG_MEMORY_ANSWER_MAX_LLM_CALLS`, default 8) that its drafts,
+candidates, judge, and general-knowledge fallback all share; see
+[Model request limits](#model-request-limits). If the chat's stream still waits
+past `ORG_MEMORY_ANSWER_STREAM_TIMEOUT_SECONDS` (150), it says so — naming the
+imports in progress when there are any — and the chat keeps the steps the answer
+got through, open on the one where it stopped.
+
 GLM calls ask for low reasoning effort (`GLM_REASONING_EFFORT`, default `low`);
 at the provider's default effort one call took minutes, longer than the site's
 proxy waits. The deterministic keyword fallback first finds the question's
@@ -393,6 +425,31 @@ top-level or only space, resolves a space name or repository path when exactly
 one space fits, refuses spaces outside the caller's access, and otherwise
 returns the valid choices. A run that ends after refused proposals says nothing
 was filed.
+
+---
+
+## Model request limits
+
+Every model call — answers, Agent runs, follow-up suggestions, anything an
+import asks for — goes through `generate_grounded_json` or `stream_text`, and
+both take a slot from `llm/limits.py` first:
+
+| Limit | Default | Scope |
+|---|---|---|
+| `LLM_MAX_CONCURRENT_REQUESTS` | 4 | calls in flight, whole process |
+| `LLM_MAX_REQUESTS_PER_MINUTE` | 60 | calls started per minute, whole process |
+| `LLM_REQUEST_MAX_SECONDS` | 90 | wall-clock per call, total (not per byte) |
+| `ORG_MEMORY_ANSWER_LLM_BUDGET_SECONDS` / `_MAX_LLM_CALLS` | 75 s / 8 | one answer |
+| `ORG_AGENT_LLM_BUDGET_SECONDS` / `ORG_AGENT_MAX_LLM_CALLS` | 300 s / 12 | one Agent run |
+
+A task's budget lives in a context variable; work handed to a thread pool
+carries it with `carry_budget` (the parallel answer candidates do). Nested
+budgets count against, and never outlast, the one they sit in. A call waits for
+a slot only as long as its budget allows; a refused or overdue call raises
+`LLMUnavailable`, which every caller already treats as "no model answer", so a
+cap degrades an answer to its deterministic fallback instead of hanging it.
+Non-streamed replies are read in pieces so the total limit holds even when a
+provider keeps a slow call alive with whitespace.
 
 ---
 
@@ -657,9 +714,11 @@ MCP clients ──────────────────────�
 - The browser only ever talks to memoryworks.app, so cookies and the registered
   OAuth callbacks (`https://memoryworks.app/api/auth/*/callback`) stay
   same-origin. `vercel.json` has only the frontend service plus the two rewrites.
-- `compose.api-only.yml` overrides the production compose: backend, MCP,
-  ArcadeDB, and Caddy (`Caddyfile.api-only`, streaming responses flushed
-  immediately); the frontend service is not started. SQLite and ArcadeDB live on
+- `compose.api-only.yml` overrides the production compose: backend (API only,
+  `BACKGROUND_WORK_ENABLED=false`), worker (`python -m app.worker`, same image,
+  settings, and volumes), MCP, ArcadeDB, and Caddy (`Caddyfile.api-only`,
+  streaming responses flushed immediately); the frontend service is not
+  started. `verify.sh` fails if the worker is not running. SQLite and ArcadeDB live on
   volumes, so state survives restarts and redeploys.
 - Deploy with `git pull && ./deploy/server/up.sh && ./deploy/server/verify.sh`
   on the server. `up.sh` refuses to start without the secrets the configured
@@ -684,6 +743,15 @@ isolated profile. Public demo mode has its own, stricter checklist.
 CI (`.github/workflows/ci.yml`) runs four jobs on every push: backend (ruff,
 black, pytest), frontend (node tests, `tsc`, build), Python SDK tests, and MCP
 contract tests. `make ci` runs the same checks locally.
+
+---
+
+## Scaling
+
+Where this design stops and the stages beyond it are in
+[`SCALING.md`](SCALING.md): the ceilings found in the code (whole-project reads
+per answer, one SQLite writer, process-local state, one graph node), what a
+billion users implies for load and model spend, and the migrations in order.
 
 ---
 
