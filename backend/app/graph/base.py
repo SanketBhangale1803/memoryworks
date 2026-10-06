@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -19,6 +21,12 @@ class GraphEvidence:
 
 
 class GraphStore(ABC):
+    @contextmanager
+    def batch(self) -> Iterator[None]:
+        """Group the writes made inside the block. Stores that commit each write
+        cheaply (the in-memory one) need do nothing; see ArcadeDBGraphStore."""
+        yield
+
     @abstractmethod
     def health(self) -> dict[str, Any]: ...
 

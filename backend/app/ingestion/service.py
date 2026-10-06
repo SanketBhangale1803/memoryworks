@@ -208,93 +208,103 @@ class IngestionService:
         )
         chunks = chunk_document(content)
         chunk_ids: list[str] = []
-        for index, document_chunk in enumerate(chunks):
-            text = document_chunk.text
-            chunk_id = new_id("chunk")
-            chunk_ids.append(chunk_id)
-            chunk_services = [
-                service
-                for service in services
-                if service.replace("_", " ") in text.lower().replace("_", " ")
-            ] or services
-            chunk_signals = extract_signals(text)
-            contextual_text = "\n".join(
-                value
-                for value in (
-                    f"Source: {title}",
-                    f"Section: {document_chunk.section}" if document_chunk.section else "",
-                    text,
+        # A document's chunks, their edges, and its windows are written as a few
+        # transactions instead of one request each (see ArcadeDBGraphStore.batch).
+        windows: dict[tuple[str, str], str] = {}
+        linked_services: set[str] = set()
+        with self.graph.batch():
+            for index, document_chunk in enumerate(chunks):
+                text = document_chunk.text
+                chunk_id = new_id("chunk")
+                chunk_ids.append(chunk_id)
+                chunk_services = [
+                    service
+                    for service in services
+                    if service.replace("_", " ") in text.lower().replace("_", " ")
+                ] or services
+                chunk_signals = extract_signals(text)
+                contextual_text = "\n".join(
+                    value
+                    for value in (
+                        f"Source: {title}",
+                        f"Section: {document_chunk.section}" if document_chunk.section else "",
+                        text,
+                    )
+                    if value
                 )
-                if value
-            )
-            retrieval_features = self.hcag.index_chunk(contextual_text)
-            memory = reinforce_memory(
-                project_id,
-                source_id,
-                retrieval_features["content_hash"],
-                str(metadata.get("source_updated_at") or now),
-            )
-            chunk_payload = {
-                "id": chunk_id,
-                "project_id": project_id,
-                "item_id": item_id,
-                "source_id": source_id,
-                "text": text,
-                "source_type": source_type,
-                "source_title": title,
-                "source_url": self._chunk_url(
-                    source_url, document_chunk.line_start, document_chunk.line_end
-                ),
-                "service_names": chunk_services,
-                "context_window": route["context_window"],
-                "domain": route["domain"],
-                "subdomain": route["subdomain"],
-                "content_hash": retrieval_features["content_hash"],
-                "search_terms": retrieval_features["search_terms"],
-                "embedding": retrieval_features.get("embedding", []),
-                "embedding_model": retrieval_features.get("embedding_model", ""),
-                "embedding_version": retrieval_features.get("embedding_version", 0),
-                "metadata_json": json.dumps(
-                    {
-                        "chunk_index": index,
-                        "line_start": document_chunk.line_start,
-                        "line_end": document_chunk.line_end,
-                        "token_count": document_chunk.token_count,
-                        "section": document_chunk.section,
-                        "item_id": item_id,
-                        "source_id": source_id,
-                        "repository": metadata.get("repository", ""),
-                        "path": metadata.get("path", ""),
-                        "owner": metadata.get("owner", ""),
-                        "signals": chunk_signals,
-                        "hcag": route,
-                        "source_version": metadata.get("source_version", ""),
-                        "commit_sha": metadata.get("commit_sha", ""),
-                        "source_updated_at": metadata.get("source_updated_at", ""),
-                        "channel_id": metadata.get("channel_id", ""),
-                        "channel_name": metadata.get("channel_name", ""),
-                        "user": metadata.get("user", ""),
-                        "timestamp": metadata.get("timestamp", ""),
-                        "memory": memory,
-                    }
-                ),
-            }
-            self.graph.upsert_chunk(chunk_payload)
-            self.graph.link(
-                "CHUNK_DERIVED_FROM", "KnowledgeChunk", chunk_id, "KnowledgeItem", item_id
-            )
-            self.hcag.window_store.record_chunk(
-                project_id, route["domain"], route["subdomain"], chunk_id
-            )
-            if source_type == "repo_file":
-                self.graph.link_file_to_chunk(source_id, chunk_id)
-            for service in chunk_services:
-                service_id = f"{project_id}:{service}"
-                self.graph.upsert_service(
-                    {"id": service_id, "project_id": project_id, "name": service}
+                retrieval_features = self.hcag.index_chunk(contextual_text)
+                memory = reinforce_memory(
+                    project_id,
+                    source_id,
+                    retrieval_features["content_hash"],
+                    str(metadata.get("source_updated_at") or now),
                 )
-                self.graph.link("PROJECT_HAS_SERVICE", "Project", project_id, "Service", service_id)
-                self.graph.link_chunk_to_service(chunk_id, service_id)
+                chunk_payload = {
+                    "id": chunk_id,
+                    "project_id": project_id,
+                    "item_id": item_id,
+                    "source_id": source_id,
+                    "text": text,
+                    "source_type": source_type,
+                    "source_title": title,
+                    "source_url": self._chunk_url(
+                        source_url, document_chunk.line_start, document_chunk.line_end
+                    ),
+                    "service_names": chunk_services,
+                    "context_window": route["context_window"],
+                    "domain": route["domain"],
+                    "subdomain": route["subdomain"],
+                    "content_hash": retrieval_features["content_hash"],
+                    "search_terms": retrieval_features["search_terms"],
+                    "embedding": retrieval_features.get("embedding", []),
+                    "embedding_model": retrieval_features.get("embedding_model", ""),
+                    "embedding_version": retrieval_features.get("embedding_version", 0),
+                    "metadata_json": json.dumps(
+                        {
+                            "chunk_index": index,
+                            "line_start": document_chunk.line_start,
+                            "line_end": document_chunk.line_end,
+                            "token_count": document_chunk.token_count,
+                            "section": document_chunk.section,
+                            "item_id": item_id,
+                            "source_id": source_id,
+                            "repository": metadata.get("repository", ""),
+                            "path": metadata.get("path", ""),
+                            "owner": metadata.get("owner", ""),
+                            "signals": chunk_signals,
+                            "hcag": route,
+                            "source_version": metadata.get("source_version", ""),
+                            "commit_sha": metadata.get("commit_sha", ""),
+                            "source_updated_at": metadata.get("source_updated_at", ""),
+                            "channel_id": metadata.get("channel_id", ""),
+                            "channel_name": metadata.get("channel_name", ""),
+                            "user": metadata.get("user", ""),
+                            "timestamp": metadata.get("timestamp", ""),
+                            "memory": memory,
+                        }
+                    ),
+                }
+                self.graph.upsert_chunk(chunk_payload)
+                self.graph.link(
+                    "CHUNK_DERIVED_FROM", "KnowledgeChunk", chunk_id, "KnowledgeItem", item_id
+                )
+                window_key = (route["domain"], route["subdomain"])
+                windows[window_key] = self.hcag.window_store.record_chunk(
+                    project_id, *window_key, chunk_id, window_id=windows.get(window_key)
+                )
+                if source_type == "repo_file":
+                    self.graph.link_file_to_chunk(source_id, chunk_id)
+                for service in chunk_services:
+                    service_id = f"{project_id}:{service}"
+                    if service_id not in linked_services:
+                        linked_services.add(service_id)
+                        self.graph.upsert_service(
+                            {"id": service_id, "project_id": project_id, "name": service}
+                        )
+                        self.graph.link(
+                            "PROJECT_HAS_SERVICE", "Project", project_id, "Service", service_id
+                        )
+                    self.graph.link_chunk_to_service(chunk_id, service_id)
         superseded_by = self.memory.superseded_by(project_id, source_id, title)
         memory_units = self.memory.extract_memory_units(
             project_id,

@@ -53,14 +53,25 @@ class ArcadeDBWindowStore:
     def record_item(self, project_id: str, domain: str, subdomain: str) -> str:
         return self.ensure_window(project_id, domain, subdomain)
 
-    def record_chunk(self, project_id: str, domain: str, subdomain: str, chunk_id: str) -> str:
+    def record_chunk(
+        self,
+        project_id: str,
+        domain: str,
+        subdomain: str,
+        chunk_id: str,
+        window_id: str | None = None,
+    ) -> str:
         """Attach an evidence chunk to its durable HCAG context window.
 
         Context windows used to be decorative counters. This edge makes the
         memory boundary traversable in ArcadeDB and lets retrieval traces and
         the graph UI show the exact evidence contained by each window.
+
+        Pass ``window_id`` from an earlier call to skip refreshing the window:
+        a document's chunks share a few windows, and refreshing one counts items
+        across the whole project.
         """
-        window_id = self.ensure_window(project_id, domain, subdomain)
+        window_id = window_id or self.ensure_window(project_id, domain, subdomain)
         self.graph.link(
             "CONTEXT_WINDOW_CONTAINS_CHUNK",
             "ContextWindow",

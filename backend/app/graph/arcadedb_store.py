@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 from collections import Counter
+from collections.abc import Iterator
+from contextlib import contextmanager, suppress
 from typing import Any
 
 from .arcade_client import ArcadeClient
@@ -15,9 +18,79 @@ from .traversal import evidence_from_hits, find_traversal_hits
 __all__ = ["ArcadeDBGraphStore", "rank_records"]
 
 
+# A parameter reference in a statement, renamed per statement when several are
+# sent as one script so their parameters cannot collide.
+_PARAM = re.compile(r"(?<![:\w]):([A-Za-z_]\w*)")
+
+
+class _WriteBatch:
+    def __init__(self) -> None:
+        self.statements: list[tuple[str, dict[str, Any]]] = []
+        self.edge_keys: set[str] = set()
+
+
 class ArcadeDBGraphStore(GraphStore):
+    # Statements per transaction when writes are batched: large enough that a
+    # document's chunks and edges commit in a few round trips, small enough that
+    # one request stays a few megabytes even with embeddings in every chunk.
+    BATCH_SIZE = 200
+
     def __init__(self, client: ArcadeClient | None = None):
         self.client = client or ArcadeClient()
+        self._local = threading.local()
+
+    @contextmanager
+    def batch(self) -> Iterator[None]:
+        """Send the writes made inside the block as a few transactions, not one each.
+
+        Every upsert and edge used to be its own HTTP request and its own commit;
+        a 300-chunk document made over a thousand. Inside a batch they are
+        buffered and committed ``BATCH_SIZE`` at a time as one SQL script. Reads
+        are not buffered, so code inside a batch must not read what it just
+        wrote. Whatever was buffered is still sent if the block raises, as each
+        write would have been before.
+        """
+        if getattr(self._local, "batch", None) is not None:
+            yield  # nested: the outer batch sends everything
+            return
+        self._local.batch = _WriteBatch()
+        failed = False
+        try:
+            yield
+        except BaseException:
+            failed = True
+            raise
+        finally:
+            pending, self._local.batch = self._local.batch, None
+            if failed:
+                with suppress(Exception):
+                    self._flush(pending)
+            else:
+                self._flush(pending)
+
+    def _write(self, command: str, params: dict[str, Any], language: str = "sql") -> None:
+        pending = getattr(self._local, "batch", None)
+        if pending is None:
+            self.client.command(command, params, language=language)
+            return
+        pending.statements.append((command, params))
+        if len(pending.statements) >= self.BATCH_SIZE:
+            self._flush(pending)
+
+    def _flush(self, pending: _WriteBatch) -> None:
+        if not pending.statements:
+            return
+        lines = ["BEGIN;"]
+        merged: dict[str, Any] = {}
+        for index, (command, params) in enumerate(pending.statements):
+            prefix = f"s{index}_"
+            lines.append(_PARAM.sub(lambda m, p=prefix: f":{p}{m.group(1)}", command).strip())
+            if not lines[-1].endswith(";"):
+                lines[-1] += ";"
+            merged.update({f"{prefix}{key}": value for key, value in params.items()})
+        lines.append("COMMIT RETRY 5;")
+        pending.statements = []
+        self.client.command("\n".join(lines), merged, language="sqlscript")
 
     def health(self) -> dict[str, Any]:
         status = self.client.health()
@@ -48,9 +121,9 @@ class ArcadeDBGraphStore(GraphStore):
             raise ValueError(f"{vertex_type} payload missing id")
         assignments = ", ".join(f"{key}=:{key}" for key in safe if key != "id")
         if assignments:
-            self.client.command(f"UPDATE {vertex_type} SET {assignments} UPSERT WHERE id=:id", safe)
+            self._write(f"UPDATE {vertex_type} SET {assignments} UPSERT WHERE id=:id", safe)
         else:
-            self.client.command(f"UPDATE {vertex_type} SET id=:id UPSERT WHERE id=:id", safe)
+            self._write(f"UPDATE {vertex_type} SET id=:id UPSERT WHERE id=:id", safe)
 
     def upsert_node(self, node_type: str, payload: dict[str, Any]) -> None:
         if node_type not in VERTEX_TYPES:
@@ -222,12 +295,19 @@ class ArcadeDBGraphStore(GraphStore):
         if edge_type not in EDGE_TYPES:
             raise ValueError(f"Unsupported graph edge type: {edge_type}")
         edge_key = f"{edge_type}:{from_id}:{to_id}"
+        pending = getattr(self._local, "batch", None)
+        if pending is not None:
+            # A document links each chunk to the same window and services;
+            # within one batch, each edge is written once.
+            if edge_key in pending.edge_keys:
+                return
+            pending.edge_keys.add(edge_key)
         script = (
             f"DELETE FROM {edge_type} WHERE edge_key=:edge_key; "
             f"CREATE EDGE {edge_type} FROM (SELECT FROM {from_type} WHERE id=:from_id) "
             f"TO (SELECT FROM {to_type} WHERE id=:to_id) SET edge_key=:edge_key;"
         )
-        self.client.command(
+        self._write(
             script,
             {"edge_key": edge_key, "from_id": from_id, "to_id": to_id},
             language="sqlscript",
@@ -373,28 +453,45 @@ class ArcadeDBGraphStore(GraphStore):
     def list_edges(
         self, project_id: str, edge_type: str | None = None, limit: int = 200
     ) -> list[dict[str, Any]]:
-        types = [edge_type] if edge_type else EDGE_TYPES
+        """Edges touching the project's vertices (and the project itself).
+
+        Walked out from the project's vertices, which are indexed by project_id.
+        This used to MATCH every edge of every type and filter on either end,
+        which no index can serve: ~95 full scans per call, and answers paid for
+        every other workspace's graph.
+        """
+        if edge_type and edge_type not in EDGE_TYPES:
+            return []
+        expand = f"bothE('{edge_type}')" if edge_type else "bothE()"
+        sources = [("Project", "id")] + [
+            (vertex_type, "project_id")
+            for vertex_type in PROJECT_SCOPED_VERTEX_TYPES
+            if vertex_type != "Project"
+        ]
         output: list[dict[str, Any]] = []
-        for relationship in types:
-            if relationship not in EDGE_TYPES:
-                continue
-            try:
-                records = self.client.query(
-                    (
-                        f"MATCH (a)-[r:{relationship}]->(b) "
-                        "WHERE a.project_id=$project_id OR b.project_id=$project_id "
-                        "OR a.id=$project_id OR b.id=$project_id "
-                        "RETURN a.id AS from_id, b.id AS to_id LIMIT $limit"
-                    ),
-                    {"project_id": project_id, "limit": limit},
-                    language="cypher",
+        seen: set[str] = set()
+        for vertex_type, key in sources:
+            records = self.client.query(
+                "SELECT @rid AS rid, @type AS relationship, @out.id AS from_id, "
+                f"@in.id AS to_id FROM (SELECT expand({expand}) FROM {vertex_type} "
+                f"WHERE {key}=:project_id) LIMIT :limit",
+                # An edge between two project vertices is reached from both ends.
+                {"project_id": project_id, "limit": 2 * (limit - len(output))},
+            )
+            for record in records:
+                rid = str(record.get("rid") or "")
+                if rid in seen:
+                    continue
+                seen.add(rid)
+                output.append(
+                    {
+                        "relationship": record.get("relationship"),
+                        "from_id": record.get("from_id"),
+                        "to_id": record.get("to_id"),
+                    }
                 )
-                for record in records:
-                    output.append({"relationship": relationship, **record})
-                    if len(output) >= limit:
-                        return output
-            except Exception:
-                continue
+                if len(output) >= limit:
+                    return output
         return output
 
     def service_graph(self, project_id: str, service_name: str) -> dict[str, Any]:

@@ -188,4 +188,18 @@ def schema_commands() -> list[str]:
         for name in VERTEX_TYPES
         if name not in {"Organization", "Language", "Dependency"}
     ]
+    # Every link() first deletes the edge with the same edge_key, so that it is
+    # never duplicated. Unindexed, that delete scanned every edge of the type and
+    # ingestion slowed down as the graph grew; indexed it is a lookup.
+    commands += [f"CREATE PROPERTY {name}.edge_key STRING" for name in EDGE_TYPES]
+    commands += [
+        f"CREATE INDEX IF NOT EXISTS ON {name} (edge_key) NOTUNIQUE" for name in EDGE_TYPES
+    ]
+    # Re-importing a source deletes its chunks by item and its items by source.
+    commands += [
+        "CREATE PROPERTY KnowledgeChunk.item_id STRING",
+        "CREATE INDEX IF NOT EXISTS ON KnowledgeChunk (item_id) NOTUNIQUE",
+        "CREATE PROPERTY KnowledgeItem.source_id STRING",
+        "CREATE INDEX IF NOT EXISTS ON KnowledgeItem (source_id) NOTUNIQUE",
+    ]
     return commands
