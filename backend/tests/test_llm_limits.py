@@ -114,7 +114,7 @@ def test_a_model_reply_that_trickles_in_is_cut_off_at_the_deadline(monkeypatch):
                 time.sleep(0.2)
                 yield b" "
 
-    monkeypatch.setattr(providers.httpx, "stream", lambda *args, **kwargs: Trickle())
+    monkeypatch.setattr(providers, "_open_stream", lambda *args, **kwargs: Trickle())
     started = time.monotonic()
     with pytest.raises(LLMUnavailable, match="in time"):
         providers._post_json("https://model.test", {}, {}, 0.6)

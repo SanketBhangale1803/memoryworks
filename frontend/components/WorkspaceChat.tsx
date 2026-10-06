@@ -11,8 +11,8 @@ import { IMPORT_HINT, ImportTurn, type ChatImport } from "@/components/ImportTur
 import MarkdownAnswer from "@/components/MarkdownAnswer";
 import { NavToggle } from "@/components/WorkspaceFrame";
 import { useWorkspaceTools } from "@/hooks/useWorkspaceTools";
-import { API, api } from "@/lib/api";
-import { orgApi, type OrgPlan } from "@/lib/orgTools";
+import { AnswerStopped, API, api } from "@/lib/api";
+import { orgApi, type OrgAgentSession, type OrgPlan } from "@/lib/orgTools";
 import { newThreadId, threads, titleFrom, useThreads, type ThreadMode } from "@/lib/threads";
 import type { MemoryWorksUnit } from "@/lib/webmcp";
 
@@ -87,6 +87,9 @@ type Turn = {
   /* Set when the message asked to import something and the import ran instead. */
   imported?: ChatImport;
   error?: string;
+  /* Stop was pressed. `partial` is what the answer had written by then. */
+  stopped?: boolean;
+  partial?: string;
 };
 
 /* Terminal states stop the poller. Anything else is still in flight. */
@@ -143,6 +146,8 @@ export default function WorkspaceChat({ user }: { user: any }) {
   const [filter, setFilter] = useState("");
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
+  /* Aborts the answer or Agent run in flight; set only while one is. */
+  const [inFlight, setInFlight] = useState<AbortController | null>(null);
   const [loadError, setLoadError] = useState("");
   const [copied, setCopied] = useState("");
   const [evidence, setEvidence] = useState<any>(null);
@@ -317,6 +322,8 @@ export default function WorkspaceChat({ user }: { user: any }) {
     const key = `${threadId}:${index}`;
     let trace = emptyTrace();
     setLive({ key, trace });
+    const controller = new AbortController();
+    setInFlight(controller);
     try {
       const response = await streamAnswer<Answer>(
         {
@@ -333,6 +340,7 @@ export default function WorkspaceChat({ user }: { user: any }) {
           trace = applyEvent(trace, event);
           setLive({ key, trace });
         },
+        controller.signal,
       );
       patchTurn(threadId, index, {
         answer: response,
@@ -345,13 +353,15 @@ export default function WorkspaceChat({ user }: { user: any }) {
     } catch (error: any) {
       // Keep the steps it got through: where an answer stopped is the first
       // thing anyone needs to know about why it failed.
+      const stopped = error instanceof AnswerStopped || controller.signal.aborted;
       patchTurn(threadId, index, {
-        error: error.message,
+        ...(stopped ? { stopped: true, partial: trace.draft } : { error: error.message }),
         trace: trace.steps.length ? { ...trace, draft: "", ms: Date.now() - trace.started } : undefined,
       });
-      throw error;
+      throw stopped ? new AnswerStopped() : error;
     } finally {
       setLive(null);
+      setInFlight(null);
       setBusy(false);
     }
   }
@@ -364,9 +374,18 @@ export default function WorkspaceChat({ user }: { user: any }) {
     setBusy(true);
     const { threadId, index } = beginTurn(question, "agent", project, scope);
     patchTurn(threadId, index, { agent: { steps: [], done: false } });
+    const controller = new AbortController();
+    setInFlight(controller);
+    let latest: OrgAgentSession | undefined;
     try {
-      const session = await orgApi.askStream(question, spaceIds(), (partial) =>
-        patchTurn(threadId, index, { agent: { steps: stepsFrom(partial), session: partial, done: false } }),
+      const session = await orgApi.askStream(
+        question,
+        spaceIds(),
+        (partial) => {
+          latest = partial;
+          patchTurn(threadId, index, { agent: { steps: stepsFrom(partial), session: partial, done: false } });
+        },
+        controller.signal,
       );
       patchTurn(threadId, index, {
         agent: {
@@ -378,11 +397,21 @@ export default function WorkspaceChat({ user }: { user: any }) {
       });
       void suggestNext(question, session.answer, session.steps.map((step) => step.summary));
     } catch (error: any) {
+      if (error instanceof AnswerStopped || controller.signal.aborted) {
+        // Keep the steps it took; the run is marked stopped, not failed.
+        const session: OrgAgentSession | undefined = latest ? { ...latest, status: "cancelled" } : undefined;
+        patchTurn(threadId, index, {
+          agent: { steps: session ? stepsFrom(session) : [], session, done: true },
+          stopped: true,
+        });
+        return;
+      }
       patchTurn(threadId, index, {
         agent: { steps: [], done: true },
         error: error?.message || "The agent could not finish.",
       });
     } finally {
+      setInFlight(null);
       setBusy(false);
     }
   }
@@ -577,7 +606,11 @@ export default function WorkspaceChat({ user }: { user: any }) {
                     const streaming = live?.key === `${active?.id}:${index}` ? live.trace : undefined;
                     const shown = streaming || turn.trace;
                     return shown ? (
-                      <AskTrace trace={shown} running={Boolean(streaming)} stalled={Boolean(turn.error)} />
+                      <AskTrace
+                        trace={shown}
+                        running={Boolean(streaming)}
+                        stalled={Boolean(turn.error || turn.stopped)}
+                      />
                     ) : null;
                   })()}
 
@@ -586,6 +619,13 @@ export default function WorkspaceChat({ user }: { user: any }) {
                 )}
 
                 {turn.error && <div className="ws-alert">{turn.error}</div>}
+
+                {turn.stopped && turn.partial && <LiveDraft text={turn.partial} writing={false} />}
+                {turn.stopped && (
+                  <p className="ws-stopped" role="status">
+                    {turn.partial ? "Stopped before the answer was checked against its sources." : "Stopped."}
+                  </p>
+                )}
 
                 {turn.answer && (
                   <AnswerBlock
@@ -603,6 +643,7 @@ export default function WorkspaceChat({ user }: { user: any }) {
                 {turn.mode === "ask" &&
                   !turn.answer &&
                   !turn.error &&
+                  !turn.stopped &&
                   busy &&
                   index === turns.length - 1 &&
                   !live?.trace.steps.length && (
@@ -637,7 +678,10 @@ export default function WorkspaceChat({ user }: { user: any }) {
               placeholder={placeholder}
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) {
+                if (event.key === "Escape" && inFlight) {
+                  event.preventDefault();
+                  inFlight.abort();
+                } else if (event.key === "Enter" && !event.shiftKey) {
                   event.preventDefault();
                   send();
                 }
@@ -788,15 +832,27 @@ export default function WorkspaceChat({ user }: { user: any }) {
                 </div>
               )}
 
-              <button
-                type="button"
-                className="ws-send"
-                onClick={() => send()}
-                disabled={busy || noSources || !draft.trim()}
-                aria-label="Send"
-              >
-                ↑
-              </button>
+              {inFlight ? (
+                <button
+                  type="button"
+                  className="ws-send ws-stop"
+                  onClick={() => inFlight.abort()}
+                  aria-label="Stop"
+                  title="Stop (Esc)"
+                >
+                  <span aria-hidden="true" />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="ws-send"
+                  onClick={() => send()}
+                  disabled={busy || noSources || !draft.trim()}
+                  aria-label="Send"
+                >
+                  ↑
+                </button>
+              )}
             </div>
           </div>
         </div>

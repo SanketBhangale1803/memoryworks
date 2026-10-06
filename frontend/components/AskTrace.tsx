@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import MarkdownAnswer from "@/components/MarkdownAnswer";
-import { API, api } from "@/lib/api";
+import { API, api, AnswerStopped, cancelStream } from "@/lib/api";
 
 /* Ask mode, narrated.
  *
@@ -26,6 +26,8 @@ export type Trace = {
 };
 
 type StreamEvent =
+  | { type: "start"; id: string }
+  | { type: "cancelled" }
   | { type: "step"; label: string; detail?: string }
   | { type: "text"; text: string }
   | { type: "thinking"; text: string }
@@ -55,60 +57,86 @@ export function applyEvent(trace: Trace, event: StreamEvent): Trace {
 }
 
 /* POST /api/ask/stream and report every event; resolves with the final answer.
-   A server without the stream (an older deployment) gets the plain request. */
-export async function streamAnswer<T>(body: unknown, onEvent: (event: StreamEvent) => void): Promise<T> {
-  let response: Response;
+   A server without the stream (an older deployment) gets the plain request.
+   Aborting `signal` stops the answer on the server too and rejects with
+   AnswerStopped. */
+export async function streamAnswer<T>(
+  body: unknown,
+  onEvent: (event: StreamEvent) => void,
+  signal?: AbortSignal,
+): Promise<T> {
+  let answerId = "";
+  const stop = () => {
+    if (answerId) cancelStream(`/api/ask/stream/${encodeURIComponent(answerId)}/cancel`);
+  };
+  signal?.addEventListener("abort", stop, { once: true });
   try {
-    response = await fetch(`${API}/api/ask/stream`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      cache: "no-store",
-      body: JSON.stringify(body),
-    });
-  } catch {
-    throw new Error(`Cannot reach the MemoryWorks API at ${API}. Check that the backend is running and refresh the page.`);
-  }
-  if (response.status === 404 || response.status === 405) {
-    return api<T>("/api/ask", { method: "POST", body: JSON.stringify(body) });
-  }
-  if (!response.ok || !response.body) {
-    const payload = await response.json().catch(() => ({}));
-    throw new Error(payload.detail || `Request failed (${response.status})`);
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  for (;;) {
-    let chunk: ReadableStreamReadResult<Uint8Array>;
+    let response: Response;
     try {
-      chunk = await reader.read();
+      response = await fetch(`${API}/api/ask/stream`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        cache: "no-store",
+        body: JSON.stringify(body),
+        signal,
+      });
     } catch {
-      // The browser says only "network error" when a stream is cut mid-answer.
-      throw new Error("The connection dropped while MemoryWorks was answering. Ask again.");
+      if (signal?.aborted) throw new AnswerStopped();
+      throw new Error(`Cannot reach the MemoryWorks API at ${API}. Check that the backend is running and refresh the page.`);
     }
-    const { done, value } = chunk;
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    let newline = buffer.indexOf("\n");
-    while (newline !== -1) {
-      const line = buffer.slice(0, newline).trim();
-      buffer = buffer.slice(newline + 1);
-      newline = buffer.indexOf("\n");
-      if (!line) continue;
-      let event: StreamEvent;
+    if (response.status === 404 || response.status === 405) {
+      return await api<T>("/api/ask", { method: "POST", body: JSON.stringify(body), signal });
+    }
+    if (!response.ok || !response.body) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload.detail || `Request failed (${response.status})`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    for (;;) {
+      let chunk: ReadableStreamReadResult<Uint8Array>;
       try {
-        event = JSON.parse(line);
+        chunk = await reader.read();
       } catch {
-        continue;
+        if (signal?.aborted) throw new AnswerStopped();
+        // The browser says only "network error" when a stream is cut mid-answer.
+        throw new Error("The connection dropped while MemoryWorks was answering. Ask again.");
       }
-      if (event.type === "done") return event.answer as T;
-      if (event.type === "error") throw new Error(event.message || "MemoryWorks could not finish this answer.");
-      onEvent(event);
+      const { done, value } = chunk;
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let newline = buffer.indexOf("\n");
+      while (newline !== -1) {
+        const line = buffer.slice(0, newline).trim();
+        buffer = buffer.slice(newline + 1);
+        newline = buffer.indexOf("\n");
+        if (!line) continue;
+        let event: StreamEvent;
+        try {
+          event = JSON.parse(line);
+        } catch {
+          continue;
+        }
+        if (event.type === "start") {
+          answerId = event.id;
+          // Stop was pressed before the server said which answer this is.
+          if (signal?.aborted) stop();
+          continue;
+        }
+        if (event.type === "cancelled") throw new AnswerStopped();
+        if (event.type === "done") return event.answer as T;
+        if (event.type === "error") throw new Error(event.message || "MemoryWorks could not finish this answer.");
+        onEvent(event);
+      }
     }
+    if (signal?.aborted) throw new AnswerStopped();
+    throw new Error("The answer was cut off before it finished. Try asking again.");
+  } finally {
+    signal?.removeEventListener("abort", stop);
   }
-  throw new Error("The answer was cut off before it finished. Try asking again.");
 }
 
 /* Citations stream as [S3] and are resolved to source names only once the
@@ -169,13 +197,14 @@ export function AskTrace({ trace, running, stalled = false }: { trace: Trace; ru
   );
 }
 
-export function LiveDraft({ text }: { text: string }) {
+/* The answer as it is being written, or as far as it got before Stop. */
+export function LiveDraft({ text, writing = true }: { text: string; writing?: boolean }) {
   if (!text.trim()) return null;
   return (
     <div className="ws-answer">
-      <div className="ws-reply ws-draft" aria-live="off">
+      <div className={`ws-reply ws-draft ${writing ? "" : "stopped"}`} aria-live="off">
         <MarkdownAnswer>{withoutDraftCitations(text)}</MarkdownAnswer>
-        <span className="ws-caret" aria-hidden="true" />
+        {writing && <span className="ws-caret" aria-hidden="true" />}
       </div>
     </div>
   );

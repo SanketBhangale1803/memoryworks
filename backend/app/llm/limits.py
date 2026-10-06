@@ -38,6 +38,40 @@ class LLMUnavailable(RuntimeError):
     """A model call was refused by a cap or ran out of time."""
 
 
+class AnswerCancelled(BaseException):  # noqa: N818 - it is a signal, not an error
+    """The person stopped this answer or Agent run.
+
+    A BaseException on purpose: the answer path has many ``except Exception``
+    fallbacks that would otherwise swallow it and carry on to the next lane.
+    """
+
+
+_cancel: contextvars.ContextVar[threading.Event | None] = contextvars.ContextVar(
+    "answer_cancel", default=None
+)
+
+
+@contextmanager
+def cancellable(event: threading.Event) -> Iterator[None]:
+    """Make the work inside the block stoppable by setting ``event``."""
+    token = _cancel.set(event)
+    try:
+        yield
+    finally:
+        _cancel.reset(token)
+
+
+def cancel_event() -> threading.Event | None:
+    """The stop signal for the work in progress, if it can be stopped."""
+    return _cancel.get()
+
+
+def raise_if_cancelled() -> None:
+    event = _cancel.get()
+    if event is not None and event.is_set():
+        raise AnswerCancelled()
+
+
 @dataclass
 class LLMBudget:
     deadline: float
@@ -125,7 +159,9 @@ class _Gate:
                 # A rate-limited caller wakes when the oldest start leaves the window.
                 if not rate_ok and self._started:
                     wait = min(wait, 60 - (now - self._started[0]) + 0.01)
-                self._lock.wait(wait)
+                # wake at least every half second so a stopped answer stops waiting
+                self._lock.wait(min(wait, 0.5))
+                raise_if_cancelled()
 
     def release(self) -> None:
         with self._lock:
@@ -145,6 +181,7 @@ _gate = _Gate()
 @contextmanager
 def llm_slot() -> Iterator[float]:
     """Hold a slot for one model call; yields the seconds that call may take."""
+    raise_if_cancelled()
     budget = _budget.get()
     if budget:
         budget.reserve_call()

@@ -69,6 +69,7 @@ from app.connectors.slack import SlackConnector
 from app.connectors.status import record_auth_outcome
 from app.connectors.stubs.registry import connector_catalog as product_connector_catalog
 from app.connectors.sync import SyncEngine
+from app.core import streams
 from app.core.config import settings
 from app.core.database import connect, decode, new_id, row, rows, utcnow
 from app.execution import ExecutionError, available_executors
@@ -101,7 +102,7 @@ from app.intelligence import (
     blast_radius,
     correlate_changes,
 )
-from app.llm import model_catalog
+from app.llm import AnswerCancelled, cancellable, model_catalog, raise_if_cancelled
 from app.llm.providers import configured_model
 from app.memory import (
     ChangeIntelligenceService,
@@ -1993,28 +1994,41 @@ def ask_stream(request: AskRequest, authorization: str | None = Header(default=N
     a draft is replaced, and one ``done`` event carrying exactly what ``/ask``
     would have returned. The draft is a preview; ``done`` is the answer. A
     ``ping`` keeps proxies from closing a quiet connection.
+
+    The first event, ``start``, carries the answer's id: ``POST
+    /ask/stream/{id}/cancel`` stops it, as does closing the connection. The
+    answer then ends with ``cancelled`` and its model calls are closed.
     """
     principal = _authorize_project(request.project_id, authorization)
     visible = _visible_project_ids(principal)
     events: queue.Queue[tuple[str, dict]] = queue.Queue()
+    answer_id = new_id("answer")
+    stop = streams.open_stream(answer_id, str(principal["id"]))
+
+    def narrate(kind: str, payload: dict) -> None:
+        raise_if_cancelled()  # every step is a place to stop
+        events.put((kind, payload))
 
     def worker() -> None:
         try:
-            result = retrieval.ask(
-                request.project_id,
-                request.query,
-                sorted(visible or []),
-                principal=principal,
-                allowed_team_ids=_principal_team_ids(principal),
-                token_budget=request.token_budget,
-                model_provider=request.model,
-                surface=request.surface,
-                scope=request.scope,
-                history=[turn.model_dump() for turn in request.history],
-                on_event=lambda kind, payload: events.put((kind, payload)),
-                commit_fetcher=_commit_fetcher(principal),
-            )
+            with cancellable(stop):
+                result = retrieval.ask(
+                    request.project_id,
+                    request.query,
+                    sorted(visible or []),
+                    principal=principal,
+                    allowed_team_ids=_principal_team_ids(principal),
+                    token_budget=request.token_budget,
+                    model_provider=request.model,
+                    surface=request.surface,
+                    scope=request.scope,
+                    history=[turn.model_dump() for turn in request.history],
+                    on_event=narrate,
+                    commit_fetcher=_commit_fetcher(principal),
+                )
             events.put(("done", {"answer": result}))
+        except AnswerCancelled:
+            events.put(("cancelled", {}))
         except Exception:  # noqa: BLE001 - the stream must end with an event
             logger.exception("Streamed answer failed")
             events.put(("error", {"message": "MemoryWorks could not finish this answer."}))
@@ -2023,25 +2037,41 @@ def ask_stream(request: AskRequest, authorization: str | None = Header(default=N
 
     def stream():
         deadline = time.monotonic() + settings.org_memory_answer_stream_timeout_seconds
-        while True:
-            try:
-                kind, payload = events.get(timeout=10)
-            except queue.Empty:
-                if time.monotonic() > deadline:
-                    message = _busy_message(principal["active_workspace_id"])
-                    yield json.dumps({"type": "error", "message": message}) + "\n"
+        try:
+            yield json.dumps({"type": "start", "id": answer_id}) + "\n"
+            while True:
+                try:
+                    kind, payload = events.get(timeout=1 if stop.is_set() else 10)
+                except queue.Empty:
+                    if stop.is_set():
+                        yield json.dumps({"type": "cancelled"}) + "\n"
+                        return
+                    if time.monotonic() > deadline:
+                        message = _busy_message(principal["active_workspace_id"])
+                        yield json.dumps({"type": "error", "message": message}) + "\n"
+                        return
+                    yield json.dumps({"type": "ping"}) + "\n"
+                    continue
+                yield json.dumps({"type": kind, **payload}, default=str) + "\n"
+                if kind in {"done", "error", "cancelled"}:
                     return
-                yield json.dumps({"type": "ping"}) + "\n"
-                continue
-            yield json.dumps({"type": kind, **payload}, default=str) + "\n"
-            if kind in {"done", "error"}:
-                return
+        finally:
+            # The client went away (or the answer ended): stop any work left.
+            stop.set()
+            streams.close_stream(answer_id)
 
     return StreamingResponse(
         stream(),
         media_type="application/x-ndjson",
         headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
     )
+
+
+@router.post("/ask/stream/{answer_id}/cancel")
+def cancel_ask_stream(answer_id: str, authorization: str | None = Header(default=None)):
+    """Stop an answer this caller started; it ends with a ``cancelled`` event."""
+    principal = _authorize_workspace(authorization)
+    return {"cancelled": streams.cancel(answer_id, str(principal["id"]))}
 
 
 @router.post("/execute")

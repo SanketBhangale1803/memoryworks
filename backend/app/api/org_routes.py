@@ -16,7 +16,9 @@ from fastapi import APIRouter, Header, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from app.core import streams
 from app.core.database import row
+from app.llm import AnswerCancelled, cancellable, raise_if_cancelled
 from app.llm.providers import configured_model, generate_grounded_json
 from app.orgops import OrgOpsService, WatchService
 from app.orgops.agent import build_org_executor, org_guided_decider, org_tool_catalog
@@ -558,6 +560,13 @@ def ask_org(request: AskRequest, authorization: str | None = Header(default=None
     return org_sessions.get(run_id, principal.get("active_workspace_id", ""))
 
 
+@org_router.post("/ask/{run_id}/cancel")
+def cancel_org_session(run_id: str, authorization: str | None = Header(default=None)):
+    """Stop an Agent run this caller started; it ends at its next step or model call."""
+    principal = _authenticate(authorization)
+    return {"cancelled": streams.cancel(run_id, str(principal["id"]))}
+
+
 @org_router.get("/ask/{run_id}")
 def org_session(run_id: str, authorization: str | None = Header(default=None)):
     principal = _authenticate(authorization)
@@ -594,24 +603,29 @@ def ask_org_stream(request: AskRequest, authorization: str | None = Header(defau
     )
 
     events: queue.Queue[tuple[str, dict]] = queue.Queue()
+    # Stopped only by POST /ask/{run_id}/cancel: a dropped stream keeps the run
+    # going so the console can recover it by polling.
+    stop = streams.open_stream(run_id, str(principal["id"]))
 
     def on_step(step: dict) -> None:
+        raise_if_cancelled()
         org_sessions.append_step(run_id, step)
         events.put(("step", step))
 
     def worker() -> None:
         try:
-            result = org_agent.run(
-                principal=principal,
-                question=request.question,
-                model=request.model or None,
-                exec_tool=_org_executor(principal, space_ids),
-                list_spaces=lambda _: [
-                    {"project_id": space["id"], "name": space["name"]}
-                    for space in orgops.list_spaces(space_ids)
-                ],
-                on_step=on_step,
-            )
+            with cancellable(stop):
+                result = org_agent.run(
+                    principal=principal,
+                    question=request.question,
+                    model=request.model or None,
+                    exec_tool=_org_executor(principal, space_ids),
+                    list_spaces=lambda _: [
+                        {"project_id": space["id"], "name": space["name"]}
+                        for space in orgops.list_spaces(space_ids)
+                    ],
+                    on_step=on_step,
+                )
             org_sessions.update(
                 run_id,
                 status="complete",
@@ -627,10 +641,15 @@ def ask_org_stream(request: AskRequest, authorization: str | None = Header(defau
                     org_sessions.get(run_id, principal.get("active_workspace_id", "")) or {},
                 )
             )
+        except AnswerCancelled:
+            org_sessions.update(run_id, status="cancelled", error="Stopped")
+            events.put(("cancelled", {}))
         except Exception as exc:  # noqa: BLE001 - the stream must end with an event
             logger.exception("Organizational agent session failed")
             org_sessions.update(run_id, status="error", error=str(exc))
             events.put(("error", {"message": str(exc)}))
+        finally:
+            streams.close_stream(run_id)
 
     Thread(target=worker, daemon=True).start()
 
@@ -654,6 +673,9 @@ def ask_org_stream(request: AskRequest, authorization: str | None = Header(defau
                 continue
             if kind == "done":
                 yield json.dumps({"type": "done", "session": payload}, default=str) + "\n"
+                return
+            if kind == "cancelled":
+                yield json.dumps({"type": "cancelled"}) + "\n"
                 return
             if kind == "error":
                 yield (

@@ -1,4 +1,4 @@
-import { api, API } from "@/lib/api";
+import { api, API, AnswerStopped, cancelStream } from "@/lib/api";
 import {
   demoAgentSession,
   demoFollowups,
@@ -183,7 +183,7 @@ export type OrgAgentSession = {
   id: string;
   question: string;
   model: string;
-  status: "running" | "complete" | "error";
+  status: "running" | "complete" | "error" | "cancelled";
   /** "model" when a model chose the tools; "guided" when none was reachable. */
   mode?: "model" | "guided";
   steps: OrgAgentStep[];
@@ -325,16 +325,24 @@ export const orgApi = {
    * on one server instance (the session registry is process-local), and the
    * console can render each step the moment it lands. Falls back to the
    * create-then-poll transport when the stream is unavailable, and to the
-   * guided offline agent when there is no backend at all. */
+   * guided offline agent when there is no backend at all. Aborting `signal`
+   * stops the run on the server too and rejects with AnswerStopped. */
   askStream: async (
     question: string,
     spaceIds: string[],
     onSession: (session: OrgAgentSession) => void,
+    signal?: AbortSignal,
   ): Promise<OrgAgentSession> => {
     const publish = (session: OrgAgentSession) => onSession({ ...session, steps: [...session.steps] });
     if (OFFLINE_DEMO_MODE) {
       return (await demoAgentSession(question, spaceIds, publish as (session: any) => void)) as OrgAgentSession;
     }
+    const state: { session: OrgAgentSession | null } = { session: null };
+    // An Agent run outlives a dropped connection on purpose, so Stop must say so.
+    const stop = () => {
+      if (state.session?.id) cancelStream(`/api/org/ask/${encodeURIComponent(state.session.id)}/cancel`);
+    };
+    signal?.addEventListener("abort", stop, { once: true });
     let response: Response;
     try {
       response = await fetch(`${API}/api/org/ask/stream`, {
@@ -343,8 +351,10 @@ export const orgApi = {
         credentials: "include",
         cache: "no-store",
         body: JSON.stringify({ question, space_ids: spaceIds }),
+        signal,
       });
     } catch {
+      if (signal?.aborted) throw new AnswerStopped();
       throw new Error(
         `Cannot reach the MemoryWorks API at ${API}. Check that the backend is running and refresh the page.`,
       );
@@ -356,9 +366,11 @@ export const orgApi = {
       const deadline = Date.now() + 240000;
       while (session.status === "running" && Date.now() < deadline) {
         await new Promise((resolve) => setTimeout(resolve, 1500));
+        if (signal?.aborted) throw new AnswerStopped();
         session = await orgApi.askStatus(session.id);
         publish(session);
       }
+      if (session.status === "cancelled") throw new AnswerStopped();
       if (session.status === "error") throw new Error(session.error || "The agent could not finish.");
       if (session.status === "running") throw new Error("The agent is taking unusually long. Check back in a minute.");
       return session;
@@ -368,7 +380,6 @@ export const orgApi = {
     }
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
-    const state: { session: OrgAgentSession | null } = { session: null };
     let buffer = "";
     const apply = (next: OrgAgentSession) => {
       state.session = next;
@@ -379,6 +390,7 @@ export const orgApi = {
       try {
         chunk = await reader.read();
       } catch {
+        if (signal?.aborted) throw new AnswerStopped();
         /* The connection dropped mid-run ("network error"). The run keeps going
            on the server and stores every step, so pick it up from there rather
            than losing the answer. */
@@ -418,6 +430,10 @@ export const orgApi = {
             memory_ids: [],
             error: "",
           });
+          // Stop was pressed before the server said which run this is.
+          if (signal?.aborted) stop();
+        } else if (event.type === "cancelled") {
+          throw new AnswerStopped();
         } else if (event.type === "step" && event.step) {
           const previous = state.session;
           apply({
@@ -450,6 +466,7 @@ export const orgApi = {
     }
     if (!state.session) throw new Error("The agent stream ended without a result.");
     // A stream that closed without its final event was cut off; the stored run has the rest.
+    if (signal?.aborted) throw new AnswerStopped();
     if (state.session.status === "running" && state.session.id) return follow(state.session);
     return state.session;
   },

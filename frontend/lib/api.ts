@@ -42,3 +42,20 @@ export async function api<T = any>(path: string, options?: RequestInit): Promise
 export function formatDate(value?: string) {
   return value ? new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "—";
 }
+
+/* The person pressed Stop. Callers keep what had arrived and show no error. */
+export class AnswerStopped extends Error {
+  constructor() {
+    super("Stopped.");
+    this.name = "AnswerStopped";
+  }
+}
+
+/* Tell the server to stop work it is still doing for a stream that was
+   aborted. Closing the connection alone is not enough: a proxy may hold it
+   open, and an Agent run deliberately outlives a dropped connection. */
+export function cancelStream(path: string) {
+  void fetch(`${API}${path}`, { method: "POST", credentials: "include", cache: "no-store", keepalive: true }).catch(
+    () => undefined,
+  );
+}
