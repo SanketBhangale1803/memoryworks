@@ -189,3 +189,48 @@ def test_service_context_and_related_cores_respect_authorization(graph):
 
     related = _memory_related_core(principal, new["id"])
     assert any(entry["memory"]["id"] == old["id"] for entry in related["related"])
+
+
+def test_a_run_that_spends_every_step_on_tools_still_answers():
+    # Production, 2026-10-06: "find the open problems in SAP-AI-PRs, who owns
+    # each, and draft a plan" spent all 8 turns calling tools and ended with
+    # "I could not ground a complete answer ... 12 matching memories. 0
+    # matching memories." The model now gets a turn that may only answer.
+    prompts: list[str] = []
+
+    def llm(prompt: str):
+        prompts.append(prompt)
+        if "NO tool calls left" in prompt:
+            return {"thought": "answer", "answer": "Two open problems; Priya owns the retry bug."}
+        return {"thought": "look", "tool": "find_orgmemory_blockers", "arguments": {}}
+
+    result = WebMCPAgentRunner(llm=llm).run(
+        principal={"id": "u1", "active_workspace_id": "w1"},
+        question="find the open problems and who owns them",
+        exec_tool=lambda principal, name, arguments: ("2 blockers", {"blockers": [1, 2]}),
+        list_spaces=lambda _: [{"project_id": "proj_a", "name": "SAP-AI-PRs"}],
+        max_steps=3,
+    )
+
+    assert result["answer"] == "Two open problems; Priya owns the retry bug."
+    assert len(result["steps"]) == 3
+    assert "3 of 3 tool calls left" in prompts[0]
+    assert "LAST tool call" in prompts[2]
+
+
+def test_a_model_that_never_answers_gets_every_finding_listed():
+    def llm(prompt: str):
+        return {"thought": "look", "tool": "search_orgmemory_records", "arguments": {"q": "x"}}
+
+    found = iter(["12 matching memories", "3 owners", "0 matching memories"])
+    result = WebMCPAgentRunner(llm=llm).run(
+        principal={"id": "u1", "active_workspace_id": "w1"},
+        question="find the open problems",
+        exec_tool=lambda principal, name, arguments: (next(found), {}),
+        list_spaces=lambda _: [{"project_id": "proj_a", "name": "SAP-AI-PRs"}],
+        max_steps=3,
+    )
+
+    assert len(result["steps"]) == 3  # the answer-only turn ran no tool
+    for summary in ("12 matching memories", "3 owners", "0 matching memories"):
+        assert summary in result["answer"]

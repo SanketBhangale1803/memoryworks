@@ -163,8 +163,11 @@ class WebMCPAgentRunner:
         llm = self._llm or self._provider_call(model)
         mode = "model" if (self._llm or configured_model(model)) else "guided"
 
-        for step_index in range(1, max_steps + 1):
-            prompt = self._prompt(question, spaces, transcript, max_steps)
+        for step_index in range(1, max_steps + 2):
+            # max_steps tool calls, then one turn that may only answer: a run
+            # that spent every turn on tools used to end without an answer.
+            remaining = max_steps - len(steps)
+            prompt = self._prompt(question, spaces, transcript, max_steps, remaining)
             started = time.monotonic()
             try:
                 decision = llm(prompt)
@@ -213,6 +216,8 @@ class WebMCPAgentRunner:
                     "mode": mode,
                     "elapsed_ms": int((time.monotonic() - started) * 1000),
                 }
+            if remaining <= 0:
+                break  # it was asked to answer and called a tool instead
             tool_name = str(decision.get("tool") or "")
             arguments = decision.get("arguments") or {}
             if not isinstance(arguments, dict):
@@ -295,13 +300,19 @@ class WebMCPAgentRunner:
                 f"approval and nothing was changed. The last attempt failed: {proposal_errors[-1]}"
                 + (" What I found before that: " + " ".join(summaries[-3:]) if summaries else "")
             )
-        else:
+        elif summaries:
             answer = (
-                "I could not ground a complete answer within the tool budget. "
-                + ("What the tools did find: " + " ".join(summaries[-2:]))
-                if summaries
-                else "I could not ground an answer within the tool budget. The observations above show exactly what was searched."
+                "I ran out of steps before I could write an answer. What each step found:\n"
+                + (
+                    "\n".join(
+                        f"- {step['tool']}: {step['summary']}"
+                        for step in steps
+                        if step.get("summary") and not str(step["summary"]).startswith("Tool error")
+                    )
+                )
             )
+        else:
+            answer = "I could not ground an answer within the tool budget. The observations above show exactly what was searched."
         return {
             "answer": answer,
             "memory_ids": [],
@@ -417,7 +428,28 @@ class WebMCPAgentRunner:
 
         return decide
 
-    def _prompt(self, question: str, spaces: list[dict], transcript: str, max_steps: int) -> str:
+    def _prompt(
+        self,
+        question: str,
+        spaces: list[dict],
+        transcript: str,
+        max_steps: int,
+        remaining: int | None = None,
+    ) -> str:
+        remaining = max_steps if remaining is None else remaining
+        if remaining <= 0:
+            budget = (
+                "You have NO tool calls left. Reply now with the final answer JSON, built "
+                "only from the observations above. Answer every part of the question you "
+                "can, and say plainly which parts the observations do not cover."
+            )
+        elif remaining == 1:
+            budget = (
+                "This is your LAST tool call. If the question asks for a plan or change, "
+                "call propose_orgmemory_changes now; otherwise answer now if you can."
+            )
+        else:
+            budget = f"You have {remaining} of {max_steps} tool calls left. Leave room to answer."
         tools = "\n".join(
             f"- {tool['name']}({', '.join(tool['arguments'])}): {tool['description']}"
             for tool in self._catalog()
@@ -432,6 +464,8 @@ TOOLS:
 {tools}
 
 CONVERSATION SO FAR:{transcript or " (nothing yet)"}
+
+BUDGET: {budget}
 
 Decide the single next step. Reply with ONLY one JSON object:
 - To call a tool: {{"thought": "one sentence", "tool": "<name>", "arguments": {{...}}}}
