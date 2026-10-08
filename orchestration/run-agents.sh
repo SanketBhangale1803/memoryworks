@@ -28,10 +28,6 @@ fi
 echo "planner:  codex $CODEX_MODEL (reasoning medium)"
 echo "executor: opencode $MUSE_MODEL"
 
-# Worktrees keep their git metadata in the main repository's .git, which is
-# outside the planner's sandboxed workspace; without this, commits fail.
-GIT_COMMON="$(git -C "$REPO" rev-parse --path-format=absolute --git-common-dir)"
-
 git -C "$REPO" fetch -q origin
 mkdir -p "$WT"
 [ -d "$WT/codex" ] || git -C "$REPO" worktree add -B agents/codex-plans "$WT/codex" origin/agents/codex-plans
@@ -41,15 +37,35 @@ prompt() {
   git -C "$REPO" show "origin/$CONTROL:orchestration/prompts/$1" | sed -n '/^---8<---$/,$p' | tail -n +2
 }
 
+# Commit whatever the planner wrote under orchestration/plans/ and push it.
+publish_plans() {
+  git add orchestration/plans
+  if git diff --cached --quiet; then
+    echo "planner wrote no plan files"
+  else
+    tasks="$(git diff --cached --name-only | sed -n 's#^orchestration/plans/\(T-[0-9]*\)/.*#\1#p' | sort -u | paste -sd, -)"
+    git commit -q -m "plan(${tasks:-unknown}): planner output"
+    git push -q origin agents/codex-plans
+    echo "pushed plans for ${tasks:-unknown}"
+  fi
+  # Anything outside orchestration/plans/ is not the planner's to change.
+  git reset -q --hard HEAD
+  git clean -qfd
+}
+
 while true; do
   git -C "$REPO" fetch -q origin
   echo "== planner  $(date '+%F %T')"
   (
     cd "$WT/codex"
+    # Codex's sandbox keeps .git read-only, so every git step happens here,
+    # outside it: sync before the run, commit and push what it wrote after.
     git pull -q --ff-only origin agents/codex-plans || true
+    git merge -q --no-edit "origin/$CONTROL"
     codex exec -m "$CODEX_MODEL" -c model_reasoning_effort=medium \
       -s workspace-write -c sandbox_workspace_write.network_access=true \
-      --add-dir "$GIT_COMMON" "$(prompt CODEX_PLANNER.md)"
+      "$(prompt CODEX_PLANNER.md)"
+    publish_plans
   ) || echo "planner round failed; continuing"
 
   echo "== executor $(date '+%F %T')"

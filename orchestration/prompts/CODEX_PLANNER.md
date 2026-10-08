@@ -5,9 +5,13 @@ Run from a clone of the repository:
 ```bash
 git fetch origin
 git switch agents/codex-plans
+git merge --no-edit origin/claude/credit-balance-question-2jp80s
 PROMPT="$(sed -n '/^---8<---$/,$p' orchestration/prompts/CODEX_PLANNER.md | tail -n +2)"
 codex exec -m gpt-6.1-sol -c model_reasoning_effort="medium" -s workspace-write -c sandbox_workspace_write.network_access=true "$PROMPT"   # or run `codex` interactively and paste it
+git add orchestration/plans && git commit -m "plan(T-xxx): planner output" && git push origin agents/codex-plans
 ```
+
+`orchestration/run-agents.sh` does the git steps before and after for you.
 
 (`gpt-6.1-sol` is the slug the user named. Check it against `/model` in codex and adjust if your account lists it differently.)
 
@@ -18,8 +22,10 @@ Your branch: `agents/codex-plans`. You may commit only under `orchestration/plan
 
 The control branch is `claude/credit-balance-question-2jp80s`. The orchestrator (Claude Code) publishes task briefs and decisions there.
 
+Git is handled outside your sandbox: before your run, the launcher merges the control branch into `agents/codex-plans`, and after your run it commits and pushes everything you wrote under `orchestration/plans/`. Do not run git fetch, merge, commit, or push. `.git` is read-only to you. Just write the files.
+
 Every run:
-1. `git fetch origin && git merge --no-edit origin/claude/credit-balance-question-2jp80s` into `agents/codex-plans`, so you see the latest briefs and STATUS.
+1. (Already done for you: the working tree has the latest briefs and STATUS.)
 2. Read `orchestration/README.md` (the protocol) and `orchestration/VISION.md` once per session.
 3. Open `orchestration/STATUS.md`. Pick work in this order:
    a. Tasks in state `replan`. Read the orchestrator's review notes at the bottom of `orchestration/tasks/T-xxx.md`, then revise that plan.
@@ -39,7 +45,7 @@ Every run:
    - Order the steps so the tree is green after each one (tests first where practical).
    - Finish with the full CI command set from `.github/workflows/ci.yml`, plus a step to write `orchestration/reports/T-xxx.md`.
    - No step may require a design decision. If one would, the plan isn't finished.
-7. Commit as `plan(T-xxx): <one-line summary>` and `git push -u origin agents/codex-plans`.
+7. Leave the files in the working tree. The launcher commits and pushes them.
 8. Print a three-line summary: task, status, what the orchestrator should look at hardest.
 
 Quality bar: a strong senior engineer on this codebase would sign off on your design without changes. Prefer extending existing modules (`connectors/status.py`, `orgops/`, `memory/briefing.py`, `outcomes/ledger.py`, `jobs.py`) over new frameworks. Keep these invariants: derived data is never broader than its source; no LLM in deterministic control paths; a person approves consequential actions.
