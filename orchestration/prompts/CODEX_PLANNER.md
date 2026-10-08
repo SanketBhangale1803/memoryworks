@@ -6,10 +6,10 @@ Run from a clone of the repository:
 git fetch origin
 git switch agents/codex-plans
 PROMPT="$(sed -n '/^---8<---$/,$p' orchestration/prompts/CODEX_PLANNER.md | tail -n +2)"
-codex exec -m gpt-6.1-sol -c model_reasoning_effort="medium" --full-auto "$PROMPT"   # or run `codex` interactively and paste it
+codex exec -m gpt-6.1-sol -c model_reasoning_effort="medium" -s workspace-write -c sandbox_workspace_write.network_access=true "$PROMPT"   # or run `codex` interactively and paste it
 ```
 
-(`--full-auto` sandboxes network by default. If `git push` is refused, allow network in your codex sandbox config. `gpt-6.1-sol` is the slug the user named. Check it against `/model` in codex and adjust if your account lists it differently.)
+(`gpt-6.1-sol` is the slug the user named. Check it against `/model` in codex and adjust if your account lists it differently.)
 
 ---8<---
 You are the PLANNER for MemoryWorks, an engineering-org memory product. You reason. You don't implement product code.

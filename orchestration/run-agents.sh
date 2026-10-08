@@ -5,7 +5,7 @@
 #
 #   bash <(git show origin/claude/credit-balance-question-2jp80s:orchestration/run-agents.sh)
 #
-# Env: CODEX_MODEL, MUSE_MODEL (see `opencode models | grep -i muse`),
+# Env: CODEX_MODEL, MUSE_MODEL (default: the first "muse" entry in `opencode models`),
 #      INTERVAL_MIN (default 30), ONCE=1 for a single round,
 #      AGENT_WORKTREES (default: a sibling folder of your clone).
 set -euo pipefail
@@ -13,12 +13,24 @@ set -euo pipefail
 REPO="$(git rev-parse --show-toplevel)"
 WT="${AGENT_WORKTREES:-$(dirname "$REPO")/memoryworks-agents}"
 CODEX_MODEL="${CODEX_MODEL:-gpt-6.1-sol}"
-MUSE_MODEL="${MUSE_MODEL:-opencode/muse-spark-1.3-free}"
+MUSE_MODEL="${MUSE_MODEL:-}"
 INTERVAL_MIN="${INTERVAL_MIN:-30}"
 CONTROL=claude/credit-balance-question-2jp80s
 
 command -v codex >/dev/null || { echo "codex not found: npm i -g @openai/codex"; exit 1; }
 command -v opencode >/dev/null || { echo "opencode not found"; exit 1; }
+
+# Use the Muse model id opencode actually lists, unless one was given.
+if [ -z "$MUSE_MODEL" ]; then
+  MUSE_MODEL="$(opencode models 2>/dev/null | grep -i 'muse' | head -n 1 | awk '{print $1}')"
+  [ -n "$MUSE_MODEL" ] || { echo "No Muse model in 'opencode models'. Set MUSE_MODEL=<provider/model>."; exit 1; }
+fi
+echo "planner:  codex $CODEX_MODEL (reasoning medium)"
+echo "executor: opencode $MUSE_MODEL"
+
+# Worktrees keep their git metadata in the main repository's .git, which is
+# outside the planner's sandboxed workspace; without this, commits fail.
+GIT_COMMON="$(git -C "$REPO" rev-parse --path-format=absolute --git-common-dir)"
 
 git -C "$REPO" fetch -q origin
 mkdir -p "$WT"
@@ -36,7 +48,8 @@ while true; do
     cd "$WT/codex"
     git pull -q --ff-only origin agents/codex-plans || true
     codex exec -m "$CODEX_MODEL" -c model_reasoning_effort=medium \
-      -c sandbox_workspace_write.network_access=true --full-auto "$(prompt CODEX_PLANNER.md)"
+      -s workspace-write -c sandbox_workspace_write.network_access=true \
+      --add-dir "$GIT_COMMON" "$(prompt CODEX_PLANNER.md)"
   ) || echo "planner round failed; continuing"
 
   echo "== executor $(date '+%F %T')"
