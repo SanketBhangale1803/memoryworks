@@ -28,7 +28,7 @@ def test_application_api_requires_login_and_dev_login_sets_cookie(graph):
     )
 
     assert response.status_code == 200
-    assert response.cookies.get("runbook_session")
+    assert response.cookies.get(settings.session_cookie_name)
     assert client.get("/api/projects").status_code == 200
 
 
