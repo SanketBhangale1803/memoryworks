@@ -494,6 +494,12 @@ def _build_record(
 _SIGNALS_VERSION = 1
 _PER_PAGE = 100
 
+# Operational webhook events reconcile through verified polling, never through
+# repository ingestion or an LLM.
+OPERATIONAL_WEBHOOK_EVENTS = frozenset(
+    {"check_run", "workflow_run", "deployment_status", "pull_request_review"}
+)
+
 
 class _SignalThrottle(Exception):
     """Signal polling must back off; carries only retry seconds."""
@@ -523,6 +529,72 @@ def _normalize_slug(value: str) -> str:
             return slug.casefold()
         return "/".join(parts[:2]).casefold()
     return text.split("?", 1)[0].split("#", 1)[0].strip("/").casefold()
+
+
+def github_project_ids(workspace_id: str, repository: str) -> list[str]:
+    """Project ids in this workspace whose configured repository matches exactly."""
+    from app.core.database import rows
+
+    wanted = _normalize_slug(repository)
+    if not wanted or not _SLUG_RE.match(wanted):
+        return []
+    matched: list[str] = []
+    for project in rows(
+        """SELECT p.id, p.repository FROM projects p
+        JOIN workspace_projects wp ON wp.project_id = p.id
+        WHERE wp.workspace_id = ?""",
+        (workspace_id,),
+    ):
+        if _normalize_slug(str(project.get("repository") or "")) == wanted:
+            matched.append(str(project["id"]))
+    return sorted(matched)
+
+
+def sanitize_poll_hints(hints: Any) -> list[dict[str, Any]]:
+    """Keep only allowlisted webhook hint fields for signal polling cursors."""
+    clean: list[dict[str, Any]] = []
+    if not isinstance(hints, list):
+        return clean
+    for hint in hints:
+        if not isinstance(hint, dict):
+            continue
+        kind = hint.get("kind")
+        if kind in ("check", "workflow"):
+            try:
+                hint_id = int(hint.get("id"))
+            except (TypeError, ValueError):
+                continue
+            if hint_id <= 0:
+                continue
+            entry: dict[str, Any] = {"kind": kind, "id": hint_id}
+            branch = str(hint.get("branch") or "")[:200]
+            if branch:
+                entry["branch"] = branch
+            sha = str(hint.get("sha") or "")[:40]
+            if sha:
+                entry["sha"] = sha
+            try:
+                pr_number = int(hint.get("pr_number"))
+            except (TypeError, ValueError):
+                pr_number = 0
+            if pr_number > 0:
+                entry["pr_number"] = pr_number
+            clean.append(entry)
+        elif kind == "deployment":
+            try:
+                deployment_id = int(hint.get("id"))
+            except (TypeError, ValueError):
+                continue
+            if deployment_id > 0:
+                clean.append({"kind": "deployment", "id": deployment_id})
+        elif kind == "pr":
+            try:
+                number = int(hint.get("number"))
+            except (TypeError, ValueError):
+                continue
+            if number > 0:
+                clean.append({"kind": "pr", "number": number})
+    return clean
 
 
 def _fresh_snapshot() -> dict[str, Any]:

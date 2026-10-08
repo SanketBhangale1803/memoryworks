@@ -87,6 +87,12 @@ _GITHUB_MANIFEST = ConnectorManifest(
         WebhookSubscription("push", "Repository push", "x-hub-signature-256"),
         WebhookSubscription("pull_request", "Pull request change", "x-hub-signature-256"),
         WebhookSubscription("issues", "Issue change", "x-hub-signature-256"),
+        WebhookSubscription("check_run", "Check run terminal state", "x-hub-signature-256"),
+        WebhookSubscription("workflow_run", "Workflow run terminal state", "x-hub-signature-256"),
+        WebhookSubscription("deployment_status", "Deployment status change", "x-hub-signature-256"),
+        WebhookSubscription(
+            "pull_request_review", "Pull request review submitted", "x-hub-signature-256"
+        ),
     ),
     rate_limit=RateLimitPolicy(requests=4_500, window_seconds=3_600, burst=20),
     retry=RetryPolicy(max_attempts=6, base_delay_seconds=2, max_delay_seconds=300),
@@ -282,16 +288,21 @@ class GitHubConnector(Connector):
         delivery_id = (
             request.headers.get("x-github-delivery") or hashlib.sha256(request.body).hexdigest()
         )
+        event_type = request.headers.get("x-github-event", "push")
         after = str(
             ((payload.get("pull_request") or {}).get("head") or {}).get("sha")
             or payload.get("after")
             or ""
         )
+        cursor: dict[str, Any] = {"repository": repository, "webhook_after": after}
+        hints = _webhook_hints(event_type, payload)
+        if hints:
+            cursor["hints"] = hints
         return WebhookEvent(
             delivery_id=delivery_id,
-            event_type=request.headers.get("x-github-event", "push"),
+            event_type=event_type,
             resource_id=repository,
-            cursor={"repository": repository, "webhook_after": after},
+            cursor=cursor,
         )
 
     def revoke(self, account: ConnectorAccount) -> None:
@@ -529,6 +540,98 @@ RECONNECT_MESSAGE = (
     "GitHub no longer accepts MemoryWorks' saved access (it expired or was revoked). "
     "Reconnect GitHub on the Sources page."
 )
+
+
+def _hint_int(value: Any) -> int | None:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None
+
+
+def _hint_text(value: Any, limit: int = 200) -> str:
+    return str(value or "")[:limit]
+
+
+def _webhook_hints(event_type: str, payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """Allowlisted normalization hints from a verified webhook payload.
+
+    Hints carry producer/provider numeric ids, PR numbers, and branch/sha
+    context only. Authoritative state always comes from delegated GETs during
+    polling; hints select what to read and never supply terminal state,
+    grants, or a project id. Unsupported actions/states yield no hints.
+    """
+    if not isinstance(payload, dict):
+        return []
+    if event_type == "check_run":
+        run = payload.get("check_run") or {}
+        if not isinstance(run, dict):
+            return []
+        run_id = _hint_int(run.get("id"))
+        if run_id is None:
+            return []
+        suite = run.get("check_suite") or {}
+        branch = _hint_text(
+            (suite.get("head_branch") if isinstance(suite, dict) else "") or run.get("head_branch")
+        )
+        pull_requests = run.get("pull_requests") or []
+        pr_number = None
+        if isinstance(pull_requests, list):
+            for entry in pull_requests:
+                if isinstance(entry, dict):
+                    pr_number = _hint_int(entry.get("number"))
+                    if pr_number is not None:
+                        break
+        hint: dict[str, Any] = {"kind": "check", "id": run_id}
+        if branch:
+            hint["branch"] = branch
+        sha = _hint_text(run.get("head_sha"), 40)
+        if sha:
+            hint["sha"] = sha
+        if pr_number is not None:
+            hint["pr_number"] = pr_number
+        return [hint]
+    if event_type == "workflow_run":
+        run = payload.get("workflow_run") or {}
+        if not isinstance(run, dict):
+            return []
+        run_id = _hint_int(run.get("id"))
+        if run_id is None:
+            return []
+        hint = {"kind": "workflow", "id": run_id}
+        branch = _hint_text(run.get("head_branch"))
+        if branch:
+            hint["branch"] = branch
+        sha = _hint_text(run.get("head_sha"), 40)
+        if sha:
+            hint["sha"] = sha
+        pull_requests = run.get("pull_requests") or []
+        if isinstance(pull_requests, list):
+            for entry in pull_requests:
+                if isinstance(entry, dict):
+                    pr_number = _hint_int(entry.get("number"))
+                    if pr_number is not None:
+                        hint["pr_number"] = pr_number
+                        break
+        return [hint]
+    if event_type == "deployment_status":
+        deployment = payload.get("deployment") or {}
+        if not isinstance(deployment, dict):
+            return []
+        deployment_id = _hint_int(deployment.get("id"))
+        if deployment_id is None:
+            return []
+        return [{"kind": "deployment", "id": deployment_id}]
+    if event_type == "pull_request_review":
+        pull_request = payload.get("pull_request") or {}
+        if not isinstance(pull_request, dict):
+            return []
+        pr_number = _hint_int(pull_request.get("number"))
+        if pr_number is None:
+            return []
+        return [{"kind": "pr", "number": pr_number}]
+    return []
 
 
 def _response_headers(response) -> dict[str, str]:

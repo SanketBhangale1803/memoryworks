@@ -183,6 +183,19 @@ class SyncEngine:
         if event.challenge:
             return {"challenge": event.challenge}
         payload_hash = hashlib.sha256(request.body).hexdigest()
+        github_projects: list[str] | None = None
+        if provider == "github":
+            # GitHub-only: fan out to explicit workspace-bound project
+            # matches instead of historical jobs or an empty-project
+            # fallback, so other providers' behavior provably does not change.
+            from app.connectors.github.signals import github_project_ids
+
+            github_projects = github_project_ids(workspace_id, event.resource_id)
+            if not github_projects:
+                raise ValueError(
+                    "No MemoryWorks project in this workspace is connected "
+                    f"to GitHub repository {event.resource_id!r}"
+                )
         delivery_row = row(
             """SELECT * FROM connector_webhook_deliveries
             WHERE workspace_id=? AND provider=? AND delivery_id=?""",
@@ -191,57 +204,112 @@ class SyncEngine:
         if delivery_row:
             if delivery_row["payload_hash"] != payload_hash:
                 raise ValueError("Webhook delivery ID was replayed with a different payload")
-            return {
-                "accepted": False,
-                "replayed": True,
-                "delivery_id": event.delivery_id,
-                "status": delivery_row["status"],
-            }
-        delivery_pk, now = new_id("delivery"), utcnow()
-        with connect() as conn:
-            conn.execute(
-                """INSERT INTO connector_webhook_deliveries
-                (id,workspace_id,provider,delivery_id,payload_hash,event_type,resource_id,
-                 status,attempts,last_error,received_at,updated_at)
-                VALUES (?,?,?,?,?,?,?,'processing',0,'',?,?)""",
-                (
-                    delivery_pk,
-                    workspace_id,
-                    provider,
-                    event.delivery_id,
-                    payload_hash,
-                    event.event_type,
-                    event.resource_id,
-                    now,
-                    now,
-                ),
-            )
+            if provider == "github" and delivery_row["status"] == "retryable":
+                # A retryable GitHub delivery retries the enqueue below using
+                # the existing idempotency keys instead of swallowing it.
+                delivery_pk = delivery_row["id"]
+            else:
+                return {
+                    "accepted": False,
+                    "replayed": True,
+                    "delivery_id": event.delivery_id,
+                    "status": delivery_row["status"],
+                }
+        else:
+            delivery_pk, now = new_id("delivery"), utcnow()
+            try:
+                with connect() as conn:
+                    conn.execute(
+                        """INSERT INTO connector_webhook_deliveries
+                        (id,workspace_id,provider,delivery_id,payload_hash,event_type,resource_id,
+                         status,attempts,last_error,received_at,updated_at)
+                        VALUES (?,?,?,?,?,?,?,'processing',0,'',?,?)""",
+                        (
+                            delivery_pk,
+                            workspace_id,
+                            provider,
+                            event.delivery_id,
+                            payload_hash,
+                            event.event_type,
+                            event.resource_id,
+                            now,
+                            now,
+                        ),
+                    )
+            except Exception as exc:
+                if "UNIQUE constraint failed" not in str(exc):
+                    raise
+                # A concurrent delivery won the insert; reread and compare.
+                delivery_row = row(
+                    """SELECT * FROM connector_webhook_deliveries
+                    WHERE workspace_id=? AND provider=? AND delivery_id=?""",
+                    (workspace_id, provider, event.delivery_id),
+                )
+                if not delivery_row:
+                    raise
+                if delivery_row["payload_hash"] != payload_hash:
+                    raise ValueError(
+                        "Webhook delivery ID was replayed with a different payload"
+                    ) from exc
+                if provider == "github" and delivery_row["status"] == "retryable":
+                    delivery_pk = delivery_row["id"]
+                else:
+                    return {
+                        "accepted": False,
+                        "replayed": True,
+                        "delivery_id": event.delivery_id,
+                        "status": delivery_row["status"],
+                    }
         try:
             applied = self._apply_webhook_records(
-                provider, workspace_id, user_id, event, delivery_pk
+                provider, workspace_id, user_id, event, delivery_pk, github_projects
             )
             jobs = []
             if not event.records and event.resource_id:
-                subscriptions = (
-                    rows(
-                        """SELECT DISTINCT project_id FROM connector_sync_jobs
-                    WHERE workspace_id=? AND provider=? AND resource_id=? AND project_id!=''""",
-                        (workspace_id, provider, event.resource_id),
-                    )
-                    or [{"project_id": ""}]
-                )
-                for subscription in subscriptions:
-                    jobs.append(
-                        self.enqueue(
-                            provider,
-                            workspace_id,
-                            user_id,
-                            event.resource_id,
-                            project_id=subscription["project_id"],
-                            cursor=event.cursor,
-                            idempotency_key=f"webhook:{event.delivery_id}:{subscription['project_id']}",
+                if provider == "github":
+                    # GitHub-only: enqueue a signals_only snapshot per
+                    # matching project with a project-aware webhook key.
+                    # Verified polling (not the payload) decides state.
+                    from app.connectors.github.signals import sanitize_poll_hints
+
+                    hints = sanitize_poll_hints((event.cursor or {}).get("hints"))
+                    for project_id in github_projects or []:
+                        jobs.append(
+                            self.enqueue(
+                                provider,
+                                workspace_id,
+                                user_id,
+                                event.resource_id,
+                                project_id=project_id,
+                                cursor={
+                                    "repository": event.resource_id,
+                                    "signals_only": True,
+                                    "signals": {"version": 1, "hints": hints},
+                                },
+                                idempotency_key=f"webhook:{event.delivery_id}:{project_id}",
+                            )
                         )
+                else:
+                    subscriptions = (
+                        rows(
+                            """SELECT DISTINCT project_id FROM connector_sync_jobs
+                            WHERE workspace_id=? AND provider=? AND resource_id=? AND project_id!=''""",
+                            (workspace_id, provider, event.resource_id),
+                        )
+                        or [{"project_id": ""}]
                     )
+                    for subscription in subscriptions:
+                        jobs.append(
+                            self.enqueue(
+                                provider,
+                                workspace_id,
+                                user_id,
+                                event.resource_id,
+                                project_id=subscription["project_id"],
+                                cursor=event.cursor,
+                                idempotency_key=f"webhook:{event.delivery_id}:{subscription['project_id']}",
+                            )
+                        )
             with connect() as conn:
                 conn.execute(
                     """UPDATE connector_webhook_deliveries
@@ -429,12 +497,18 @@ class SyncEngine:
         user_id: str,
         event: WebhookEvent,
         delivery_pk: str,
+        github_projects: list[str] | None = None,
     ) -> int:
-        projects = rows(
-            """SELECT DISTINCT project_id FROM connector_sync_jobs
-            WHERE workspace_id=? AND provider=? AND resource_id=? AND project_id!=''""",
-            (workspace_id, provider, event.resource_id),
-        )
+        if provider == "github" and github_projects is not None:
+            # GitHub-only: apply to explicit workspace-bound matches, never
+            # to historical jobs or an empty-project fallback.
+            projects = [{"project_id": project_id} for project_id in github_projects]
+        else:
+            projects = rows(
+                """SELECT DISTINCT project_id FROM connector_sync_jobs
+                WHERE workspace_id=? AND provider=? AND resource_id=? AND project_id!=''""",
+                (workspace_id, provider, event.resource_id),
+            )
         applied = 0
         for record in event.records:
             for project in projects or [{"project_id": ""}]:

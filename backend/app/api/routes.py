@@ -64,6 +64,7 @@ from app.company_context import CompanyContextService
 from app.connectors.application import MemoryWorksSyncApplier
 from app.connectors.base import WebhookRequest
 from app.connectors.github import GitHubConnector
+from app.connectors.github.signals import OPERATIONAL_WEBHOOK_EVENTS
 from app.connectors.runtime import ConnectorRuntime
 from app.connectors.slack import SlackConnector
 from app.connectors.status import record_auth_outcome
@@ -1106,21 +1107,64 @@ def repair_project_memory(
         fail(exc)
 
 
-def _github_webhook_project(repository: str) -> dict:
+def _normalize_repo_slug(value: str) -> str:
+    text = (value or "").strip()
+    if not text:
+        return ""
+    slug = GitHubConnector.slug(text)
+    if slug:
+        return slug.casefold()
+    return text.strip("/").casefold()
+
+
+def _github_webhook_project(repository: str, workspace_id: str = "") -> dict:
+    wanted = _normalize_repo_slug(repository)
+    matches = []
     for project in rows(
         """SELECT p.*,wp.workspace_id FROM projects p
         LEFT JOIN workspace_projects wp ON wp.project_id=p.id"""
     ):
-        if GitHubConnector.slug(str(project.get("repository") or "")) == repository:
-            return project
-    raise HTTPException(404, "No MemoryWorks project is connected to this GitHub repository")
+        if _normalize_repo_slug(str(project.get("repository") or "")) != wanted:
+            continue
+        if workspace_id and str(project.get("workspace_id") or "") != workspace_id:
+            continue
+        matches.append(project)
+    if not matches:
+        raise HTTPException(404, "No MemoryWorks project is connected to this GitHub repository")
+    workspaces = {str(item.get("workspace_id") or "") for item in matches}
+    if len(workspaces) > 1:
+        raise HTTPException(
+            409,
+            "This GitHub repository is connected in multiple workspaces; "
+            "deliver the webhook to the workspace-bound URL instead",
+        )
+    # The legacy change path operates on one project: the lowest id inside
+    # the unique workspace.
+    return sorted(matches, key=lambda item: str(item.get("id") or ""))[0]
 
 
-def _process_github_webhook_event(event_id: str, payload: dict, workspace_id: str) -> None:
+def _github_operational_workspace(repository: str) -> str:
+    """Exactly one workspace for an operational webhook repo, else 404/409."""
+    project = _github_webhook_project(repository)
+    return str(project.get("workspace_id") or "")
+
+
+def _process_github_webhook_event(
+    event_id: str, payload: dict, workspace_id: str, pr_hint: int | None = None
+) -> None:
     try:
         connector = GitHubConnector(ConnectorSecrets(workspace_id))
         repository = str((payload.get("repository") or {}).get("full_name") or "")
-        project = _github_webhook_project(repository)
+        project = _github_webhook_project(repository, workspace_id)
+        # Operational reconciliation first: a signals_only snapshot for this
+        # project, before the existing ingestion/change flow below.
+        _enqueue_github_signals_job(
+            workspace_id,
+            str(project.get("id") or ""),
+            repository,
+            event_id,
+            pr_hint=pr_hint,
+        )
         # A webhook is a source revision signal, not just a notification.
         # Reconcile the repository corpus first so HCAG can answer against the
         # new commit immediately after this background task completes.
@@ -1140,6 +1184,49 @@ def _process_github_webhook_event(event_id: str, payload: dict, workspace_id: st
         )
     except Exception as exc:
         change_intelligence.fail(event_id, str(exc))
+
+
+def _enqueue_github_signals_job(
+    workspace_id: str,
+    project_id: str,
+    repository: str,
+    key_seed: str,
+    pr_hint: int | None = None,
+) -> None:
+    """Queue a workspace-bound signals_only snapshot; needs a delegated grant."""
+    if not project_id or not _normalize_repo_slug(repository):
+        return
+    grant = row(
+        """SELECT user_id FROM oauth_token_grants
+        WHERE workspace_id=? AND provider='github' AND status='connected'
+        ORDER BY updated_at DESC LIMIT 1""",
+        (workspace_id,),
+    )
+    if not grant:
+        legacy = row(
+            """SELECT user_id FROM workspace_connector_accounts
+            WHERE workspace_id=? AND provider='github' AND status='connected'
+            ORDER BY updated_at DESC LIMIT 1""",
+            (workspace_id,),
+        )
+        grant = legacy
+    if not grant or not grant.get("user_id"):
+        return
+    slug = _normalize_repo_slug(repository)
+    hints = [{"kind": "pr", "number": int(pr_hint)}] if pr_hint else []
+    connector_sync.enqueue(
+        "github",
+        workspace_id,
+        str(grant["user_id"]),
+        slug,
+        project_id=project_id,
+        cursor={
+            "repository": slug,
+            "signals_only": True,
+            "signals": {"version": 1, "hints": hints},
+        },
+        idempotency_key=f"webhook:{key_seed}:{project_id}",
+    )
 
 
 def _process_slack_memory_event(event: dict) -> None:
@@ -1258,6 +1345,28 @@ async def github_change_webhook(
     except json.JSONDecodeError as exc:
         raise HTTPException(400, "GitHub webhook body is not valid JSON") from exc
     repository = str((payload.get("repository") or {}).get("full_name") or "")
+    if x_github_event in OPERATIONAL_WEBHOOK_EVENTS:
+        # Operational events reconcile through signed receipt and verified
+        # polling only: no repository ingestion, no change intelligence, no
+        # LLM. Original signed bytes/headers are forwarded untouched.
+        workspace_id = _github_operational_workspace(repository)
+        try:
+            return connector_sync.receive_webhook(
+                "github",
+                workspace_id,
+                WebhookRequest(
+                    headers={key.casefold(): value for key, value in request.headers.items()},
+                    body=body,
+                ),
+            )
+        except KeyError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except ValueError as exc:
+            message = str(exc)
+            status = (
+                401 if any(word in message.casefold() for word in ("signature", "stale")) else 400
+            )
+            raise HTTPException(status, message) from exc
     project = _github_webhook_project(repository)
     delivery_id = x_github_delivery or hashlib.sha256(body).hexdigest()
     pull_request = payload.get("pull_request") or {}
@@ -1268,6 +1377,15 @@ async def github_change_webhook(
         or (payload.get("repository") or {}).get("html_url")
         or ""
     )
+    # A verified closed-PR number travels to the background job so the next
+    # signals snapshot reconciles the stall even though the PR left the open
+    # inventory.
+    pr_hint = None
+    if x_github_event == "pull_request" and payload.get("action") == "closed":
+        try:
+            pr_hint = int((pull_request or {}).get("number"))
+        except (TypeError, ValueError):
+            pr_hint = None
     event, created = change_intelligence.observe(
         project["id"],
         delivery_id,
@@ -1284,6 +1402,7 @@ async def github_change_webhook(
                 "event_id": event["id"],
                 "payload": payload,
                 "workspace_id": str(project.get("workspace_id") or ""),
+                "pr_hint": pr_hint,
             },
             background_tasks=background_tasks,
         )
@@ -3599,13 +3718,43 @@ def enqueue_connector_sync(
     if request.project_id:
         _authorize_project(request.project_id, authorization, write=True)
     try:
+        cursor = dict(request.cursor or {})
+        if provider == "github":
+            # Polling inputs are authoritative bindings, not caller hints:
+            # discard caller-supplied signals state, webhook hints, and the
+            # internal signals_only flag (only worker/webhook code builds
+            # those), then validate resource/cursor/project equality plus the
+            # exact workspace binding before anything is enqueued.
+            for forged in ("signals", "signals_only", "hints"):
+                cursor.pop(forged, None)
+            resource_slug = _normalize_repo_slug(request.resource_id)
+            if not resource_slug or "/" not in resource_slug:
+                raise ValueError("GitHub resource_id must be a repository slug")
+            cursor_repo = cursor.get("repository")
+            if cursor_repo:
+                if _normalize_repo_slug(str(cursor_repo)) != resource_slug:
+                    raise ValueError("GitHub cursor repository must match resource_id")
+            else:
+                cursor["repository"] = request.resource_id
+            if request.project_id:
+                project = row("SELECT repository FROM projects WHERE id=?", (request.project_id,))
+                if not project:
+                    raise ValueError("Unknown project for GitHub sync")
+                if _normalize_repo_slug(str(project.get("repository") or "")) != resource_slug:
+                    raise ValueError("GitHub project repository must match resource_id")
+                binding = row(
+                    "SELECT 1 AS ok FROM workspace_projects WHERE workspace_id=? AND project_id=?",
+                    (principal["active_workspace_id"], request.project_id),
+                )
+                if not binding:
+                    raise ValueError("GitHub project is not in this workspace")
         return connector_sync.enqueue(
             provider,
             principal["active_workspace_id"],
             principal["id"],
             request.resource_id,
             project_id=request.project_id,
-            cursor=request.cursor,
+            cursor=cursor,
             idempotency_key=request.idempotency_key,
         )
     except Exception as exc:
@@ -4576,7 +4725,14 @@ def _github_inventory_job(payload: dict[str, Any]) -> None:
 
 @background_jobs.handler("github.webhook")
 def _github_webhook_job(payload: dict[str, Any]) -> None:
-    _process_github_webhook_event(payload["event_id"], payload["payload"], payload["workspace_id"])
+    pr_hint = payload.get("pr_hint")
+    try:
+        pr_hint = int(pr_hint) if pr_hint not in (None, "") else None
+    except (TypeError, ValueError):
+        pr_hint = None
+    _process_github_webhook_event(
+        payload["event_id"], payload["payload"], payload["workspace_id"], pr_hint
+    )
 
 
 @background_jobs.handler("slack.event")
