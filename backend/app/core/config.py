@@ -348,6 +348,14 @@ class Settings(BaseSettings):
     org_memory_change_interpreter_provider: str = "auto"
     org_memory_run_live_llm_tests: bool = False
     github_webhook_secret: str = ""
+    github_pr_stalled_days: int = 7
+
+    @field_validator("github_pr_stalled_days")
+    @classmethod
+    def _stalled_days_minimum(cls, value: int) -> int:
+        if int(value) < 1:
+            raise ValueError("github_pr_stalled_days must be at least 1")
+        return int(value)
 
     @field_validator("mcp_public_url")
     @classmethod
