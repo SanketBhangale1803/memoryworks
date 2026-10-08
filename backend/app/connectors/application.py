@@ -51,6 +51,10 @@ class MemoryWorksSyncApplier:
         self.memory = CompanyMemoryService(graph)
 
     def __call__(self, record: SyncRecord, context: dict[str, Any]) -> dict[str, Any] | None:
+        # Signal records bypass memory and ledger ingestion entirely. Their
+        # storage transaction owns project-aware idempotency.
+        if record.resource_type == "signal":
+            return self._apply_signal(record, context)
         project_id = str(context.get("project_id") or record.metadata.get("project_id") or "")
         if not project_id:
             # A connector may be connected before the user assigns the resource
@@ -99,3 +103,111 @@ class MemoryWorksSyncApplier:
             },
         )
         return {"status": "upserted", "source_id": record.id, **result}
+
+    def _apply_signal(self, record: SyncRecord, context: dict[str, Any]) -> dict[str, Any]:
+        from app.core.database import row as _row
+        from app.orgops.signals import SignalService
+
+        provider = str(context.get("provider") or "")
+        workspace_id = str(context.get("workspace_id") or "")
+        project_id = str(context.get("project_id") or "")
+        # Metadata must never supply project/team authorization.
+        meta_project = record.metadata.get("project_id")
+        meta_workspace = record.metadata.get("workspace_id")
+        if meta_project and str(meta_project) != project_id:
+            raise ValueError("signal project mismatch")
+        if meta_workspace and str(meta_workspace) != workspace_id:
+            raise ValueError("signal workspace mismatch")
+        if not workspace_id:
+            return {"status": "unassigned"}
+        if not project_id:
+            return {"status": "unassigned"}
+        if record.operation != SyncOperation.UPSERT:
+            raise ValueError("only UPSERT signal records are valid")
+        meta = dict(record.metadata)
+        if provider == "github":
+            repo_slug = _normalize_signal_slug(str(meta.get("repository") or ""))
+            resource_slug = _normalize_signal_slug(str(context.get("resource_id") or ""))
+            if not repo_slug or repo_slug != resource_slug:
+                raise ValueError("signal repository mismatch")
+            try:
+                repo_id = int(str(meta.get("repo_id") or meta.get("repository_id") or ""))
+            except (TypeError, ValueError) as exc:
+                raise ValueError("invalid github repository id") from exc
+            pr_number = meta.get("pr_number")
+            pr_int: int | None = None
+            if pr_number not in (None, ""):
+                try:
+                    pr_int = int(str(pr_number))
+                except (TypeError, ValueError) as exc:
+                    raise ValueError("invalid github PR number") from exc
+            proj = _row("SELECT repository FROM projects WHERE id=?", (project_id,))
+            if not proj:
+                raise ValueError("unknown project")
+            project_slug = _normalize_signal_slug(str(proj.get("repository") or ""))
+            if not project_slug or project_slug != repo_slug:
+                raise ValueError("signal project repository mismatch")
+            binding = _row(
+                "SELECT 1 AS ok FROM workspace_projects WHERE workspace_id=? AND project_id=?",
+                (workspace_id, project_id),
+            )
+            if not binding:
+                raise ValueError("signal project not in workspace")
+            canonical = repo_slug.casefold()
+            source_ids = [
+                f"repository-metadata:{canonical}",
+                f"github-repository:{repo_id}",
+            ]
+            if pr_int is not None:
+                source_ids.append(f"pull:{canonical}:{pr_int}")
+        else:
+            # Generic providers: project binding still required, source ids come
+            # from metadata but never grant authorization by themselves.
+            binding = _row(
+                "SELECT 1 AS ok FROM workspace_projects WHERE workspace_id=? AND project_id=?",
+                (workspace_id, project_id),
+            )
+            if not binding:
+                raise ValueError("signal project not in workspace")
+            raw_ids = meta.get("source_ids") or []
+            if not isinstance(raw_ids, list):
+                raise ValueError("invalid signal source_ids")
+            source_ids = [str(s) for s in raw_ids]
+
+        service = SignalService(self.memory)
+        lane = meta.get("lane") or {}
+        details = meta.get("details") or {}
+        if not isinstance(lane, dict) or not isinstance(details, dict):
+            raise ValueError("invalid signal lane/details")
+        observed = service.observe(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            source=str(meta.get("source") or provider or "github"),
+            kind=str(meta.get("kind") or ""),
+            subject=str(meta.get("subject") or ""),
+            lane={str(k): str(v) for k, v in lane.items()},
+            severity=str(meta.get("severity") or "error"),
+            state=str(meta.get("state") or ""),
+            observed_at=str(meta.get("observed_at") or ""),
+            generation_at=str(meta.get("generation_at") or ""),
+            generation_id=int(meta.get("generation_id") or 0),
+            attempt=int(meta.get("attempt") or 1),
+            observation_key=str(meta.get("observation_key") or ""),
+            source_ids=source_ids,
+            evidence_url=str(meta.get("evidence_url") or record.source_url or ""),
+            details={str(k): v for k, v in details.items()},
+            ttl_seconds=int(meta.get("ttl_seconds") or 86400),
+        )
+        return {**observed, "status": "signal_recorded"}
+
+
+def _normalize_signal_slug(value: str) -> str:
+    text = (value or "").strip()
+    if not text:
+        return ""
+    if "github.com" in text:
+        from urllib.parse import urlparse
+
+        path = urlparse(text).path.strip("/").removesuffix(".git")
+        return path.casefold()
+    return text.strip("/").casefold()
