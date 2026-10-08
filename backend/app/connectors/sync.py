@@ -49,6 +49,23 @@ class ConnectorRateLimiter:
                 delay = max(0.01, calls[0] + window_seconds - now)
             time.sleep(min(delay, 1.0))
 
+    def try_acquire(self, key: str, requests: int, window_seconds: int) -> float:
+        """Reserve one call without sleeping; return 0 when available.
+
+        Returns the positive delay in seconds when the window is exhausted,
+        so the caller can surface it through the durable throttle path
+        instead of blocking a worker for a quota window.
+        """
+        with self._lock:
+            now = time.monotonic()
+            calls = self._calls[key]
+            while calls and calls[0] <= now - window_seconds:
+                calls.popleft()
+            if len(calls) < requests:
+                calls.append(now)
+                return 0.0
+            return max(0.0, calls[0] + window_seconds - now)
+
 
 class SyncEngine:
     def __init__(

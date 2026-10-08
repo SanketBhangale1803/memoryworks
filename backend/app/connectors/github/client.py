@@ -3,11 +3,13 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import math
 import os
 import subprocess
 import time
 from dataclasses import replace
 from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode, urlparse
@@ -37,7 +39,14 @@ from app.connectors.base import (
     WebhookRequest,
     WebhookSubscription,
 )
+from app.connectors.sync import ConnectorRateLimiter
 from app.core.config import settings
+
+from .signals import (
+    _SignalProducerUnavailable,
+    _SignalThrottle,
+    poll_signals,
+)
 
 _GITHUB_MANIFEST = ConnectorManifest(
     id="github",
@@ -88,6 +97,15 @@ _GITHUB_MANIFEST = ConnectorManifest(
     package="orgmemory.connector.github",
 )
 GITHUB_MANIFEST = replace(_GITHUB_MANIFEST, signature=_GITHUB_MANIFEST.digest())
+
+# Process-local pacing for signal polling reads, keyed by delegated
+# workspace/user. Manifest hourly policy plus a 2/second burst ceiling; the
+# worker never sleeps out a quota window (see _signal_api).
+_SIGNAL_LIMITER = ConnectorRateLimiter()
+_SIGNAL_HOURLY_REQUESTS = 4_500
+_SIGNAL_HOURLY_WINDOW = 3_600
+_SIGNAL_BURST_REQUESTS = 2
+_SIGNAL_BURST_WINDOW = 1
 
 
 class GitHubConnector(Connector):
@@ -159,6 +177,11 @@ class GitHubConnector(Connector):
             return SyncBatch(records, {"synced_at": datetime.now(UTC).isoformat()})
 
         previous_sha = str(cursor.get("last_commit_sha") or "")
+        signals = cursor.get("signals")
+        if cursor.get("signals_only") or isinstance(signals, dict):
+            # Internal signals_only jobs skip commits; resumed cycles keep
+            # polling from their saved snapshot.
+            return self.poll(cursor)
         commits = self.recent_commits(repository, 100)
         fresh: list[dict[str, Any]] = []
         for commit in commits:
@@ -200,8 +223,16 @@ class GitHubConnector(Connector):
                 str(commits[0].get("sha") or previous_sha) if commits else previous_sha
             ),
             "synced_at": datetime.now(UTC).isoformat(),
+            # The commit page is the cycle's first batch. Operational polling
+            # follows in later batches even when the SHA is unchanged: reruns
+            # and reviews change without a commit.
+            "signals": {"version": 1},
         }
-        return SyncBatch(records, next_cursor)
+        return SyncBatch(records, next_cursor, has_more=True, retry_after_seconds=1)
+
+    def poll(self, cursor: dict[str, Any], *, now: str | None = None) -> SyncBatch:
+        """Run one resumable signal-polling batch for a repository cursor."""
+        return poll_signals(self, cursor, now=now)
 
     def search(self, account: ConnectorAccount, query: str, **filters: Any) -> list[dict[str, Any]]:
         repository = str(filters.get("repository") or "")
@@ -458,11 +489,113 @@ class GitHubConnector(Connector):
                 break
         return output
 
+    def _signal_api(self, path: str):
+        """One paced signal-polling read; never sleeps out a quota window.
+
+        Uses the existing ``_api`` so delegated token renewal stays intact.
+        Provider throttling surfaces as ``_SignalThrottle`` (durable backoff,
+        same cursor); optional-producer 403/404 surfaces as
+        ``_SignalProducerUnavailable``. Anything else propagates through the
+        existing durable retry path.
+        """
+        base_key = f"github-signals:{self.secrets.workspace_id or ''}:{self.secrets.user_id or ''}"
+        hourly = _SIGNAL_LIMITER.try_acquire(
+            f"{base_key}:hour", _SIGNAL_HOURLY_REQUESTS, _SIGNAL_HOURLY_WINDOW
+        )
+        if hourly > 0:
+            raise _SignalThrottle(math.ceil(hourly))
+        burst = _SIGNAL_LIMITER.try_acquire(
+            f"{base_key}:burst", _SIGNAL_BURST_REQUESTS, _SIGNAL_BURST_WINDOW
+        )
+        if burst > 0:
+            # The hourly reservation above is conservatively consumed even
+            # though this burst is deferred to the durable throttle path.
+            raise _SignalThrottle(math.ceil(burst))
+        try:
+            return self._api("GET", path)
+        except httpx.HTTPStatusError as exc:
+            response = exc.response
+            status = response.status_code if response is not None else 0
+            if status == 429 or _is_provider_throttle(response):
+                raise _SignalThrottle(_throttle_delay(response)) from exc
+            if status in (403, 404):
+                raise _SignalProducerUnavailable(
+                    "forbidden" if status == 403 else "unavailable"
+                ) from exc
+            raise
+
 
 RECONNECT_MESSAGE = (
     "GitHub no longer accepts MemoryWorks' saved access (it expired or was revoked). "
     "Reconnect GitHub on the Sources page."
 )
+
+
+def _response_headers(response) -> dict[str, str]:
+    try:
+        items = response.headers or {}
+    except Exception:
+        return {}
+    try:
+        return {str(key).casefold(): str(value) for key, value in dict(items).items()}
+    except Exception:
+        return {}
+
+
+def _is_provider_throttle(response) -> bool:
+    """True for primary-limit 403 (remaining=0) and secondary-limit 403."""
+    if response is None:
+        return False
+    try:
+        status = int(response.status_code)
+    except (TypeError, ValueError):
+        return False
+    if status != 403:
+        return False
+    headers = _response_headers(response)
+    if str(headers.get("x-ratelimit-remaining", "")).strip() == "0":
+        return True
+    if headers.get("retry-after"):
+        # A provider-directed backoff header means throttling, not forbidding.
+        return True
+    try:
+        body = response.json()
+    except Exception:
+        return False
+    message = ""
+    if isinstance(body, dict):
+        message = str(body.get("message") or "")
+    return "secondary rate limit" in message.casefold()
+
+
+def _throttle_delay(response) -> int:
+    """Durable backoff seconds from provider headers; 60 when absent/invalid."""
+    candidates: list[float] = []
+    headers = _response_headers(response)
+    retry_after = str(headers.get("retry-after", "")).strip()
+    if retry_after:
+        try:
+            seconds = float(retry_after)
+        except ValueError:
+            seconds = -1.0
+            try:
+                delta = (parsedate_to_datetime(retry_after) - datetime.now(UTC)).total_seconds()
+                seconds = float(delta)
+            except (TypeError, ValueError, OverflowError):
+                seconds = -1.0
+        if seconds > 0:
+            candidates.append(seconds)
+    reset = str(headers.get("x-ratelimit-reset", "")).strip()
+    if reset:
+        try:
+            delta = float(reset) - time.time()
+        except ValueError:
+            delta = -1.0
+        if delta > 0:
+            candidates.append(delta)
+    if not candidates:
+        return 60
+    return max(1, math.ceil(max(candidates)))
 
 
 def _send(method: str, path: str, token: str) -> httpx.Response:
