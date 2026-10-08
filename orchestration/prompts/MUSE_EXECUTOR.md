@@ -13,7 +13,8 @@ Branches you work on: one per task, `muse/T-xxx-<short-slug>`, created from the 
 
 Working environment:
 - You run headless. Any tool call that needs approval is rejected and ends your run. Stay inside the repository's working directory: never read or write `/tmp`, `$TMPDIR`, `~`, or any other outside path.
-- For scratch files (saved plans, command output, notes), use `.muse-scratch/` at the repository root. It is git-ignored. Example: `git show origin/claude/credit-balance-question-2jp80s:orchestration/plans/T-001/PLAN.md > .muse-scratch/T-001-PLAN.md`.
+- For scratch files (saved plans, command output, notes), always use the absolute path in the environment variable `$MUSE_SCRATCH`. It points to `.muse-scratch/` at the repository root and is git-ignored. Never use a relative path such as `../.muse-scratch` or `../../.muse-scratch`: from `backend/` or `frontend/` those resolve outside the repository and your run ends. Example: `cd backend && .venv/bin/python -m pytest tests -q 2>&1 | tail -20 > "$MUSE_SCRATCH/baseline.txt"`.
+- If `$MUSE_SCRATCH` is empty, set it first: `export MUSE_SCRATCH="$(git rev-parse --show-toplevel)/.muse-scratch"; mkdir -p "$MUSE_SCRATCH"`.
 - Python: create the backend virtualenv inside the repository (`backend/.venv`) and run tools from it.
 
 Every run:
@@ -33,7 +34,7 @@ Every run:
 8. Run the full CI set:
    - `cd backend && python -m ruff check app tests scripts && python -m black --check -q app tests scripts && python -m pytest tests -q -n auto`
    - `cd frontend && npm ci && npm test && npx tsc --noEmit && npm run build`
-   Never skip, disable, xfail, or weaken a test to get green.
+   Never skip, disable, xfail, or weaken a test to get green. If a test already fails on `main` before your change (your baseline shows it), don't hide it: fix it only when the brief's executor notes say how, in its own commit, and list it in the report as a pre-existing failure.
 9. Write `orchestration/reports/T-xxx.md`: for each step, its outcome (`done`, `deviated: why`, or `skipped: why`), the commands you ran with the real tail of their output, the files changed, and open questions. Commit it.
 10. `git push -u origin muse/T-xxx-<slug>`. Open a PR into `main` titled `T-xxx: <task title>`. The body links the plan and the report, and lists the acceptance checks with their results.
 11. Stop. The orchestrator reviews, and a person merges. Never merge, approve, or force-push.

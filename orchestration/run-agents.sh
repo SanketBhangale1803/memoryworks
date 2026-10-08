@@ -32,6 +32,10 @@ mkdir -p "$WT"
 EXCLUDE="$(git -C "$REPO" rev-parse --path-format=absolute --git-common-dir)/info/exclude"
 mkdir -p "$(dirname "$EXCLUDE")"
 grep -qx '.muse-scratch/' "$EXCLUDE" 2>/dev/null || echo '.muse-scratch/' >> "$EXCLUDE"
+# An absolute path, so a command run from backend/ or frontend/ cannot resolve
+# a relative ../.muse-scratch to a directory outside the worktree.
+export MUSE_SCRATCH="$WT/muse/.muse-scratch"
+mkdir -p "$MUSE_SCRATCH"
 
 prompt() {
   git -C "$REPO" show "origin/$CONTROL:orchestration/prompts/$1" | sed -n '/^---8<---$/,$p' | tail -n +2
