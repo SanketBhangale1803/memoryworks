@@ -506,6 +506,23 @@ class OrgOpsService:
         match = re.search(r"owned by ([A-Z][A-Za-z'-]+(?: [A-Z][A-Za-z'-]+)*)", text or "")
         return match.group(1).strip(" .,;") if match else ""
 
+    def resolve_subject_owner(
+        self, subject: str, service: str, ownership_units: list[dict]
+    ) -> dict:
+        terms = _terms(f"{subject or ''} {service or ''}")
+        best: tuple[float, dict] | None = None
+        for candidate in ownership_units:
+            score = self._score(candidate, terms)
+            if score > 0 and (best is None or score > best[0]):
+                best = (score, candidate)
+        if not best:
+            return {"owner": "", "evidence": []}
+        return {
+            "owner": self._owner_from_text(best[1].get("content", ""))
+            or best[1].get("subject", ""),
+            "evidence": [best[1].get("id", "")],
+        }
+
     def get_owner(self, space_ids: list[str], object_id: str) -> dict:
         task = row("SELECT * FROM org_tasks WHERE id=?", (object_id,))
         if task:
@@ -519,21 +536,24 @@ class OrgOpsService:
         if not unit:
             raise LookupError("No task or memory with that id")
         scope = unit.get("scope") or {}
-        terms = _terms(f"{unit.get('subject', '')} {scope.get('service', '')}")
-        best: tuple[float, dict] | None = None
+        candidates: list[dict] = []
         for space_id in space_ids:
-            for candidate in self._units(space_id, kind="ownership"):
-                score = self._score(candidate, terms)
-                if score > 0 and (best is None or score > best[0]):
-                    best = (score, candidate)
-        if not best:
+            candidates.extend(self._units(space_id, kind="ownership"))
+        resolved = self.resolve_subject_owner(
+            str(unit.get("subject", "")), str(scope.get("service", "")), candidates
+        )
+        if not resolved["owner"]:
+            return {"object_id": object_id, "object_type": "memory", "owner": "", "evidence": []}
+        best_id = resolved["evidence"][0] if resolved["evidence"] else ""
+        best_unit = next((c for c in candidates if c.get("id") == best_id), None)
+        if best_unit is None:
             return {"object_id": object_id, "object_type": "memory", "owner": "", "evidence": []}
         return {
             "object_id": object_id,
             "object_type": "memory",
-            "owner": self._owner_from_text(best[1]["content"]) or best[1]["subject"],
-            "evidence": [best[1]["id"]],
-            "source_memory": self.public_memory(best[1]),
+            "owner": resolved["owner"],
+            "evidence": resolved["evidence"],
+            "source_memory": self.public_memory(best_unit),
         }
 
     # ------------------------------------------------------------------ tasks

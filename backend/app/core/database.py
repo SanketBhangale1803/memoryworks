@@ -611,6 +611,57 @@ CREATE INDEX IF NOT EXISTS idx_org_tasks_external ON org_tasks(project_id, exter
 CREATE INDEX IF NOT EXISTS idx_org_action_plans ON org_action_plans(workspace_id, status, created_at);
 CREATE INDEX IF NOT EXISTS idx_org_watches ON org_watches(workspace_id, status);
 CREATE INDEX IF NOT EXISTS idx_org_watch_findings ON org_watch_findings(watch_id, status, created_at);
+CREATE TABLE IF NOT EXISTS live_issues (
+  id TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
+  source TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  source_ids_json TEXT NOT NULL DEFAULT '[]',
+  scope_constraints_json TEXT NOT NULL DEFAULT '[]',
+  severity TEXT NOT NULL CHECK(severity IN ('info','warning','error','critical')),
+  first_seen TEXT NOT NULL,
+  last_seen TEXT NOT NULL,
+  occurrences INTEGER NOT NULL DEFAULT 0 CHECK(occurrences >= 0),
+  status TEXT NOT NULL CHECK(status IN ('open','resolved','muted')),
+  latest_signal_id TEXT NOT NULL DEFAULT '',
+  resolved_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(workspace_id,fingerprint)
+);
+CREATE TABLE IF NOT EXISTS live_signals (
+  id TEXT PRIMARY KEY,
+  issue_id TEXT REFERENCES live_issues(id) ON DELETE CASCADE,
+  workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
+  source TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  severity TEXT NOT NULL CHECK(severity IN ('info','warning','error','critical')),
+  state TEXT NOT NULL CHECK(state IN ('failure','success')),
+  observed_at TEXT NOT NULL,
+  collected_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  evidence_url TEXT NOT NULL DEFAULT '',
+  fingerprint TEXT NOT NULL,
+  observation_key TEXT NOT NULL,
+  generation_at TEXT NOT NULL,
+  generation_id INTEGER NOT NULL DEFAULT 0,
+  attempt INTEGER NOT NULL DEFAULT 1,
+  source_ids_json TEXT NOT NULL DEFAULT '[]',
+  source_grants_json TEXT NOT NULL DEFAULT '{}',
+  details_json TEXT NOT NULL DEFAULT '{}',
+  UNIQUE(workspace_id,fingerprint,observation_key)
+);
+CREATE INDEX IF NOT EXISTS live_issues_scope_status
+  ON live_issues(workspace_id,project_id,status,last_seen);
+CREATE INDEX IF NOT EXISTS live_signals_issue_time
+  ON live_signals(issue_id,observed_at);
+CREATE INDEX IF NOT EXISTS live_signals_freshness
+  ON live_signals(workspace_id,project_id,expires_at);
 """
 
 

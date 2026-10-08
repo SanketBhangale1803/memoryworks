@@ -361,9 +361,7 @@ def build_org_executor(
             providers = (
                 [requested]
                 if requested in PROVIDER_NAMES
-                else mentioned_providers(requested)
-                if requested
-                else []
+                else mentioned_providers(requested) if requested else []
             )
             data = status_answer(workspace_id, providers)
             reports = data.pop("_reports")

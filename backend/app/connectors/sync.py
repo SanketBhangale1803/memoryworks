@@ -436,6 +436,12 @@ class SyncEngine:
         return applied
 
     def _apply_once(self, record: SyncRecord, context: dict[str, Any]) -> bool:
+        # Signal records own project-aware idempotency in their storage
+        # transaction; they must not use the generic applied-record table whose
+        # keys omit project and would collapse fan-out/replay across projects.
+        if record.resource_type == "signal":
+            self.apply_record(record, context)
+            return True
         content_hash = hashlib.sha256(record.content.encode()).hexdigest()
         applied_id = new_id("applied")
         try:
