@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import re
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import quote
 
-from app.connectors.base import SyncOperation, SyncRecord
+from app.connectors.base import SyncBatch, SyncOperation, SyncRecord
 from app.core.config import settings
 from app.ingestion.safety import sanitize_for_index
 
@@ -476,3 +478,877 @@ def _build_record(
         updated_at=observed_at,
         metadata=metadata,
     )
+
+
+# ---------------------------------------------------------------------------
+# Resumable signal polling.
+#
+# poll_signals drives one complete current-head snapshot across many engine
+# batches. Each call performs at most one data API request, returns the
+# records from that page, and saves the next phase/page in cursor["signals"].
+# Local-only transitions (phase changes, producer skips, review finalization
+# after the last fetched page) advance without a request. This scans current
+# monitored heads, not repository history; absence never resolves CI.
+# ---------------------------------------------------------------------------
+
+_SIGNALS_VERSION = 1
+_PER_PAGE = 100
+
+# Operational webhook events reconcile through verified polling, never through
+# repository ingestion or an LLM.
+OPERATIONAL_WEBHOOK_EVENTS = frozenset(
+    {"check_run", "workflow_run", "deployment_status", "pull_request_review"}
+)
+
+
+class _SignalThrottle(Exception):
+    """Signal polling must back off; carries only retry seconds."""
+
+    def __init__(self, retry_after_seconds: int):
+        super().__init__(f"github signal reads throttled for {retry_after_seconds}s")
+        self.retry_after_seconds = max(1, int(retry_after_seconds))
+
+
+class _SignalProducerUnavailable(Exception):
+    """An optional producer read failed; carries only a sanitized diagnostic."""
+
+    def __init__(self, diagnostic: str):
+        super().__init__(f"github signal producer unavailable: {diagnostic}")
+        self.diagnostic = diagnostic
+
+
+def _normalize_slug(value: str) -> str:
+    text = (value or "").strip()
+    if not text:
+        return ""
+    if "github.com" in text:
+        path = text.split("github.com", 1)[1].strip("/").removesuffix(".git")
+        slug = path.split("?", 1)[0].split("#", 1)[0].strip("/")
+        parts = slug.split("/")
+        if len(parts) < 2:
+            return slug.casefold()
+        return "/".join(parts[:2]).casefold()
+    return text.split("?", 1)[0].split("#", 1)[0].strip("/").casefold()
+
+
+def github_project_ids(workspace_id: str, repository: str) -> list[str]:
+    """Project ids in this workspace whose configured repository matches exactly."""
+    from app.core.database import rows
+
+    wanted = _normalize_slug(repository)
+    if not wanted or not _SLUG_RE.match(wanted):
+        return []
+    matched: list[str] = []
+    for project in rows(
+        """SELECT p.id, p.repository FROM projects p
+        JOIN workspace_projects wp ON wp.project_id = p.id
+        WHERE wp.workspace_id = ?""",
+        (workspace_id,),
+    ):
+        if _normalize_slug(str(project.get("repository") or "")) == wanted:
+            matched.append(str(project["id"]))
+    return sorted(matched)
+
+
+def sanitize_poll_hints(hints: Any) -> list[dict[str, Any]]:
+    """Keep only allowlisted webhook hint fields for signal polling cursors."""
+    clean: list[dict[str, Any]] = []
+    if not isinstance(hints, list):
+        return clean
+    for hint in hints:
+        if not isinstance(hint, dict):
+            continue
+        kind = hint.get("kind")
+        if kind in ("check", "workflow"):
+            try:
+                hint_id = int(hint.get("id"))
+            except (TypeError, ValueError):
+                continue
+            if hint_id <= 0:
+                continue
+            entry: dict[str, Any] = {"kind": kind, "id": hint_id}
+            branch = str(hint.get("branch") or "")[:200]
+            if branch:
+                entry["branch"] = branch
+            sha = str(hint.get("sha") or "")[:40]
+            if sha:
+                entry["sha"] = sha
+            try:
+                pr_number = int(hint.get("pr_number"))
+            except (TypeError, ValueError):
+                pr_number = 0
+            if pr_number > 0:
+                entry["pr_number"] = pr_number
+            clean.append(entry)
+        elif kind == "deployment":
+            try:
+                deployment_id = int(hint.get("id"))
+            except (TypeError, ValueError):
+                continue
+            if deployment_id > 0:
+                clean.append({"kind": "deployment", "id": deployment_id})
+        elif kind == "pr":
+            try:
+                number = int(hint.get("number"))
+            except (TypeError, ValueError):
+                continue
+            if number > 0:
+                clean.append({"kind": "pr", "number": number})
+    return clean
+
+
+def _fresh_snapshot() -> dict[str, Any]:
+    return {
+        "version": _SIGNALS_VERSION,
+        "phase": "repo",
+        "page": 1,
+        "cycle_started_at": "",
+        "repository": {},
+        "default_sha": "",
+        "open_prs": [],
+        "targets": [],
+        "target_index": 0,
+        "producer": "",
+        "sha_role": "",
+        "review": None,
+        "selections": {},
+        "hinted_deployments": [],
+        "deployments": [],
+        "deployment_index": 0,
+        "status_page": 1,
+        "hints": [],
+        "hint_index": 0,
+        "diagnostics": {},
+    }
+
+
+def _target_label(target: dict[str, Any]) -> str:
+    if target.get("kind") == "pr":
+        return f"pr:{int(target.get('number') or 0)}"
+    return "default"
+
+
+def _sort_key_generation(record: SyncRecord) -> tuple:
+    meta = record.metadata or {}
+    parsed = _parse_dt(str(meta.get("generation_at") or ""))
+    epoch = parsed.timestamp() if parsed else 0.0
+    try:
+        generation_id = int(meta.get("generation_id") or 0)
+    except (TypeError, ValueError):
+        generation_id = 0
+    try:
+        attempt = int(meta.get("attempt") or 0)
+    except (TypeError, ValueError):
+        attempt = 0
+    return (epoch, generation_id, attempt, record.id)
+
+
+def _as_list(payload: Any, key: str) -> list[dict[str, Any]]:
+    if isinstance(payload, dict):
+        items = payload.get(key, [])
+    elif isinstance(payload, list):
+        items = payload
+    else:
+        items = []
+    return [item for item in items if isinstance(item, dict)]
+
+
+def _extract_pr_fields(item: dict[str, Any]) -> dict[str, Any]:
+    head = item.get("head") or {}
+    base = item.get("base") or {}
+    head_repo = head.get("repo") or {}
+    base_repo = base.get("repo") or {}
+    try:
+        number = int(item.get("number"))
+    except (TypeError, ValueError):
+        number = 0
+    try:
+        head_repo_id = int(head_repo.get("id")) if head_repo.get("id") is not None else 0
+    except (TypeError, ValueError):
+        head_repo_id = 0
+    try:
+        base_repo_id = int(base_repo.get("id")) if base_repo.get("id") is not None else 0
+    except (TypeError, ValueError):
+        base_repo_id = 0
+    return {
+        "kind": "pr",
+        "number": number,
+        "head_sha": str(head.get("sha") or ""),
+        "merge_sha": item.get("merge_commit_sha"),
+        "head_repo": str(head_repo.get("full_name") or ""),
+        "head_repo_id": head_repo_id,
+        "base_repo": str(base_repo.get("full_name") or ""),
+        "base_repo_id": base_repo_id,
+        "state": str(item.get("state") or ""),
+        "draft": bool(item.get("draft", False)),
+        "created_at": str(item.get("created_at") or ""),
+        "updated_at": str(item.get("updated_at") or ""),
+    }
+
+
+def _hint_target(
+    hint: dict[str, Any], open_prs: list[dict[str, Any]], default_branch: str
+) -> str | None:
+    """Verify a check/workflow hint against snapshot context; None rejects it."""
+    pr_number = hint.get("pr_number")
+    if pr_number not in (None, ""):
+        try:
+            wanted = int(pr_number)
+        except (TypeError, ValueError):
+            return None
+        for target in open_prs:
+            if int(target.get("number") or 0) == wanted:
+                return f"pr:{wanted}"
+        return None
+    branch = str(hint.get("branch") or "")
+    if branch and branch == default_branch:
+        return "default"
+    return None
+
+
+def poll_signals(connector, cursor: dict[str, Any], *, now: str | None = None) -> SyncBatch:
+    """Perform at most one data request of a resumable GitHub signal snapshot."""
+    slug = _normalize_slug(str(cursor.get("repository") or cursor.get("resource_id") or ""))
+    if not slug or not _SLUG_RE.match(slug):
+        raise ValueError("invalid github repository for signal polling")
+    raw = cursor.get("signals")
+    if isinstance(raw, dict) and int(raw.get("version") or 0) != _SIGNALS_VERSION:
+        raise ValueError("unsupported signal cursor version")
+    # Never mutate the caller's cursor: throttling must return it unchanged.
+    output = copy.deepcopy(dict(cursor))
+    sig = copy.deepcopy(dict(raw)) if isinstance(raw, dict) else _fresh_snapshot()
+    sig.setdefault("version", _SIGNALS_VERSION)
+    for key, default in (
+        ("phase", "repo"),
+        ("page", 1),
+        ("open_prs", []),
+        ("targets", []),
+        ("target_index", 0),
+        ("producer", ""),
+        ("sha_role", ""),
+        ("review", None),
+        ("selections", {}),
+        ("hinted_deployments", []),
+        ("deployments", []),
+        ("deployment_index", 0),
+        ("status_page", 1),
+        ("hints", []),
+        ("hint_index", 0),
+        ("diagnostics", {}),
+    ):
+        sig.setdefault(key, copy.deepcopy(default))
+    sig.setdefault("cycle_started_at", "")
+    if not sig["cycle_started_at"]:
+        sig["cycle_started_at"] = _iso(datetime.now(UTC)) if now is None else now
+    moment = now or _iso(datetime.now(UTC))
+
+    records: list[SyncRecord] = []
+    try:
+        while True:
+            step = _plan_step(sig, slug)
+            kind = step[0]
+            if kind == "done":
+                return _final_batch(output, records, moment)
+            if kind == "local":
+                if step[1](sig, slug, moment) == "done":
+                    return _final_batch(output, records, moment)
+                continue
+            _, path, on_success, on_skip = step
+            try:
+                payload = connector._signal_api(path)
+            except _SignalProducerUnavailable as exc:
+                # One failed optional read ends this batch; the next batch
+                # resumes past it. A batch never performs two data requests.
+                on_skip(sig, exc.diagnostic)
+                output["signals"] = sig
+                return SyncBatch(tuple(records), output, has_more=True, retry_after_seconds=1)
+            on_success(payload, sig, records, slug, moment)
+            output["signals"] = sig
+            return SyncBatch(tuple(records), output, has_more=True, retry_after_seconds=1)
+    except _SignalThrottle as exc:
+        # Provider or local pacing: keep the cursor exactly, retry later.
+        # Sync retry attempts are not consumed for provider throttle.
+        return SyncBatch(
+            (), dict(cursor), has_more=True, retry_after_seconds=exc.retry_after_seconds
+        )
+
+
+def _final_batch(output: dict[str, Any], records: list[SyncRecord], moment: str) -> SyncBatch:
+    output.pop("signals", None)
+    output["signals_last_completed_at"] = moment
+    return SyncBatch(tuple(records), output, has_more=False)
+
+
+def _repo_meta(sig: dict[str, Any]) -> dict[str, Any]:
+    repo = sig.get("repository") or {}
+    if not isinstance(repo, dict) or not repo.get("full_name"):
+        raise ValueError("signal snapshot lost repository metadata")
+    return repo
+
+
+def _note(sig: dict[str, Any], key: str, diagnostic: str) -> None:
+    if diagnostic in ("forbidden", "unavailable"):
+        sig.setdefault("diagnostics", {})[str(key)] = diagnostic
+
+
+def _plan_step(sig: dict[str, Any], slug: str):
+    """Decide the next polling action without performing any request."""
+    phase = sig.get("phase")
+    if phase == "repo":
+        return ("request", f"/repos/{slug}", _got_repo, _fail_snapshot)
+    if phase == "branch":
+        branch = str((_repo_meta(sig).get("default_branch")) or "")
+        return (
+            "request",
+            f"/repos/{slug}/branches/{quote(branch, safe='')}",
+            _got_branch,
+            _fail_snapshot,
+        )
+    if phase == "prs":
+        return (
+            "request",
+            f"/repos/{slug}/pulls?state=open&per_page={_PER_PAGE}&page={int(sig.get('page') or 1)}",
+            _got_prs,
+            _fail_snapshot,
+        )
+    if phase == "hints":
+        hints = sig.get("hints") or []
+        index = int(sig.get("hint_index") or 0)
+        while index < len(hints) and not _hint_needs_request(hints[index]):
+            index += 1
+        sig["hint_index"] = index
+        if index >= len(hints):
+            return ("local", _enter_targets)
+        return ("request", _hint_path(slug, hints[index]), _got_hint, _skip_hint)
+    if phase == "targets":
+        return _plan_target_step(sig, slug)
+    if phase == "deployments":
+        return (
+            "request",
+            f"/repos/{slug}/deployments?per_page={_PER_PAGE}&page={int(sig.get('page') or 1)}",
+            _got_deployments,
+            _skip_deployments,
+        )
+    if phase == "statuses":
+        selections = sig.get("deployments") or []
+        if int(sig.get("deployment_index") or 0) >= len(selections):
+            return ("local", _finish_cycle)
+        selection = selections[int(sig.get("deployment_index") or 0)]
+        return (
+            "request",
+            f"/repos/{slug}/deployments/{int(selection['id'])}/statuses"
+            f"?per_page={_PER_PAGE}&page={int(sig.get('status_page') or 1)}",
+            _got_statuses,
+            _skip_status,
+        )
+    return ("done",)
+
+
+def _fail_snapshot(sig: dict[str, Any], diagnostic: str) -> None:
+    # Core inventory reads (repository, branch, open PRs) fail the job when
+    # the provider refuses them; only optional producers advance with a note.
+    raise ValueError(f"github signal snapshot unavailable: {diagnostic}")
+
+
+def _got_repo(payload: Any, sig: dict[str, Any], records: list, slug: str, moment: str) -> None:
+    repo_id, full_name, default_branch = _validate_repository(payload)
+    sig["repository"] = {"id": repo_id, "full_name": full_name, "default_branch": default_branch}
+    sig["phase"] = "branch"
+
+
+def _got_branch(payload: Any, sig: dict[str, Any], records: list, slug: str, moment: str) -> None:
+    sha = ""
+    if isinstance(payload, dict):
+        commit = payload.get("commit") or {}
+        if isinstance(commit, dict):
+            sha = str(commit.get("sha") or "")
+    # A missing branch head yields no observation for default CI, never green.
+    sig["default_sha"] = sha
+    sig["phase"] = "prs"
+    sig["page"] = 1
+    sig["open_prs"] = []
+
+
+def _got_prs(payload: Any, sig: dict[str, Any], records: list, slug: str, moment: str) -> None:
+    if not isinstance(payload, list):
+        raise ValueError("unexpected open-PR inventory shape")
+    for item in payload:
+        if not isinstance(item, dict):
+            continue
+        fields = _extract_pr_fields(item)
+        if fields["number"] > 0:
+            sig["open_prs"].append(fields)
+    if len(payload) >= _PER_PAGE:
+        sig["page"] = int(sig.get("page") or 1) + 1
+    else:
+        sig["phase"] = "hints"
+        sig["hint_index"] = 0
+
+
+def _hint_needs_request(hint: Any) -> bool:
+    return isinstance(hint, dict) and hint.get("kind") in ("check", "workflow", "deployment")
+
+
+def _hint_path(slug: str, hint: dict[str, Any]) -> str:
+    kind = hint.get("kind")
+    try:
+        hint_id = int(hint.get("id"))
+    except (TypeError, ValueError):
+        hint_id = 0
+    if kind == "check":
+        return f"/repos/{slug}/check-runs/{hint_id}"
+    if kind == "workflow":
+        return f"/repos/{slug}/actions/runs/{hint_id}"
+    return f"/repos/{slug}/deployments/{hint_id}"
+
+
+def _got_hint(payload: Any, sig: dict[str, Any], records: list, slug: str, moment: str) -> None:
+    hints = sig.get("hints") or []
+    hint = (
+        hints[int(sig.get("hint_index") or 0)]
+        if int(sig.get("hint_index") or 0) < len(hints)
+        else {}
+    )
+    kind = hint.get("kind") if isinstance(hint, dict) else None
+    repo = _repo_meta(sig)
+    default_branch = str(repo.get("default_branch") or "")
+    if kind in ("check", "workflow") and isinstance(payload, dict):
+        target = _hint_target(hint, sig.get("open_prs") or [], default_branch)
+        if target is not None:
+            producer = "check" if kind == "check" else "workflow"
+            for record in normalize_terminal(producer, payload, repository=repo, target=target):
+                records.append(record)
+    elif kind == "deployment" and isinstance(payload, dict):
+        try:
+            deployment_id = int(payload.get("id"))
+        except (TypeError, ValueError):
+            deployment_id = 0
+        if deployment_id > 0:
+            known = {int(item.get("id") or 0) for item in sig.get("hinted_deployments") or []}
+            if deployment_id not in known:
+                sig["hinted_deployments"].append(
+                    {
+                        "id": deployment_id,
+                        "environment": str(payload.get("environment") or ""),
+                        "task": str(payload.get("task") or "deploy"),
+                        "created_at": str(payload.get("created_at") or ""),
+                        "sha": str(payload.get("sha") or ""),
+                    }
+                )
+    # Failed or mismatched hint reads emit nothing; every hint advances.
+    sig["hint_index"] = int(sig.get("hint_index") or 0) + 1
+
+
+def _skip_hint(sig: dict[str, Any], diagnostic: str) -> None:
+    _note(sig, "hint", diagnostic)
+    sig["hint_index"] = int(sig.get("hint_index") or 0) + 1
+
+
+def _enter_targets(sig: dict[str, Any], slug: str, moment: str) -> None:
+    targets: list[dict[str, Any]] = [{"kind": "default"}]
+    for entry in sorted(sig.get("open_prs") or [], key=lambda item: int(item.get("number") or 0)):
+        targets.append(dict(entry))
+    seen = {int(item.get("number") or 0) for item in targets if item.get("kind") == "pr"}
+    hinted_numbers: list[int] = []
+    for hint in sig.get("hints") or []:
+        if not isinstance(hint, dict) or hint.get("kind") != "pr":
+            continue
+        try:
+            number = int(hint.get("number"))
+        except (TypeError, ValueError):
+            continue
+        if number > 0 and number not in seen:
+            seen.add(number)
+            hinted_numbers.append(number)
+    # Closed PR hints enter the verified-PR phase even when absent from open
+    # inventory, so stalled issues resolve on a verified close/review.
+    for number in sorted(hinted_numbers):
+        targets.append({"kind": "pr", "number": number, "hinted": True})
+    sig["targets"] = targets
+    sig["target_index"] = 0
+    sig["producer"] = ""
+    sig["sha_role"] = ""
+    sig["page"] = 1
+    sig["review"] = None
+    sig["phase"] = "targets"
+
+
+def _target_producers(target: dict[str, Any]) -> list[tuple[str, str]]:
+    if target.get("kind") != "pr":
+        return [("checks", "head"), ("workflows", "head")]
+    sequence = [("pr_get", ""), ("reviews", ""), ("checks", "head")]
+    merge_sha = target.get("merge_sha") or ""
+    if merge_sha and merge_sha != (target.get("head_sha") or ""):
+        sequence.append(("checks", "merge"))
+    sequence.append(("workflows", "head"))
+    if merge_sha and merge_sha != (target.get("head_sha") or ""):
+        sequence.append(("workflows", "merge"))
+    return sequence
+
+
+def _current_target(sig: dict[str, Any]) -> dict[str, Any]:
+    targets = sig.get("targets") or []
+    return targets[int(sig.get("target_index") or 0)]
+
+
+def _advance_producer(sig: dict[str, Any]) -> None:
+    producers = _target_producers(_current_target(sig))
+    try:
+        position = producers.index((sig.get("producer") or "", sig.get("sha_role") or ""))
+    except ValueError:
+        position = -1
+    if position + 1 >= len(producers):
+        _next_target(sig)
+    else:
+        sig["producer"], sig["sha_role"] = producers[position + 1]
+        sig["page"] = 1
+
+
+def _next_target(sig: dict[str, Any]) -> None:
+    sig["target_index"] = int(sig.get("target_index") or 0) + 1
+    sig["producer"] = ""
+    sig["sha_role"] = ""
+    sig["page"] = 1
+    sig["review"] = None
+
+
+def _skip_producer(sig: dict[str, Any], diagnostic: str) -> None:
+    target = _current_target(sig)
+    _note(sig, f"{sig.get('producer')}:{_target_label(target)}:{sig.get('sha_role')}", diagnostic)
+    _advance_producer(sig)
+
+
+def _skip_target(sig: dict[str, Any], diagnostic: str) -> None:
+    _note(sig, f"target:{_target_label(_current_target(sig))}", diagnostic)
+    _next_target(sig)
+
+
+def _target_sha(target: dict[str, Any], role: str, default_sha: str) -> str:
+    if target.get("kind") != "pr":
+        return default_sha
+    if role == "merge":
+        return str(target.get("merge_sha") or "")
+    return str(target.get("head_sha") or "")
+
+
+def _target_repo_slug(target: dict[str, Any], role: str, slug: str) -> str:
+    # A fork head is queried against its head repo only after verifying its
+    # id/full_name from the base repository's PR GET (stored on the target);
+    # the observation still inherits the base PR source constraints.
+    if target.get("kind") == "pr" and role == "head" and target.get("head_repo"):
+        candidate = _normalize_slug(str(target.get("head_repo") or ""))
+        if candidate and _SLUG_RE.match(candidate):
+            return candidate
+    return slug
+
+
+def _plan_target_step(sig: dict[str, Any], slug: str):
+    while True:
+        targets = sig.get("targets") or []
+        index = int(sig.get("target_index") or 0)
+        if index >= len(targets):
+            return ("local", _enter_deployments)
+        target = targets[index]
+        producers = _target_producers(target)
+        try:
+            position = producers.index((sig.get("producer") or "", sig.get("sha_role") or ""))
+        except ValueError:
+            position = -1
+        if position < 0:
+            sig["producer"], sig["sha_role"] = producers[0]
+            sig["page"] = 1
+            position = 0
+        producer, role = producers[position]
+        if producer == "pr_get":
+            return (
+                "request",
+                f"/repos/{slug}/pulls/{int(target.get('number') or 0)}",
+                _got_pr,
+                _skip_target,
+            )
+        if producer == "reviews":
+            if not isinstance(sig.get("review"), dict):
+                _advance_producer(sig)
+                continue
+            return (
+                "request",
+                f"/repos/{slug}/pulls/{int(target.get('number') or 0)}/reviews"
+                f"?per_page={_PER_PAGE}&page={int(sig.get('page') or 1)}",
+                _got_reviews,
+                _skip_producer,
+            )
+        sha = _target_sha(target, role, str(sig.get("default_sha") or ""))
+        if not sha:
+            # Missing branch/head/fork checks yield no observation, never green.
+            _advance_producer(sig)
+            continue
+        qslug = _target_repo_slug(target, role, slug)
+        page = int(sig.get("page") or 1)
+        if producer == "checks":
+            return (
+                "request",
+                f"/repos/{qslug}/commits/{quote(sha, safe='')}/check-runs"
+                f"?filter=all&per_page={_PER_PAGE}&page={page}",
+                _got_checks,
+                _skip_producer,
+            )
+        return (
+            "request",
+            f"/repos/{qslug}/actions/runs?head_sha={quote(sha, safe='')}"
+            f"&per_page={_PER_PAGE}&page={page}",
+            _got_workflows,
+            _skip_producer,
+        )
+
+
+def _got_pr(payload: Any, sig: dict[str, Any], records: list, slug: str, moment: str) -> None:
+    if not isinstance(payload, dict):
+        raise ValueError("unexpected pull-request shape")
+    repo = _repo_meta(sig)
+    target = _current_target(sig)
+    fields = _extract_pr_fields(payload)
+    if fields["number"] <= 0 or fields["number"] != int(target.get("number") or 0):
+        _note(sig, f"target:{_target_label(target)}", "unavailable")
+        _next_target(sig)
+        return
+    target.update(fields)
+    label = _target_label(target)
+    if fields["state"] == "closed":
+        # A verified close resolves PR-stalled issues; remaining CI for this
+        # target is skipped and its open checks expire.
+        for record in normalize_terminal(
+            "pr_review",
+            {"pull_request": fields, "reviews": []},
+            repository=repo,
+            target=label,
+            now=moment,
+        ):
+            records.append(record)
+        _next_target(sig)
+        return
+    sig["review"] = {"fresh": fields, "triples": []}
+    sig["producer"] = "reviews"
+    sig["sha_role"] = ""
+    sig["page"] = 1
+
+
+def _got_reviews(payload: Any, sig: dict[str, Any], records: list, slug: str, moment: str) -> None:
+    if not isinstance(payload, list):
+        raise ValueError("unexpected review-list shape")
+    repo = _repo_meta(sig)
+    review = sig.get("review") or {}
+    triples = review.get("triples") or []
+    for item in payload:
+        if not isinstance(item, dict):
+            continue
+        submitted = str(item.get("submitted_at") or item.get("submittedAt") or "")
+        if not submitted:
+            continue
+        try:
+            review_id = int(item.get("id"))
+        except (TypeError, ValueError):
+            continue
+        # Only submitted timestamp/state/id triples are accumulated, never bodies.
+        triples.append([review_id, str(item.get("state") or ""), submitted])
+    review["triples"] = triples
+    sig["review"] = review
+    if len(payload) >= _PER_PAGE:
+        sig["page"] = int(sig.get("page") or 1) + 1
+        return
+    # All review pages are in: determine failure/success only now.
+    fresh = review.get("fresh") or {}
+    label = _target_label(_current_target(sig))
+    synthetic = [
+        {"id": triple[0], "state": triple[1], "submitted_at": triple[2]} for triple in triples
+    ]
+    for record in normalize_terminal(
+        "pr_review",
+        {"pull_request": fresh, "reviews": synthetic},
+        repository=repo,
+        target=label,
+        now=moment,
+    ):
+        records.append(record)
+    sig["review"] = None
+    _advance_producer(sig)
+
+
+def _emit_page_records(
+    items: list[dict[str, Any]],
+    producer: str,
+    repository: dict,
+    target_label: str,
+    queried_sha: str,
+    records: list,
+) -> None:
+    fresh: list[SyncRecord] = []
+    for item in items:
+        if producer == "workflow":
+            # Filter to the snapshot target; never branch-name-only matching.
+            if str(item.get("head_sha") or "") != queried_sha:
+                continue
+        elif queried_sha and str(item.get("head_sha") or "") not in ("", queried_sha):
+            continue
+        for record in normalize_terminal(
+            producer, item, repository=repository, target=target_label
+        ):
+            fresh.append(record)
+    # Oldest generation first within a page; the store orders across pages.
+    fresh.sort(key=_sort_key_generation)
+    records.extend(fresh)
+
+
+def _got_checks(payload: Any, sig: dict[str, Any], records: list, slug: str, moment: str) -> None:
+    runs = _as_list(payload, "check_runs")
+    repo = _repo_meta(sig)
+    target = _current_target(sig)
+    sha = _target_sha(target, sig.get("sha_role") or "", str(sig.get("default_sha") or ""))
+    _emit_page_records(runs, "check", repo, _target_label(target), sha, records)
+    if len(runs) >= _PER_PAGE:
+        sig["page"] = int(sig.get("page") or 1) + 1
+    else:
+        _advance_producer(sig)
+
+
+def _got_workflows(
+    payload: Any, sig: dict[str, Any], records: list, slug: str, moment: str
+) -> None:
+    runs = _as_list(payload, "workflow_runs")
+    repo = _repo_meta(sig)
+    target = _current_target(sig)
+    sha = _target_sha(target, sig.get("sha_role") or "", str(sig.get("default_sha") or ""))
+    _emit_page_records(runs, "workflow", repo, _target_label(target), sha, records)
+    if len(runs) >= _PER_PAGE:
+        sig["page"] = int(sig.get("page") or 1) + 1
+    else:
+        _advance_producer(sig)
+
+
+def _enter_deployments(sig: dict[str, Any], slug: str, moment: str) -> None:
+    sig["phase"] = "deployments"
+    sig["page"] = 1
+    sig["selections"] = {}
+
+
+def _selection_key(environment: str, task: str) -> str:
+    return f"{environment}\x00{task}"
+
+
+def _newer_deployment(first: dict[str, Any], second: dict[str, Any]) -> bool:
+    first_dt = _parse_dt(str(first.get("created_at") or ""))
+    second_dt = _parse_dt(str(second.get("created_at") or ""))
+    if first_dt and second_dt:
+        if first_dt != second_dt:
+            return first_dt > second_dt
+        return int(first.get("id") or 0) > int(second.get("id") or 0)
+    return str(first.get("created_at") or "") > str(second.get("created_at") or "")
+
+
+def _got_deployments(
+    payload: Any, sig: dict[str, Any], records: list, slug: str, moment: str
+) -> None:
+    if not isinstance(payload, list):
+        raise ValueError("unexpected deployment-list shape")
+    selections = sig.get("selections") or {}
+    for item in payload:
+        if not isinstance(item, dict):
+            continue
+        try:
+            deployment_id = int(item.get("id"))
+        except (TypeError, ValueError):
+            continue
+        environment = str(item.get("environment") or "")
+        if deployment_id <= 0 or not environment:
+            continue
+        candidate = {
+            "id": deployment_id,
+            "environment": environment,
+            "task": str(item.get("task") or "deploy"),
+            "created_at": str(item.get("created_at") or ""),
+            "sha": str(item.get("sha") or ""),
+        }
+        key = _selection_key(environment, candidate["task"])
+        current = selections.get(key)
+        if current is None or _newer_deployment(candidate, current):
+            selections[key] = candidate
+    sig["selections"] = selections
+    if len(payload) >= _PER_PAGE:
+        sig["page"] = int(sig.get("page") or 1) + 1
+        return
+    sig["deployments"] = _sorted_selections(selections, sig.get("hinted_deployments") or [])
+    sig["deployment_index"] = 0
+    sig["status_page"] = 1
+    sig["phase"] = "statuses"
+
+
+def _sorted_selections(
+    selections: dict[str, dict[str, Any]], hinted: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    merged = dict(selections)
+    known_ids = {int(item.get("id") or 0) for item in merged.values()}
+    for item in hinted:
+        if not isinstance(item, dict):
+            continue
+        try:
+            deployment_id = int(item.get("id"))
+        except (TypeError, ValueError):
+            continue
+        if deployment_id <= 0 or deployment_id in known_ids:
+            continue
+        environment = str(item.get("environment") or "")
+        if not environment:
+            continue
+        known_ids.add(deployment_id)
+        key = _selection_key(environment, str(item.get("task") or "deploy"))
+        current = merged.get(key)
+        if current is None or _newer_deployment(item, current):
+            merged[key] = item
+    return sorted(
+        merged.values(),
+        key=lambda item: (str(item.get("environment") or ""), str(item.get("task") or "")),
+    )
+
+
+def _skip_deployments(sig: dict[str, Any], diagnostic: str) -> None:
+    _note(sig, "deployments", diagnostic)
+    sig["deployments"] = _sorted_selections({}, sig.get("hinted_deployments") or [])
+    sig["deployment_index"] = 0
+    sig["status_page"] = 1
+    sig["phase"] = "statuses"
+
+
+def _got_statuses(payload: Any, sig: dict[str, Any], records: list, slug: str, moment: str) -> None:
+    selections = sig.get("deployments") or []
+    selection = selections[int(sig.get("deployment_index") or 0)]
+    repo = _repo_meta(sig)
+    items = [
+        item for item in (payload if isinstance(payload, list) else []) if isinstance(item, dict)
+    ]
+    # Statuses arrive newest first. A newer nonterminal status supersedes
+    # older terminal results: emit nothing while pending rather than declare
+    # the prior result current. inactive is neither failure nor success.
+    if items:
+        newest = items[0]
+        state = str(newest.get("state") or "")
+        if state in ("failure", "error", "success"):
+            for record in normalize_terminal(
+                "deployment",
+                {"deployment": selection, "deployment_status": newest},
+                repository=repo,
+                target="default",
+            ):
+                records.append(record)
+    sig["deployment_index"] = int(sig.get("deployment_index") or 0) + 1
+    sig["status_page"] = 1
+
+
+def _skip_status(sig: dict[str, Any], diagnostic: str) -> None:
+    selections = sig.get("deployments") or []
+    selection = selections[int(sig.get("deployment_index") or 0)] if selections else {}
+    _note(sig, f"status:{selection.get('id', '')}", diagnostic)
+    sig["deployment_index"] = int(sig.get("deployment_index") or 0) + 1
+    sig["status_page"] = 1
+
+
+def _finish_cycle(sig: dict[str, Any], slug: str, moment: str) -> str:
+    return "done"
