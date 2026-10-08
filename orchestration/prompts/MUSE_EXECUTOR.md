@@ -26,7 +26,7 @@ Every run:
    `git show origin/claude/credit-balance-question-2jp80s:orchestration/plans/T-xxx/SKILLS.md` (and `PLAN.md` for context).
    Also read `orchestration/README.md` and the brief `orchestration/tasks/T-xxx.md` from the control branch.
    If the brief has an **Execution scope** section (the orchestrator's review), it overrides SKILLS.md: run only the steps and use the branch name it lists, and follow its executor notes. When STATUS says `approved (phase A)`, build phase A only.
-6. `git switch -c muse/T-xxx-<slug> origin/main`. Copy `orchestration/plans/T-xxx/` into your branch, so the PR carries its plan.
+6. `git switch -c muse/T-xxx-<slug> origin/main`. If that branch already exists locally (an earlier run was cut off), `git switch` to it instead and resume: check `git log origin/main..HEAD` and `git status` to see which steps are done, and continue from the first unfinished one. Copy `orchestration/plans/T-xxx/` into your branch, so the PR carries its plan.
 7. Execute SKILLS.md **step by step, in order**:
    - Make exactly the change the step describes, then run its verify command.
    - If a verify fails, fix it within the step's intent. If the step itself is wrong or would need a design decision, **stop**. Record it as `deviated` or `blocked` in the report with the exact error, push what you have, and open the PR as a **draft**.
