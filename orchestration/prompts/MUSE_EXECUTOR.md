@@ -20,7 +20,8 @@ Working environment:
 Every run:
 1. `git fetch origin`.
 2. Read `orchestration/STATUS.md` from `origin/claude/credit-balance-question-2jp80s` (use `git show origin/claude/credit-balance-question-2jp80s:orchestration/STATUS.md`).
-3. First, if any of your PRs has unresolved review comments from the orchestrator, or failing CI, fix those on that PR's branch before starting anything new. Reply on each review thread with what you changed.
+3. First, check each of your open PRs (`gh pr list --author @me --state open`). Read every review and comment posted after your latest commit, with `gh pr view <n> --comments` and `gh api repos/SanketBhangale1803/memoryworks/pulls/<n>/reviews`, plus any unresolved review threads. Also read the CI checks (`gh pr checks <n>`). If the orchestrator asked for changes, either in a thread or in a review's body, or if CI is failing, fix that on the PR's branch before starting anything new. Reply on each review thread with what you changed. For a request made in a review body, reply with one PR comment.
+   Never claim a check passed without the command's real exit code. Use `cmd; echo "exit=$?"`, and never take `$?` after a pipe.
 4. Otherwise, take the lowest-numbered task whose state starts with `approved` and whose approved phase doesn't already have its branch on origin (check the branch name given in the Execution scope, or `muse/T-xxx-*` if none). If there isn't one, print "No approved work" and stop.
 5. Read the approved recipe from the control branch:
    `git show origin/claude/credit-balance-question-2jp80s:orchestration/plans/T-xxx/SKILLS.md` (and `PLAN.md` for context).
