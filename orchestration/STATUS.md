@@ -5,7 +5,7 @@ States: `open` → `planning` → `approved` → `in-progress` → `in-review` �
 
 | Task | State | Plan | Executor (Muse) | PR | Notes |
 |---|---|---|---|---|---|
-| T-001 | in-review (phase A, changes requested) | plans/T-001 (codex draft, reviewed) | `muse/T-001a-signal-store` | [#1](https://github.com/SanketBhangale1803/memoryworks/pull/1) | Phase A = SKILLS 1–5, 8, 9 on `muse/T-001a-signal-store`. Phase B (6, 7) after A merges. See review in tasks/T-001.md |
+| T-001 | in-review (phase A, ready to merge) | plans/T-001 (codex draft, reviewed) | `muse/T-001a-signal-store` | [#1](https://github.com/SanketBhangale1803/memoryworks/pull/1) | Phase A = SKILLS 1–5, 8, 9 on `muse/T-001a-signal-store`. Phase B (6, 7) after A merges. See review in tasks/T-001.md |
 | T-002 | open | — | — | — | Waits on T-001 for execution; planning may start |
 | T-003 | open | — | — | — | Waits on T-001 for execution; planning may start |
 | T-004 | approved | plans/T-004 | — | — | Dogfood eval. Branch `muse/T-004-dogfood-eval` |
@@ -17,3 +17,4 @@ States: `open` → `planning` → `approved` → `in-progress` → `in-review` �
 - 2026-10-08: Codex removed from the loop at the user's request. Claude Code now writes plans and recipes on the control branch. The T-001 plan was copied here from `agents/codex-plans`. Next: Muse builds T-001 phase A; Claude plans T-004, then T-002/T-003.
 - 2026-10-08 18:45 check-in: Reviewed PR #1 (T-001 phase A). Backend lint is clean; tests show 490 passed, 2 failed for environment reasons (DNS, also failing on main here). Requested changes: reject non-GitHub signal records whose source_ids come from untrusted metadata, and reuse orgops scoring helpers instead of copies. GitHub Actions CI did not run on the PR (only Vercel), so a person needs to check that Actions are enabled. Planned and approved T-004.
 - 2026-10-08 19:00: PR #1 re-reviewed. Both threads are fixed and resolved. One item left: `black --check` fails on `tests/test_config_migration.py`. This was already failing on main, and my first review wrongly reported black as clean. Asked Muse to format it. Muse's prompt now covers review bodies, not just threads, and requires real exit codes.
+- 2026-10-08 19:30: PR #1 head cb0d6dc verified: ruff exit 0, black exit 0, tests green apart from the 2 DNS-only failures in my environment. Ready for a person to merge. Phase B gets approved once it's merged. Muse moves on to T-004.
