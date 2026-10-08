@@ -237,6 +237,25 @@ def test_signal_record_rejects_forged_project_and_grants(graph, monkeypatch):
     ]
 
 
+def test_signal_record_rejects_non_github_provider(graph, monkeypatch):
+    import pytest
+
+    from app.core.database import rows
+
+    wid, pid = _signal_workspace_project(graph)
+    applier = _applier(graph, monkeypatch)
+    ctx = {
+        "workspace_id": wid,
+        "project_id": pid,
+        "provider": "rest_pull",
+        "resource_id": "rest-resource",
+    }
+    with pytest.raises(ValueError):
+        applier(_signal_record(observation_key="rest-obs", source_ids=[]), ctx)
+    assert rows("SELECT id FROM live_signals WHERE workspace_id=?", (wid,)) == []
+    assert rows("SELECT id FROM live_issues WHERE workspace_id=?", (wid,)) == []
+
+
 def test_unassigned_signal_is_not_persisted(graph, monkeypatch):
     from app.core.database import rows
 

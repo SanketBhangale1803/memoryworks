@@ -161,18 +161,8 @@ class MemoryWorksSyncApplier:
             if pr_int is not None:
                 source_ids.append(f"pull:{canonical}:{pr_int}")
         else:
-            # Generic providers: project binding still required, source ids come
-            # from metadata but never grant authorization by themselves.
-            binding = _row(
-                "SELECT 1 AS ok FROM workspace_projects WHERE workspace_id=? AND project_id=?",
-                (workspace_id, project_id),
-            )
-            if not binding:
-                raise ValueError("signal project not in workspace")
-            raw_ids = meta.get("source_ids") or []
-            if not isinstance(raw_ids, list):
-                raise ValueError("invalid signal source_ids")
-            source_ids = [str(s) for s in raw_ids]
+            # Only the GitHub adapter constructs trusted signal source ids today.
+            raise ValueError("signal records are only accepted from the github connector")
 
         service = SignalService(self.memory)
         lane = meta.get("lane") or {}
