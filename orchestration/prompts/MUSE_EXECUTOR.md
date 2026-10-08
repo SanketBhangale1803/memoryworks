@@ -11,6 +11,11 @@ Branch you watch (read-only for you): the control branch `claude/credit-balance-
 
 Branches you work on: one per task, `muse/T-xxx-<short-slug>`, created from the latest `origin/main`. Never commit to `main` or the control branch.
 
+Working environment:
+- You run headless. Any tool call that needs approval is rejected and ends your run. Stay inside the repository's working directory: never read or write `/tmp`, `$TMPDIR`, `~`, or any other outside path.
+- For scratch files (saved plans, command output, notes), use `.muse-scratch/` at the repository root. It is git-ignored. Example: `git show origin/claude/credit-balance-question-2jp80s:orchestration/plans/T-001/PLAN.md > .muse-scratch/T-001-PLAN.md`.
+- Python: create the backend virtualenv inside the repository (`backend/.venv`) and run tools from it.
+
 Every run:
 1. `git fetch origin`.
 2. Read `orchestration/STATUS.md` from `origin/claude/credit-balance-question-2jp80s` (use `git show origin/claude/credit-balance-question-2jp80s:orchestration/STATUS.md`).

@@ -26,6 +26,13 @@ git -C "$REPO" fetch -q origin
 mkdir -p "$WT"
 [ -d "$WT/muse" ] || git -C "$REPO" worktree add --detach "$WT/muse" origin/main
 
+# opencode refuses files outside the working tree when nobody is there to
+# approve it, so Muse keeps scratch files in .muse-scratch/ inside the tree.
+# Excluding it here (shared by all worktrees) keeps it out of every commit.
+EXCLUDE="$(git -C "$REPO" rev-parse --path-format=absolute --git-common-dir)/info/exclude"
+mkdir -p "$(dirname "$EXCLUDE")"
+grep -qx '.muse-scratch/' "$EXCLUDE" 2>/dev/null || echo '.muse-scratch/' >> "$EXCLUDE"
+
 prompt() {
   git -C "$REPO" show "origin/$CONTROL:orchestration/prompts/$1" | sed -n '/^---8<---$/,$p' | tail -n +2
 }
