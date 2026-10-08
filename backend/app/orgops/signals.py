@@ -7,13 +7,13 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlparse
 
 from app.core.database import connect, new_id, utcnow
 from app.ingestion.safety import sanitize_for_index
+from app.orgops.service import _terms
 
 SEVERITIES = ("info", "warning", "error", "critical")
 STATES = ("failure", "success")
@@ -165,73 +165,6 @@ def _provider_order_key(sig: dict[str, Any]) -> tuple:
         rank,
         str(sig.get("observation_key") or ""),
     )
-
-
-def _terms(text: str) -> set[str]:
-    stop = {
-        "the",
-        "and",
-        "for",
-        "with",
-        "from",
-        "that",
-        "this",
-        "into",
-        "onto",
-        "over",
-        "our",
-        "your",
-        "their",
-        "its",
-        "was",
-        "were",
-        "are",
-        "has",
-        "have",
-        "had",
-        "not",
-        "but",
-        "all",
-        "any",
-        "can",
-        "will",
-        "must",
-        "should",
-        "does",
-        "did",
-        "complete",
-        "completed",
-        "update",
-        "updates",
-        "task",
-        "tasks",
-        "still",
-        "before",
-        "after",
-        "team",
-        "teams",
-        "please",
-        "need",
-        "needs",
-    }
-    return {
-        term
-        for term in re.split(r"\W+", (text or "").casefold())
-        if len(term) > 3 and term not in stop
-    }
-
-
-def _score_unit(unit: dict[str, Any], terms: set[str]) -> float:
-    if not terms:
-        return 0.0
-    subject = _terms(str(unit.get("subject", "")))
-    content = _terms(str(unit.get("content", "")))
-    return len(terms & subject) * 3.0 + len(terms & content) * 1.0
-
-
-def _owner_from_text(text: str) -> str:
-    match = re.search(r"owned by ([A-Z][A-Za-z'-]+(?: [A-Z][A-Za-z'-]+)*)", text or "")
-    return match.group(1).strip(" .,;") if match else ""
 
 
 class SignalService:
@@ -833,7 +766,7 @@ class SignalService:
             for unit in current_units:
                 if str(unit.get("type")) not in ("incident", "decision"):
                     continue
-                score = _score_unit(unit, terms)
+                score = _OrgOps._score(unit, terms)
                 if score > 0:
                     scored.append((score, unit))
             scored.sort(key=lambda item: (-item[0], str(item[1].get("id") or "")))
