@@ -12,3 +12,4 @@ States: `open` → `plan-ready` → `approved` → `in-progress` → `in-review`
 
 ## Orchestrator log
 - 2026-10-08: Protocol, vision, roadmap, and Wave 1 briefs published. Next: the planner drafts T-001 and T-004.
+- 2026-10-08: Muse dry run OK ("No approved work"). Added `run-agents.sh` to loop both agents from worktrees.
