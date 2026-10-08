@@ -437,3 +437,275 @@ def test_existing_database_upgrade_is_additive_and_idempotent(graph, tmp_path):
     finally:
         settings.sqlite_path = old_sqlite
         _initialized_paths.discard(str(legacy_path.resolve()))
+
+
+def _team(workspace_id, name):
+    from app.governance.scopes import ScopeService
+
+    return ScopeService().create_team(workspace_id, name)["id"]
+
+
+def _project(workspace_id, name="proj"):
+    pid = new_id("prj")
+    now = utcnow()
+    with connect() as c:
+        c.execute(
+            "INSERT INTO projects VALUES (?,?,?,?,?,?)", (pid, name, "acme/api", "ready", now, now)
+        )
+        c.execute("INSERT INTO workspace_projects VALUES (?,?)", (workspace_id, pid))
+    return pid
+
+
+def _workspace_only():
+    wid = new_id("wsp")
+    now = utcnow()
+    with connect() as c:
+        c.execute(
+            "INSERT INTO workspaces VALUES (?,?,?,?,?)",
+            (wid, f"ws-{wid[-6:]}", f"slug-{wid[-6:]}", now, now),
+        )
+    return wid
+
+
+def test_issue_reads_trim_workspace_project_and_source(graph):
+    from app.governance.scopes import ScopeService
+
+    wid, pid1 = _workspace_project()
+    pid2 = _project(wid, "second")
+    svc = _svc(graph)
+    res = svc.observe(**_obs(wid, pid1, observation_key="trim-1"))
+    assert len(svc.list_issues(workspace_id=wid, project_ids=[pid1], allowed_team_ids=None)) == 1
+    assert svc.list_issues(workspace_id=wid, project_ids=[pid2], allowed_team_ids=None) == []
+    assert svc.list_issues(workspace_id=wid, project_ids=[], allowed_team_ids=None) == []
+    assert (
+        svc.list_issues(workspace_id=wid, project_ids=["prj_unknown"], allowed_team_ids=None) == []
+    )
+    wid2 = _workspace_only()
+    assert svc.list_issues(workspace_id=wid2, project_ids=[], allowed_team_ids=None) == []
+    team = _team(wid, "team-a")
+    scopes = ScopeService()
+    for sid in ["repository-metadata:acme/api", "github-repository:42"]:
+        scopes.bind_source(pid1, sid, [team])
+    assert svc.list_issues(workspace_id=wid, project_ids=[pid1], allowed_team_ids=[]) == []
+    assert len(svc.list_issues(workspace_id=wid, project_ids=[pid1], allowed_team_ids=[team])) == 1
+    assert len(svc.list_issues(workspace_id=wid, project_ids=[pid1], allowed_team_ids=None)) == 1
+    assert res["issue_id"]
+
+
+def test_multiple_source_grants_are_intersections(graph):
+    from app.governance.scopes import ScopeService
+
+    wid, _ = _workspace_project()
+    pid = _project(wid, "multi")
+    team_a = _team(wid, "team-a-multi")
+    team_b = _team(wid, "team-b-multi")
+    scopes = ScopeService()
+    s1 = "src-one"
+    s2 = "src-two"
+    scopes.bind_source(pid, s1, [team_a])
+    scopes.bind_source(pid, s2, [team_b])
+    svc = _svc(graph)
+    svc.observe(
+        **_obs(
+            wid,
+            pid,
+            observation_key="multi-1",
+            source_ids=[s1, s2],
+            lane={"producer": "workflow", "target": "default", "workflow_id": "9"},
+        )
+    )
+    assert svc.list_issues(workspace_id=wid, project_ids=[pid], allowed_team_ids=[team_a]) == []
+    assert svc.list_issues(workspace_id=wid, project_ids=[pid], allowed_team_ids=[team_b]) == []
+    assert (
+        len(svc.list_issues(workspace_id=wid, project_ids=[pid], allowed_team_ids=[team_a, team_b]))
+        == 1
+    )
+    assert len(svc.list_issues(workspace_id=wid, project_ids=[pid], allowed_team_ids=None)) == 1
+    pid2 = _project(wid, "orwithin")
+    s3 = "src-or"
+    scopes.bind_source(pid2, s3, [team_a, team_b])
+    svc.observe(**_obs(wid, pid2, observation_key="or-1", source_ids=[s3]))
+    assert (
+        len(svc.list_issues(workspace_id=wid, project_ids=[pid2], allowed_team_ids=[team_a])) == 1
+    )
+    assert (
+        len(svc.list_issues(workspace_id=wid, project_ids=[pid2], allowed_team_ids=[team_b])) == 1
+    )
+    assert svc.list_issues(workspace_id=wid, project_ids=[pid2], allowed_team_ids=[]) == []
+
+
+def test_historical_grants_do_not_leak_occurrences(graph):
+    wid, _ = _workspace_project()
+    pid = _project(wid, "hist")
+    team = _team(wid, "hist-team")
+    from app.governance.scopes import ScopeService
+
+    scopes = ScopeService()
+    sid = "hist-source"
+    scopes.bind_source(pid, sid, [team])
+    svc = _svc(graph)
+    svc.observe(**_obs(wid, pid, observation_key="hist-1", source_ids=[sid]))
+    with connect() as c:
+        c.execute("DELETE FROM source_scopes WHERE project_id=? AND source_id=?", (pid, sid))
+    assert svc.list_issues(workspace_id=wid, project_ids=[pid], allowed_team_ids=[]) == []
+    visible = svc.list_issues(workspace_id=wid, project_ids=[pid], allowed_team_ids=[team])
+    assert len(visible) == 1
+    assert visible[0]["occurrences"] == 1
+
+
+def test_new_project_grants_and_removed_source_grants_cannot_broaden(graph):
+    from app.governance.scopes import ScopeService
+
+    wid, _ = _workspace_project()
+    pid = _project(wid, "grant-after")
+    svc = _svc(graph)
+    svc.observe(**_obs(wid, pid, observation_key="grant-1"))
+    assert len(svc.list_issues(workspace_id=wid, project_ids=[pid], allowed_team_ids=[])) == 1
+    team = _team(wid, "late-team")
+    ScopeService().assign_project(pid, team)
+    assert svc.list_issues(workspace_id=wid, project_ids=[pid], allowed_team_ids=[]) == []
+    assert len(svc.list_issues(workspace_id=wid, project_ids=[pid], allowed_team_ids=[team])) == 1
+    assert svc.list_issues(workspace_id=wid, project_ids=["prj_nope"], allowed_team_ids=None) == []
+
+
+def test_private_owner_and_related_memories_are_trimmed(graph):
+    from app.governance.scopes import ScopeService
+
+    wid, _ = _workspace_project()
+    pid = _project(wid, "priv")
+    team = _team(wid, "priv-team")
+    scopes = ScopeService()
+    priv_src = "priv-source-1"
+    scopes.bind_source(pid, priv_src, [team])
+    mem = CompanyMemoryService(graph)
+    mem.create(pid, "ownership", "acme/api", "owned by Secret Owner", [priv_src], 0.9, {})
+    mem.create(pid, "incident", "acme/api outage", "acme/api failed badly", [priv_src], 0.9, {})
+    expired = mem.create(
+        pid, "incident", "acme/api old", "acme/api ancient failure", [priv_src], 0.9, {}
+    )
+    with connect() as c:
+        c.execute(
+            "UPDATE memory_units SET valid_to=? WHERE id=?",
+            ("2020-01-01T00:00:00.000000+00:00", expired["id"]),
+        )
+    svc = _svc(graph)
+    res = svc.observe(**_obs(wid, pid, observation_key="priv-1", source_ids=[]))
+    pub = svc.list_issues(workspace_id=wid, project_ids=[pid], allowed_team_ids=[])
+    assert len(pub) == 1
+    assert pub[0]["owner"] == ""
+    assert pub[0]["related_memory_ids"] == []
+    priv = svc.list_issues(workspace_id=wid, project_ids=[pid], allowed_team_ids=[team])
+    assert len(priv) == 1
+    assert priv[0]["owner"] == "Secret Owner"
+    assert len(priv[0]["owner_evidence"]) == 1
+    assert len(priv[0]["related_memory_ids"]) >= 1
+    assert all(mid != expired["id"] for mid in priv[0]["related_memory_ids"])
+    admin = svc.list_issues(workspace_id=wid, project_ids=[pid], allowed_team_ids=None)
+    assert admin[0]["owner"] == "Secret Owner"
+    assert res["issue_id"]
+
+
+def test_owner_uses_existing_orgops_rules(graph):
+    from app.orgops.service import OrgOpsService
+
+    wid, _ = _workspace_project()
+    pid = _project(wid, "owner-rules")
+    mem = CompanyMemoryService(graph)
+    mem.create(pid, "ownership", "acme/api", "owned by Alice Smith", ["src-pub"], 0.9, {})
+    ops = OrgOpsService(mem)
+    units = sorted(mem.list(pid, latest=True, kind="ownership", limit=2000), key=lambda u: u["id"])
+    direct = ops.resolve_subject_owner("acme/api", "workflow default", units)
+    assert direct["owner"] == "Alice Smith"
+    assert len(direct["evidence"]) == 1
+    svc = _svc(graph)
+    svc.observe(
+        **_obs(
+            wid,
+            pid,
+            observation_key="owner-1",
+            source_ids=["src-pub"],
+            details={"producer": "workflow", "target": "default"},
+        )
+    )
+    listed = svc.list_issues(workspace_id=wid, project_ids=[pid], allowed_team_ids=None)
+    assert listed[0]["owner"] == direct["owner"]
+    wid2, pid2 = _workspace_project()
+    svc.observe(**_obs(wid2, pid2, observation_key="no-owner"))
+    empty = svc.list_issues(workspace_id=wid2, project_ids=[pid2], allowed_team_ids=None)
+    assert empty[0]["owner"] == ""
+
+
+def test_expiry_hides_but_does_not_resolve(graph):
+    wid, pid = _workspace_project()
+    svc = _svc(graph)
+    res = svc.observe(
+        **_obs(
+            wid,
+            pid,
+            observation_key="exp-1",
+            observed_at="2026-10-08T10:00:00.000000+00:00",
+            collected_at="2026-10-08T10:00:00.000000+00:00",
+            ttl_seconds=60,
+        )
+    )
+    fresh = svc.list_issues(
+        workspace_id=wid,
+        project_ids=[pid],
+        allowed_team_ids=None,
+        now="2026-10-08T10:00:30.000000+00:00",
+    )
+    assert len(fresh) == 1
+    assert fresh[0]["freshness"] == "fresh"
+    hidden = svc.list_issues(
+        workspace_id=wid,
+        project_ids=[pid],
+        allowed_team_ids=None,
+        now="2026-10-08T10:02:00.000000+00:00",
+    )
+    assert hidden == []
+    shown = svc.list_issues(
+        workspace_id=wid,
+        project_ids=[pid],
+        allowed_team_ids=None,
+        now="2026-10-08T10:02:00.000000+00:00",
+        include_expired=True,
+    )
+    assert len(shown) == 1
+    assert shown[0]["freshness"] == "expired"
+    assert shown[0]["status"] == "open"
+    stored = row("SELECT status FROM live_issues WHERE id=?", (res["issue_id"],))
+    assert stored["status"] == "open"
+
+
+def test_issue_limit_applies_after_scope_trimming(graph):
+    from app.governance.scopes import ScopeService
+
+    wid, _ = _workspace_project()
+    visible_pid = _project(wid, "lim-vis")
+    hidden_pid = _project(wid, "lim-hid")
+    team = _team(wid, "lim-team")
+    ScopeService().assign_project(hidden_pid, team)
+    svc = _svc(graph)
+    svc.observe(
+        **_obs(
+            wid, hidden_pid, observation_key="lim-hide", severity="critical", subject="zzz-hidden"
+        )
+    )
+    svc.observe(
+        **_obs(wid, visible_pid, observation_key="lim-v1", severity="error", subject="aaa-one")
+    )
+    svc.observe(
+        **_obs(
+            wid,
+            visible_pid,
+            observation_key="lim-v2",
+            severity="error",
+            subject="aaa-one",
+            lane={"producer": "workflow", "target": "pr:2", "workflow_id": "8"},
+        )
+    )
+    got = svc.list_issues(
+        workspace_id=wid, project_ids=[visible_pid, hidden_pid], allowed_team_ids=[], limit=2
+    )
+    assert len(got) == 2
+    assert all(g["project_id"] == visible_pid for g in got)

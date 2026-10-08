@@ -811,7 +811,7 @@ class SignalService:
                 [u for u in current_units if str(u.get("type")) == "ownership"],
                 key=lambda u: str(u.get("id") or ""),
             )
-            # Owner uses existing orgops scoring rules.
+            # Owner reuses the existing orgops rules via the shared helper.
             lane_label = ""
             try:
                 det = json.loads((latest_sig or {}).get("details_json") or "{}")
@@ -819,18 +819,16 @@ class SignalService:
                 det = {}
             if isinstance(det, dict):
                 lane_label = " ".join(str(v) for v in det.values() if isinstance(v, str))
+            from app.orgops.service import OrgOpsService as _OrgOps
+
+            _ops = _OrgOps(self.memory)
+            resolved = _ops.resolve_subject_owner(
+                str(issue.get("subject", "")), lane_label, ownership
+            )
+            owner = str(resolved.get("owner") or "")
+            owner_evidence = [str(v) for v in (resolved.get("evidence") or [])]
+            # Related incident/decision links reuse the same term scoring.
             terms = _terms(f"{issue.get('subject', '')} {lane_label}")
-            best: tuple[float, dict] | None = None
-            for candidate in ownership:
-                score = _score_unit(candidate, terms)
-                if score > 0 and (best is None or score > best[0]):
-                    best = (score, candidate)
-            if best is not None:
-                owner = _owner_from_text(str(best[1].get("content") or "")) or str(
-                    best[1].get("subject") or ""
-                )
-                owner_evidence = [str(best[1].get("id"))]
-            # Related incident/decision links.
             scored: list[tuple[float, dict]] = []
             for unit in current_units:
                 if str(unit.get("type")) not in ("incident", "decision"):
