@@ -17,10 +17,11 @@ Every run:
 1. `git fetch origin`.
 2. Read `orchestration/STATUS.md` from `origin/claude/credit-balance-question-2jp80s` (use `git show origin/claude/credit-balance-question-2jp80s:orchestration/STATUS.md`).
 3. First, if any of your PRs has unresolved review comments from the orchestrator, or failing CI, fix those on that PR's branch before starting anything new. Reply on each review thread with what you changed.
-4. Otherwise, take the lowest-numbered task in state `approved` that doesn't already have a `muse/T-xxx-*` branch on origin. If there isn't one, print "No approved work" and stop.
+4. Otherwise, take the lowest-numbered task whose state starts with `approved` and whose approved phase doesn't already have its branch on origin (check the branch name given in the Execution scope, or `muse/T-xxx-*` if none). If there isn't one, print "No approved work" and stop.
 5. Read the approved recipe from the planner branch:
    `git show origin/agents/codex-plans:orchestration/plans/T-xxx/SKILLS.md` (and `PLAN.md` for context).
    Also read `orchestration/README.md` and the brief `orchestration/tasks/T-xxx.md` from the control branch.
+   If the brief has an **Execution scope** section (the orchestrator's review), it overrides SKILLS.md: run only the steps and use the branch name it lists, and follow its executor notes. When STATUS says `approved (phase A)`, build phase A only.
 6. `git switch -c muse/T-xxx-<slug> origin/main`. Copy `orchestration/plans/T-xxx/` into your branch, so the PR carries its plan.
 7. Execute SKILLS.md **step by step, in order**:
    - Make exactly the change the step describes, then run its verify command.
