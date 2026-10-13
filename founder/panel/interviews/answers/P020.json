@@ -1,0 +1,24 @@
+{
+  "id": "P020",
+  "inevitable_need": "A gate that sits in front of every agent change: before Claude Code or Cursor touches a service, it knows who owns it, what broke there before and what depends on it, and risky changes get routed to the right human for approval automatically. Not a wiki, an enforced check in the agent's loop.",
+  "category": "agent_guardrails",
+  "why_inevitable": "We're scaling from a few people running agents to agents opening a meaningful share of PRs, and sooner or later one ships a change into a service it didn't understand and we eat an outage. After that, leadership will demand a pre-change check whether I've picked a tool or not.",
+  "trigger": "agent_caused_incident",
+  "months_until_needed": 6,
+  "must_have": [
+    "Runs inside the agent workflow (MCP or CI hook) and can block or require human approval, not just advise",
+    "Ownership, prior incidents and blast radius pulled from our real repos, Slack and incident history, with citations I can check",
+    "Self-hostable or a data-handling story that passes our security review without months of back-and-forth"
+  ],
+  "deal_breakers": [
+    "Per-seat pricing across the whole engineering org when only a handful of people and agents drive the value",
+    "Confidently wrong ownership or blast-radius answers with no sources, so engineers learn to ignore it",
+    "Sending Slack, Drive and incident data to an early-stage hosted service with no SOC 2 or clear retention and access controls"
+  ],
+  "preferred_form": "self_hosted",
+  "pricing_model": "per_repo_or_service",
+  "team_budget_per_month_usd": 1200,
+  "expected_provider": "Probably a new startup or our own platform team stitching it together. The agent makers will add basic permission prompts, but they won't own our cross-tool org context, and GitHub or our incident tool will only see their own slice.",
+  "memoryworks_fit": "close_needs_changes",
+  "memoryworks_would_need": "Make the agent briefing an enforceable gate with approval routing, not just context, and prove on a self-hosted pilot that its owner and blast-radius answers are right with citations. Then price it per repo or per agent with a security posture finance and security can sign off on, not $20 per engineer for the whole org."
+}

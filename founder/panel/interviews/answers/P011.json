@@ -1,0 +1,24 @@
+{
+  "id": "P011",
+  "inevitable_need": "A living map of who owns each service and what it depends on, built from what actually happens in GitHub, Slack and incidents rather than a hand-maintained catalog, that my engineers and our agents can both query and get a sourced answer from. When an agent's PR touches three services, it has to know whose review to request without me answering it in Slack.",
+  "category": "ownership_and_dependency_map",
+  "why_inevitable": "We're adding engineers and reorging teams faster than any CODEOWNERS file or wiki page stays correct, and agents are starting to open PRs across service boundaries, so the 'who owns this' question is multiplying instead of going away. Somebody will have to fix it: either we buy something or my platform team builds it.",
+  "trigger": "team_growth",
+  "months_until_needed": 9,
+  "must_have": [
+    "Every ownership or dependency answer cites where it came from (commits, CODEOWNERS, on-call rotation, incident threads), and it says 'unknown' rather than guessing",
+    "Stays current on its own from existing systems, with no manual catalog upkeep for my team",
+    "Exposed via an API or MCP so agents and our review bots can query it, not just a chat window for humans"
+  ],
+  "deal_breakers": [
+    "Needs broad read access to all our Slack and incident history in a hosted product with no SOC 2 or clear data-handling story",
+    "Confidently wrong owners: if it routes reviews or pages to the wrong team a couple of times, people stop trusting it",
+    "Turns into another portal that someone has to curate by hand, the way Backstage did for us"
+  ],
+  "preferred_form": "self_hosted",
+  "pricing_model": "flat_per_team",
+  "team_budget_per_month_usd": 1200,
+  "expected_provider": "Most likely my own platform team, glued onto our existing catalog and CODEOWNERS, or a feature inside a dev-portal or incident tool we already pay for. A new startup could win it only if it runs self-hosted and is clearly more accurate than what we could hack together in a quarter.",
+  "memoryworks_fit": "close_needs_changes",
+  "memoryworks_would_need": "Lead with ownership and dependency answers instead of pre-change briefings, prove on a few weeks of self-hosted trial on our repos that the citations are right, and expose that map to our agents and review tooling. For the hosted version I'd also need SOC 2 or a written data-handling story, and flat team pricing instead of $20 per engineer across the whole org."
+}

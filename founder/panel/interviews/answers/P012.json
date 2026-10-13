@@ -1,0 +1,24 @@
+{
+  "id": "P012",
+  "inevitable_need": "Before an agent opens a PR on a production service, something automatically feeds it the decisions and past incidents that apply to that code, the stuff we keep re-explaining in architecture review that isn't in the repo or the CLAUDE.md, and blocks the merge if it touches something a human has to sign off on.",
+  "category": "agent_context_delivery",
+  "why_inevitable": "Agents are already writing a growing share of our PRs, and sooner or later one of them will ship a change that repeats an outage we already had a postmortem for. After that I can't defend 'the agent didn't know' to the CEO, and a hand-maintained CLAUDE.md doesn't scale past a dozen services.",
+  "trigger": "agent_caused_incident",
+  "months_until_needed": 9,
+  "must_have": [
+    "Runs inside our own infra or VPC, so incident history and Slack data never leave it",
+    "Plugs into the agents we already use through MCP or a pre-PR hook with no workflow change, and every claim it makes cites a source",
+    "Proven to catch real repeats: on our own history it flags the incidents and constraints a senior engineer would have flagged"
+  ],
+  "deal_breakers": [
+    "Per-engineer seat pricing that I have to defend to finance as yet another line item",
+    "Hosted-only or still-in-preview handling of our incident and Slack data with no SSO or data-retention terms",
+    "Noisy briefings that pad the agent's context with generic or uncited stuff, so they make the agent worse or slower"
+  ],
+  "preferred_form": "self_hosted",
+  "pricing_model": "flat_per_team",
+  "team_budget_per_month_usd": 400,
+  "expected_provider": "Most likely my own team builds a thin version first (vector DB, an MCP server, a postmortem ingester), and within a year or two the agent makers like Anthropic or Cursor ship org-level memory themselves. I'd only pay a startup if its open-source core is clearly better than my weekend build and they sell support or enterprise features on top.",
+  "memoryworks_fit": "close_needs_changes",
+  "memoryworks_would_need": "Show me on our own self-hosted install, inside a month, that a briefing stopped an agent from repeating a real past incident. Then sell a flat per-org enterprise tier, with SSO, audit logs, a data-retention policy security will sign and support, for the self-hosted version instead of $20 a seat for a hosted preview."
+}

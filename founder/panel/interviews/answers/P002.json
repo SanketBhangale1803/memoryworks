@@ -1,0 +1,24 @@
+{
+  "id": "P002",
+  "inevitable_need": "A hard policy gate between AI agents and production: every agent gets its own scoped identity, risky changes (infra, auth, data migrations, anything touching a service with recent incidents) are blocked until a named human approves, and every agent action is logged with who authorised it. Not advice to the agent, enforcement on the path to merge and deploy.",
+  "category": "agent_guardrails",
+  "why_inevitable": "Sooner or later an agent ships a change that takes something down or touches a system it should never have touched, and the postmortem question will be 'why could it do that without a human signing off'. After that, our SOC 2 auditors and enterprise customers' security questionnaires will start asking the same thing, and I need an answer that isn't 'we trust the prompt'.",
+  "trigger": "agent_caused_incident",
+  "months_until_needed": 6,
+  "must_have": [
+    "Runs entirely inside our VPC with no code, tickets or chat leaving our network",
+    "Enforces at the merge/deploy chokepoint (GitHub rulesets, CI, deploy pipeline) so an agent cannot route around it, with policies we version in git",
+    "Immutable audit log tied to our SSO identities that I can hand straight to an auditor"
+  ],
+  "deal_breakers": [
+    "Any hosted component that needs read access to our source code or Slack from a vendor without SOC 2 Type II and a DPA",
+    "Per-engineer seat pricing across 300+ engineers when only a few teams run agents",
+    "Adds noticeable latency or flaky blocks to CI that make engineers disable it"
+  ],
+  "preferred_form": "self_hosted",
+  "pricing_model": "flat_per_team",
+  "team_budget_per_month_usd": 2500,
+  "expected_provider": "Most likely GitHub and our CI/deploy tooling extending rulesets and agent identities, or the agent makers adding approval controls, with my own platform team gluing it together on top of what we already run. A new startup only gets in if it is open source and self-hosted, because I won't put another unknown vendor in the path of production.",
+  "memoryworks_fit": "close_needs_changes",
+  "memoryworks_would_need": "MemoryWorks would have to turn the 'whether a person must approve' part of its briefing into actual enforcement in our GitHub and deploy pipeline, plus an auditor-ready log of agent actions, all running fully self-hosted in our VPC. Then I'd pilot the free MIT version with one platform team and pay a flat team or support price, not $20 a seat, only once a SOC 2 Type II report and a reference customer my size exist."
+}

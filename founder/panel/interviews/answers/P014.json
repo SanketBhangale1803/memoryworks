@@ -1,0 +1,24 @@
+{
+  "id": "P014",
+  "inevitable_need": "A gate in front of every AI agent change to production repos and infra: before it merges or deploys, the change is checked against what has broken there before and who owns it, risky blast radius forces a named human approver, and every agent action lands in an immutable audit log I can hand to security.",
+  "category": "agent_guardrails",
+  "why_inevitable": "Agents are already opening PRs on our production repos, and sooner or later one will reintroduce a failure we already paid for once, and I'll be the one paged at 3am explaining why nothing stopped it. After that the only question from leadership will be 'what is the control', and I need an answer that also passes our own security review.",
+  "trigger": "agent_caused_incident",
+  "months_until_needed": 9,
+  "must_have": [
+    "Runs entirely inside our VPC or on our own infrastructure, with SSO, RBAC and no data leaving our network",
+    "Hard approval gates tied to ownership and blast radius, enforced in the CI/merge path rather than as advice the agent can ignore",
+    "Tamper-evident audit log of every agent action, prompt-to-merge, exportable to our SIEM"
+  ],
+  "deal_breakers": [
+    "Requires piping our Slack, GitHub and docs to a vendor cloud without SOC 2 Type II, a signed DPA and a completed security questionnaire",
+    "Only advisory, so agents can skip it and nothing actually blocks a risky change",
+    "Locked to a single agent vendor when we run several (Claude Code, Cursor, internal agents)"
+  ],
+  "preferred_form": "self_hosted",
+  "pricing_model": "flat_per_team",
+  "team_budget_per_month_usd": 2500,
+  "expected_provider": "Most likely GitHub or the AI tool makers bolting approval rules and audit logs onto what we already run, because they already hold our code and passed our security review; failing that, my platform team builds a thinner version on branch protection, CODEOWNERS and CI checks. A new startup only gets in if it ships self-hosted with enterprise controls.",
+  "memoryworks_fit": "close_needs_changes",
+  "memoryworks_would_need": "MemoryWorks would need a supported enterprise self-hosted tier (SSO, RBAC, audit logs, every byte in our VPC) and to turn its pre-change briefing into an enforced gate in the merge/CI path with a full audit trail, not just context the agent may read. If they want the managed cloud instead, show me SOC 2 Type II, a signed DPA and a completed security questionnaire first."
+}

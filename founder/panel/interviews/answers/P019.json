@@ -1,0 +1,24 @@
+{
+  "id": "P019",
+  "inevitable_need": "Every agent session automatically gets a short, current, per-repo context: the conventions, the don't-touch zones, who owns what, and the few past incidents that matter. It has to keep itself up to date from the code, PRs and incident tickets, because nobody on my team will maintain a doc for it.",
+  "category": "agent_context_delivery",
+  "why_inevitable": "Right now our agents write tests and small refactors, but within a year they'll be opening PRs on migrations, billing and infra, and hand-written CLAUDE.md and Cursor rules files already go stale within weeks. Once agents are doing a real share of our PRs, reviewers can't carry all the context in their heads anymore.",
+  "trigger": "agent_scale",
+  "months_until_needed": 12,
+  "must_have": [
+    "Plugs into Claude Code and Cursor (MCP is fine) with zero change to how engineers work; agents just get the context",
+    "Builds and refreshes itself from the repo, PRs and incident tickets, not from a Drive folder someone has to curate",
+    "Short, cited and low-noise: a few relevant lines with links, not a wall of text that bloats every prompt"
+  ],
+  "deal_breakers": [
+    "Needs a person to write or curate the knowledge for it to be useful",
+    "Sends our source code to an early-preview hosted service without a clear security story",
+    "Per-seat pricing for every engineer when only a handful of people actually drive agents"
+  ],
+  "preferred_form": "feature_inside_existing_tool",
+  "pricing_model": "flat_per_team",
+  "team_budget_per_month_usd": 300,
+  "expected_provider": "Most likely the AI tool makers themselves (Anthropic, Cursor, GitHub Copilot), since project memory and rules files are already heading that way and it's the cheapest thing for them to bundle. A small startup only wins if it's clearly better at keeping the context fresh across repos and tools.",
+  "memoryworks_fit": "close_needs_changes",
+  "memoryworks_would_need": "Lead with automatic, self-maintaining repo context delivered to Claude Code and Cursor over MCP, built from code, PRs and incident tickets rather than our dead postmortem folder. It also has to pass my two-week test: the team keeps using it on one repo without me pushing, then a flat team price around $300 a month instead of $20 per engineer."
+}

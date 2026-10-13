@@ -1,0 +1,24 @@
+{
+  "id": "P017",
+  "inevitable_need": "A gate that sits between our coding agents and production: before an agent merges or deploys a change, it checks that change against our known incidents, protected paths and blast radius, and either blocks it or routes it to a named human for approval, with a log of what the agent was told and what it did.",
+  "category": "agent_guardrails",
+  "why_inevitable": "Agents are already opening most of our routine PRs, and sooner or later one will re-break something we already broke once and fixed. The first time that happens in prod, or the first time an enterprise customer's security questionnaire asks how we control autonomous code changes, I have to have an answer.",
+  "trigger": "agent_caused_incident",
+  "months_until_needed": 6,
+  "must_have": [
+    "Runs inside our own infrastructure or VPC, so source code, incident history and Slack never leave our boundary",
+    "Enforces, not just advises: it can actually block or require approval in the agent loop and in CI, and it works with Claude Code, Cursor and our own agents",
+    "Every block or warning cites the specific past incident, PR or decision it came from, so engineers trust it and can override with a recorded reason"
+  ],
+  "deal_breakers": [
+    "An early-stage vendor hosting a single store of our code, Slack and Drive without a SOC 2 Type II report",
+    "Noisy false positives that slow agents down until the team routes around it",
+    "Being just another search box over our docs, which Glean and Notion search already cover"
+  ],
+  "preferred_form": "self_hosted",
+  "pricing_model": "flat_per_team",
+  "team_budget_per_month_usd": 800,
+  "expected_provider": "Most likely the agent makers themselves (Anthropic, Cursor, GitHub) will ship hooks and policy controls, and my team will glue those to our incident history ourselves. A startup only wins if it does the incident-aware part clearly better and lets me self-host it.",
+  "memoryworks_fit": "close_needs_changes",
+  "memoryworks_would_need": "Turn the agent briefing into an enforcement point: a CI and agent-hook check that actually blocks or requires approval based on cited past incidents, proven in a self-hosted pilot to stop an agent from repeating one of our own incidents. For me to pay for managed rather than run it myself, add a SOC 2 Type II report and a flat team price."
+}

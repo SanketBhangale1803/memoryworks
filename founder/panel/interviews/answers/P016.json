@@ -1,0 +1,24 @@
+{
+  "id": "P016",
+  "inevitable_need": "Before any agent touches a service, it automatically gets the incidents, postmortem findings and 'never do X here' constraints for the exact files and services it is about to change, and it stops for a human when the change hits something that has burned us before.",
+  "category": "agent_context_delivery",
+  "why_inevitable": "Agents are already writing a growing share of our PRs and they have zero memory of why things broke last time, so it's only a matter of time before one ships a repeat of an incident we already paid for. Once that happens I either build this myself or buy it, because I'm not going back to humans reviewing every agent diff by hand.",
+  "trigger": "agent_caused_incident",
+  "months_until_needed": 6,
+  "must_have": [
+    "Pulls from our actual incident history and postmortems and maps them to code paths and services, with a link to the source for every warning",
+    "Plugs straight into Claude Code and Cursor (MCP or hook) with no change to how engineers run agents, and adds seconds, not minutes",
+    "Low noise: it says nothing or 'I don't know' rather than padding every briefing with generic Slack chatter"
+  ],
+  "deal_breakers": [
+    "Requires sending our incident history and repo access to an unproven third-party cloud with no self-host option",
+    "Floods agents and reviewers with false-positive warnings so people learn to ignore it",
+    "Needs a dedicated person to curate or tag knowledge by hand to stay useful"
+  ],
+  "preferred_form": "self_hosted",
+  "pricing_model": "flat_per_team",
+  "team_budget_per_month_usd": 600,
+  "expected_provider": "Honestly, probably the agent makers themselves (Anthropic, Cursor) or GitHub will bolt on some version of repo memory, and if that's not good enough my platform engineer will hack a version together on our postmortems. A startup wins only if it's clearly better on incident recall and gets there before those two do; I don't expect Glean or Notion to do this well because they index docs, not code paths.",
+  "memoryworks_fit": "close_needs_changes",
+  "memoryworks_would_need": "The agent-briefing piece is exactly what I described, but it has to prove itself on our own repo by catching a real repeat before it ships, with a low false-positive rate. After that I'd pay roughly $500-600 a month flat for a hosted version only if it's out of early preview with a clear security story (SOC 2 or equivalent, scoped read-only repo access), otherwise I stay on the free self-hosted version."
+}

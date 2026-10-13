@@ -1,0 +1,24 @@
+{
+  "id": "P013",
+  "inevitable_need": "A gate that sits between any AI agent and our production repos and infra: before an agent merges or applies a change, it checks blast radius and service ownership against policy, forces a named human approval for anything risky, and logs who or what approved it. Briefings are nice; I need the gate.",
+  "category": "agent_guardrails",
+  "why_inevitable": "Sooner or later an agent's change will cause a production incident, and when that postmortem reaches the VP and security, 'we trusted the agent' won't fly. We'll be told to prove that agents can't touch critical services without a person signing off.",
+  "trigger": "agent_caused_incident",
+  "months_until_needed": 9,
+  "must_have": [
+    "Runs inside our network or our cloud account, with scoped read-only access we control, so it clears security review",
+    "Enforced in the paths engineers already use (CI checks, PR review, the agent's own tool calls) with zero extra steps or new UI for engineers",
+    "Low noise: it blocks only on real risk tied to ownership and past incidents, and every block cites why"
+  ],
+  "deal_breakers": [
+    "Requires broad read access to Slack, Drive and Teams just to work",
+    "Per-seat pricing across all 300+ engineers when only a few dozen people and the agents actually touch it",
+    "No SOC 2 report or no clear data residency story, or a vendor still in early preview"
+  ],
+  "preferred_form": "self_hosted",
+  "pricing_model": "flat_per_team",
+  "team_budget_per_month_usd": 2500,
+  "expected_provider": "Most likely the AI tool makers and GitHub building approval and policy controls into their enterprise tiers, because they own the agent and the PR path. If what they ship is too shallow, my platform team builds the rest on policy-as-code in CI. A startup has a chance only if it's open source and self-hostable.",
+  "memoryworks_fit": "close_needs_changes",
+  "memoryworks_would_need": "Lead with the self-hosted pre-change gate (blast radius, owners, prior incidents, required human approval, audit log) running from GitHub and our incident tracker alone, with Slack/Drive/Teams optional. Then offer a flat platform-team price with a SOC 2 report for the paid support tier, and prove in a one-team pilot that it cuts repeat incidents without engineers doing anything new."
+}

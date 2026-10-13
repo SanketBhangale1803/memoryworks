@@ -1,0 +1,24 @@
+{
+  "id": "P018",
+  "inevitable_need": "A service ownership and dependency map that stays current on its own and that machines can read: who owns each service, what it depends on, who must sign off. Our engineers and our coding agents both check it before touching a service, so I stop being the human lookup table in Slack.",
+  "category": "ownership_and_dependency_map",
+  "why_inevitable": "Agents are already opening PRs against services whose owners nobody on the PR knows. Sooner or later one of those changes breaks something downstream, the postmortem asks why nobody who owned it reviewed it, and 'it's in a stale Confluence page' won't be an acceptable answer.",
+  "trigger": "agent_caused_incident",
+  "months_until_needed": 9,
+  "must_have": [
+    "Read-only and least-privilege by default, scoped per repo, with data staying in our infrastructure or a vendor we already trust",
+    "Builds and refreshes itself from CODEOWNERS, on-call schedules and commit history, with every owner claim linked to its source, so no one has to curate it by hand",
+    "Agents can query it through a standard interface (MCP or API) and it plugs into the code review and on-call tools we already run"
+  ],
+  "deal_breakers": [
+    "Needs broad read access to all of Slack and Drive before it delivers any value",
+    "Comes from a vendor with no SOC 2 Type II report, or is a self-hosted app my platform team has to babysit",
+    "Yet another chat window my engineers have to remember to open, instead of being built into tools they already use"
+  ],
+  "preferred_form": "feature_inside_existing_tool",
+  "pricing_model": "flat_per_team",
+  "team_budget_per_month_usd": 1500,
+  "expected_provider": "Most likely an add-on from a vendor we already pay, like PagerDuty's service catalog, Atlassian/Compass or GitHub, or else my platform team wiring up Backstage. Those vendors already hold the data and are through security review, and AI tool makers will expose hooks for it, not own it.",
+  "memoryworks_fit": "close_needs_changes",
+  "memoryworks_would_need": "Start as a narrow ownership-and-blast-radius service: read-only, one repo plus CODEOWNERS and on-call data, no Slack or Drive, running in our VPC, piloted in a week without security sign-off. For the paid version it would need SOC 2 Type II and a reference from an engineering leader I trust who saw ownership and incident questions actually drop."
+}

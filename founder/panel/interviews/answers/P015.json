@@ -1,0 +1,24 @@
+{
+  "id": "P015",
+  "inevitable_need": "A hard gate between AI agents and production: before an agent's change merges or deploys, something checks it against ownership, the services it touches and our known-risky areas, forces a named human approval when it crosses a line, and logs who or what approved it.",
+  "category": "agent_guardrails",
+  "why_inevitable": "Agents are already opening PRs on production repos and review is the bottleneck, so sooner or later one ships something nobody really reviewed and takes something down. After that, leadership will want proof that agent changes are gated, and 'we trust the reviewer' won't cut it.",
+  "trigger": "agent_caused_incident",
+  "months_until_needed": 6,
+  "must_have": [
+    "Enforced inside the merge and deploy path we already use (GitHub checks, CI, CODEOWNERS), not a side chat window agents can ignore",
+    "Deterministic, explainable rules: when it blocks or escalates it says exactly why and cites the incident, owner or constraint behind it",
+    "Low false-positive rate, so engineers don't learn to click through it within two weeks"
+  ],
+  "deal_breakers": [
+    "Yet another standalone UI or knowledge store my team has to keep up to date by hand",
+    "Sending our code or incident data to an early-stage vendor's cloud without SSO, an audit log and a clean security review",
+    "Probabilistic 'risk scores' with no traceable reasoning, which my team would end up double-checking anyway"
+  ],
+  "preferred_form": "feature_inside_existing_tool",
+  "pricing_model": "flat_per_team",
+  "team_budget_per_month_usd": 1500,
+  "expected_provider": "Most likely GitHub or the agent makers (Anthropic, Cursor) building policy and approval hooks into their own tools, with my platform team writing the org-specific rules on top. A new startup only gets in if it plugs straight into those hooks and stays cheaper than what we'd build ourselves.",
+  "memoryworks_fit": "close_needs_changes",
+  "memoryworks_would_need": "The pre-change briefing would have to become an enforcing GitHub/CI check that blocks or requires approval based on cited past incidents and ownership, running self-hosted on our repos. And it would have to prove in a two-week pilot that its blast-radius calls are right often enough that we stop double-checking them. The chat and search side doesn't matter to me unless it replaces Glean or Confluence search instead of adding a third place to look."
+}
