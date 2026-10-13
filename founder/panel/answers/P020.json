@@ -1,0 +1,13 @@
+{
+  "id": "P020",
+  "buys": false,
+  "purchases_first_month": 0,
+  "reason_code": "price",
+  "reason": "The agent briefing and blast-radius idea is exactly what I've been hunting for, so I'd spin up the free self-hosted version on one team's repos this month. But I wouldn't put $20 per engineer per month for an early-preview hosted product in front of finance until a pilot proves it cuts the 'who owns this?' churn and catches a bad agent change.",
+  "objection": "Per-seat pricing for a whole org when only a handful of people and agents actually drive the value is a hard sell to finance, and handing Slack, Drive and incident history to a hosted service that's still in early preview makes security review slow.",
+  "would_change_my_mind": "Pricing per active user or per agent/repo instead of per engineer, plus a security posture (SOC 2 or a clear data-handling story) good enough to pass review, after a self-hosted pilot shows real answers with real citations.",
+  "price_too_cheap": 2,
+  "price_cheap": 8,
+  "price_expensive": 20,
+  "price_too_expensive": 40
+}

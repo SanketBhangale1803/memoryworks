@@ -1,0 +1,13 @@
+{
+  "id": "P017",
+  "buys": false,
+  "purchases_first_month": 0,
+  "reason_code": "trust",
+  "reason": "The agent briefing idea is exactly the safety gap I'm trying to close, so I'd probably spin up the free MIT version in Docker on one repo. I'm not paying for an early-preview hosted service that ingests our code, Slack and Drive. That's a hard no from my own vendor review.",
+  "objection": "An early-preview cloud vendor holding our source, incident history and Slack in one place is a big blast radius. And I'm not convinced the briefings beat what Glean or our Notion search already give the agents.",
+  "would_change_my_mind": "A SOC 2 report plus a self-hosted pilot where the briefings actually stop an agent from repeating a past incident on our repo. Then I'd pay for managed so we don't have to run it ourselves.",
+  "price_too_cheap": 3,
+  "price_cheap": 10,
+  "price_expensive": 30,
+  "price_too_expensive": 50
+}

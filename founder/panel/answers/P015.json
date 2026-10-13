@@ -1,0 +1,13 @@
+{
+  "id": "P015",
+  "buys": false,
+  "purchases_first_month": 0,
+  "reason_code": "habit",
+  "reason": "We already pay for Confluence, Glean and PagerDuty, and every new tool is one more integration, one more security review and one more place that goes stale. At most one of my engineers spins up the MIT version on Docker over a weekend. I'm not putting $20 a seat on the budget for a hosted product that's still in early preview.",
+  "objection": "Honestly this looks like a vector DB plus an MCP server, and we could hack that together in a week. I also doubt the 'blast radius' briefings would be accurate enough that my team stops double-checking them, and then it's just noise in front of the agents.",
+  "would_change_my_mind": "A two-week pilot on our own repos where it clearly stops a repeat incident or answers the questions that keep coming back in architecture review, and it replaces Glean or Confluence search instead of sitting on top of them.",
+  "price_too_cheap": 3,
+  "price_cheap": 8,
+  "price_expensive": 18,
+  "price_too_expensive": 30
+}

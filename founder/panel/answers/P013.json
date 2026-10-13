@@ -1,0 +1,13 @@
+{
+  "id": "P013",
+  "buys": false,
+  "purchases_first_month": 0,
+  "reason_code": "trust",
+  "reason": "A hosted tool in early preview that reads our GitHub, Slack, Drive and Teams won't get through our security review this quarter, and $20 a seat across 300+ engineers is a big line item I can't tie to a hard saving yet. At most I'd have someone spin up the MIT self-hosted version on one team as a side experiment, which isn't a purchase.",
+  "objection": "It needs read access to basically everything we have, and my engineers won't change how they work to feed another tool. If the memories go stale or the briefings are noisy, the agents ignore them and I've paid per seat for shelfware.",
+  "would_change_my_mind": "A SOC 2 report and a self-hosted pilot on one team that measurably cuts repeat incidents or the same questions coming back in architecture review, with no extra work for engineers, so I can show finance a number.",
+  "price_too_cheap": 3,
+  "price_cheap": 8,
+  "price_expensive": 20,
+  "price_too_expensive": 35
+}

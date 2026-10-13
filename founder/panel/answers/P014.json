@@ -1,0 +1,13 @@
+{
+  "id": "P014",
+  "buys": false,
+  "purchases_first_month": 0,
+  "reason_code": "trust",
+  "reason": "The repeat-incident briefing goes straight at the pages that woke me up last quarter, but I'm not piping our Slack, GitHub and Drive into an early-preview hosted service from a startup with no SOC 2 or DPA mentioned. At most I'd have someone spin up the MIT self-hosted version on a sandbox repo, and that isn't paying anyone.",
+  "objection": "This thing would hold every incident, decision and owner across our whole org, which makes it a goldmine if it leaks, and an early-preview cloud from a small vendor won't get through my security review.",
+  "would_change_my_mind": "A SOC 2 Type II report, a signed DPA and a completed security questionnaire for the managed cloud, or a supported enterprise self-hosted tier with SSO and audit logs that keeps every byte inside our VPC.",
+  "price_too_cheap": 3,
+  "price_cheap": 10,
+  "price_expensive": 30,
+  "price_too_expensive": 50
+}

@@ -1,0 +1,13 @@
+{
+  "id": "P016",
+  "buys": false,
+  "purchases_first_month": 0,
+  "reason": "The agent-briefing part is the thing I actually want, since I got paged twice last quarter for repeats, but it's MIT and runs in Docker, so this month I'd self-host it on one repo and see if the briefings catch anything. I'm not putting the card down for a hosted version that's in early preview and hasn't proven anything on our incidents yet.",
+  "reason_code": "trust",
+  "objection": "Is this actually better than the Glean or Notion AI search we already pay for, or is it just another index of the same Slack and docs? And I'm wary of handing our incident history and repo access to an early-preview cloud.",
+  "would_change_my_mind": "Seeing it, on our own repo, warn an agent about a past incident before it repeated it. One real catch like that and I'd pay for hosted so I don't have to run it myself.",
+  "price_too_cheap": 5,
+  "price_cheap": 12,
+  "price_expensive": 30,
+  "price_too_expensive": 50
+}

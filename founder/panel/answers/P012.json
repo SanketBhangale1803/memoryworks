@@ -1,0 +1,13 @@
+{
+  "id": "P012",
+  "buys": false,
+  "purchases_first_month": 0,
+  "reason_code": "habit",
+  "reason": "It's MIT and self-hostable, so if it's any good I'll spin up the Docker image on a Friday and run it myself. I'm not paying $20 a seat for a hosted early preview of something I can host, or honestly roughly build with a vector DB and an MCP server.",
+  "objection": "Per-seat pricing on 30 engineers is another $7k a year line item I have to defend to finance, for a hosted version that's still in preview, holding our incident history and Slack data. Whether the briefings actually beat what our agents already get from the repo and a CLAUDE.md is unproven.",
+  "would_change_my_mind": "Running the self-hosted version for a month and seeing it actually stop an agent from repeating a past incident, plus pricing per org or per agent instead of per engineer, with SSO and a data-retention story finance and security will sign.",
+  "price_too_cheap": 3,
+  "price_cheap": 8,
+  "price_expensive": 20,
+  "price_too_expensive": 35
+}
