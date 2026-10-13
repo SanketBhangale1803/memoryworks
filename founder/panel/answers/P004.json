@@ -1,0 +1,13 @@
+{
+  "id": "P004",
+  "buys": false,
+  "purchases_first_month": 0,
+  "reason_code": "habit",
+  "reason": "We're under ten engineers. Half of what this does I'd stitch together myself in a weekend with a vector DB and an MCP server, and the rest is already in Notion and Confluence search. If it's MIT, I'd clone it, poke at it, and maybe self-host it. I'm not paying $20 a head for a cloud version that's still in early preview.",
+  "objection": "Honestly, at our size the problem isn't missing memory. It's that the same three people sit in the architecture review every week. I'm not convinced a briefing layer for agents beats a decent ADR folder and a CLAUDE.md, and I'm not handing client repos and Slack to a hosted preview.",
+  "would_change_my_mind": "Seeing it stop an agent from repeating a real past incident on one of our own repos, on a self-hosted install that took an afternoon. And per-client isolation, so I could sell it into client engagements.",
+  "price_too_cheap": 3,
+  "price_cheap": 8,
+  "price_expensive": 20,
+  "price_too_expensive": 35
+}

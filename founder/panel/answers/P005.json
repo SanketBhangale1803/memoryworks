@@ -1,0 +1,13 @@
+{
+  "id": "P005",
+  "buys": false,
+  "purchases_first_month": 0,
+  "reason_code": "trust",
+  "reason": "This is exactly my pain: we just repeated an outage we'd already written a postmortem for, and agents briefed on prior incidents would have caught it. But I'm not handing Slack, Drive and GitHub to a hosted product in early preview from a company I've never heard of. This month I'd have someone self-host it on a couple of repos, not pay for seats.",
+  "objection": "Will this company still exist in two years, and can I trust an early-preview cloud with our incident history and internal Slack? MIT licence means I'm not stranded, but then I'm the one running it and keeping it alive.",
+  "would_change_my_mind": "A self-hosted pilot where it actually flags the incident we repeated, from our own postmortem, before an agent touches that code, plus a SOC 2 report or a named reference customer my size on the paid cloud.",
+  "price_too_cheap": 3,
+  "price_cheap": 10,
+  "price_expensive": 35,
+  "price_too_expensive": 60
+}

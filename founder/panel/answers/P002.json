@@ -1,0 +1,13 @@
+{
+  "id": "P002",
+  "buys": false,
+  "purchases_first_month": 0,
+  "reason_code": "trust",
+  "reason": "You're asking me to pipe our GitHub, Slack, Drive and Teams into a hosted service that's in early preview, from a company I've never heard of. That won't get through my own security review, never mind procurement, and at $20 a seat across 300+ engineers I can't show finance a concrete saving.",
+  "objection": "Will this company still exist in two years, and who's on the hook when a preview-stage vendor holding every incident, decision and line of context from our code leaks or gets acquired? I'd want SOC 2, a DPA, data residency and a real support contract before I'd even open a ticket.",
+  "would_change_my_mind": "A SOC 2 Type II report and a paying reference customer my size, plus self-hosting that runs fully inside our VPC. Then I might pilot the free MIT version with one platform team and only pay if it measurably cuts incident time or bad agent changes.",
+  "price_too_cheap": 3,
+  "price_cheap": 8,
+  "price_expensive": 18,
+  "price_too_expensive": 30
+}

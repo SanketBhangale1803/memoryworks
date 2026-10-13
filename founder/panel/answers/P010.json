@@ -1,0 +1,13 @@
+{
+  "id": "P010",
+  "buys": false,
+  "purchases_first_month": 0,
+  "reason_code": "trust",
+  "reason": "I'm not piping our GitHub and Slack into a hosted product in early preview with no SOC 2 or DPA mentioned. The agent briefing idea is the only part that's actually new to me, so at most I'd have someone spin up the free self-hosted Docker build on a sandbox repo, and that isn't paying you anything.",
+  "objection": "The hosted version is early preview, and I don't see SOC 2, a DPA or any answer to a security questionnaire, but it wants read access to our code, incidents and private Slack. Besides the agent briefings, it looks like the search we already get from Notion AI and Confluence.",
+  "would_change_my_mind": "A SOC 2 Type II report and a signed DPA for the managed cloud, plus proof on our own repos that the pre-change briefings actually stop our Claude Code agents from repeating past incidents.",
+  "price_too_cheap": 3,
+  "price_cheap": 10,
+  "price_expensive": 30,
+  "price_too_expensive": 50
+}

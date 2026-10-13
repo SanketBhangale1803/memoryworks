@@ -1,0 +1,13 @@
+{
+  "id": "P008",
+  "buys": false,
+  "purchases_first_month": 0,
+  "reason_code": "trust",
+  "reason": "The hosted version is an early preview that wants read access to our GitHub, Slack and Drive, and nothing here mentions SOC 2 or a DPA, so I would block it at vendor review. If anything I'd have one engineer kick the tires on the free self-hosted Docker build, and that doesn't put a dollar on the card.",
+  "objection": "You're asking me to pipe our source code, incident history and private Slack threads into an early-preview cloud with no security paperwork, and on top of that sell finance another per-seat tool.",
+  "would_change_my_mind": "A SOC 2 Type II report and signed DPA for the managed cloud, or a paid self-hosted tier with support so our data never leaves our infra, priced flat instead of per engineer.",
+  "price_too_cheap": 3,
+  "price_cheap": 8,
+  "price_expensive": 20,
+  "price_too_expensive": 35
+}

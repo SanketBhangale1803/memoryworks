@@ -1,0 +1,13 @@
+{
+  "id": "P007",
+  "buys": false,
+  "purchases_first_month": 0,
+  "reason_code": "trust",
+  "reason": "Those repeat pages do bug me, but I'm not handing our Slack and GitHub, which hold client code, to a hosted product that calls itself early preview. At most I'd self-host the free version on one repo for a couple of weeks, and that costs me nothing, so it isn't a purchase.",
+  "objection": "Our Slack and GitHub hold our clients' code and conversations. A small startup's early-preview cloud reading all of that is a security risk I'd have to explain to clients, and I don't have time to babysit a self-hosted Docker stack either.",
+  "would_change_my_mind": "If the free self-hosted version, run on one repo, actually briefed our agents on a past incident before it repeated within the two-week trial, and the hosted version had a clear security story (SOC 2 or data never leaving our own cloud), I'd pay for the team.",
+  "price_too_cheap": 3,
+  "price_cheap": 8,
+  "price_expensive": 20,
+  "price_too_expensive": 35
+}

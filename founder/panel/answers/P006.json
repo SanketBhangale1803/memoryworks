@@ -1,0 +1,13 @@
+{
+  "id": "P006",
+  "buys": false,
+  "purchases_first_month": 0,
+  "reason_code": "habit",
+  "reason": "It's MIT and runs in Docker, so if I want it at all I'll have someone stand it up on a spare box over a weekend and pull the parts we like into our own MCP server. I'm not putting a card down for an early preview of something we can self-host or rebuild with a vector DB.",
+  "objection": "Memory tools rot. Unless it stays current without my engineers tagging owners or writing decisions down somewhere new, the briefings go stale in a month and the agents trust bad context. My engineers won't change how they work to feed another tool.",
+  "would_change_my_mind": "Running the free self-hosted version on our real repos and Slack for two weeks and seeing it correctly answer 'who owns this service?' and catch an agent change that would have repeated a past incident, with nobody on my team doing extra data entry.",
+  "price_too_cheap": 3,
+  "price_cheap": 8,
+  "price_expensive": 20,
+  "price_too_expensive": 35
+}

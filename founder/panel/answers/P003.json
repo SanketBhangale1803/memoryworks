@@ -1,0 +1,13 @@
+{
+  "id": "P003",
+  "buys": false,
+  "purchases_first_month": 0,
+  "reason": "The repeat-incident pages do bother me, but I'm not putting an early-preview hosted tool that reads all our Slack, GitHub and Drive through security review and asking finance for another per-seat line. At most someone on my team spins up the free Docker version on a slow Friday, and that isn't me buying anything.",
+  "reason_code": "trust",
+  "objection": "It's early preview and wants read access to everything we have, and it overlaps with what we already pay Glean and Confluence for. At $20 a head across the whole org it's a five-figure annual line for something unproven, and I'd be the one defending it when it goes stale or gives an agent a wrong briefing.",
+  "would_change_my_mind": "A self-hosted pilot on one team showing that it actually caught a repeat incident or stopped a bad agent change within a month, plus pricing based on the team or on agent usage instead of a per-seat charge on every engineer.",
+  "price_too_cheap": 3,
+  "price_cheap": 8,
+  "price_expensive": 18,
+  "price_too_expensive": 30
+}

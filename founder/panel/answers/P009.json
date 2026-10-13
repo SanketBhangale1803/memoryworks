@@ -1,0 +1,13 @@
+{
+  "id": "P009",
+  "buys": false,
+  "purchases_first_month": 0,
+  "reason_code": "trust",
+  "reason": "The repeat-outage pain is real and this is aimed right at it, but I'm the one who blocks vendors touching source code, and an early-preview hosted service that wants GitHub, Slack, Drive and Notion all at once would never get through my own security review. At most I'd have someone poke at the self-hosted Docker version on a sandbox, and that's not buying anything.",
+  "objection": "You want read access to our code, our incident channels and our docs, and the hosted product is still in early preview. That's a huge blast radius for a new vendor, and I don't trust that 'cited memories' will actually catch the right postmortem rather than just adding another place nobody checks.",
+  "would_change_my_mind": "A SOC 2 Type II report with a GA hosted version (or a supported self-hosted enterprise tier), plus a pilot where it surfaces our existing postmortem before a change that would have repeated that outage.",
+  "price_too_cheap": 3,
+  "price_cheap": 10,
+  "price_expensive": 35,
+  "price_too_expensive": 60
+}
