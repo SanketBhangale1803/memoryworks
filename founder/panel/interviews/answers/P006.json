@@ -1,0 +1,24 @@
+{
+  "id": "P006",
+  "inevitable_need": "Before any agent touches a service, it has to automatically get the context a senior engineer would carry in their head: who owns it, what broke there before and why, and what it must not change. All of it pulled from git history, PRs and incident threads we already produce, not from a wiki someone has to maintain.",
+  "category": "agent_context_delivery",
+  "why_inevitable": "Agents are already opening a big share of our PRs and they have zero memory of the outage we had last quarter. Sooner or later one of them reintroduces a bug we already paid for in production, and 'paste the postmortem into the prompt' stops scaling once agents outnumber the people reviewing them.",
+  "trigger": "agent_caused_incident",
+  "months_until_needed": 9,
+  "must_have": [
+    "Stays current with zero extra work from engineers, built only from commits, PRs, CODEOWNERS and Slack incident threads we already generate",
+    "Plugs into the agents we already run through MCP, so the briefing lands in the agent's context before it edits and needs no new UI for engineers",
+    "Every claim cites its source and it says 'I don't know' rather than guessing an owner or a constraint"
+  ],
+  "deal_breakers": [
+    "Needs engineers to tag owners, write decision records or fill in anything new to stay accurate",
+    "Our code and Slack have to leave our infrastructure, or it can't run self-hosted",
+    "Briefings that go stale or confidently wrong, because an agent trusting bad context is worse than no context"
+  ],
+  "preferred_form": "self_hosted",
+  "pricing_model": "flat_per_team",
+  "team_budget_per_month_usd": 300,
+  "expected_provider": "Most likely my own team: a vector DB, a GitHub and Slack ingester and an MCP server is a few weeks of work, and it's a few weeks I control. The AI tool makers like Anthropic and Cursor will probably ship some per-repo memory too, but it won't cover our incidents and Slack. I'd only pay a startup for a self-hosted thing that saves us from maintaining the ingestion and staleness logic ourselves.",
+  "memoryworks_fit": "close_needs_changes",
+  "memoryworks_would_need": "Show me, on our real repos and Slack in the free self-hosted version over two weeks, that it answers 'who owns this service?' correctly and flags an agent change that would have repeated a past incident, with nobody on my team doing any data entry. If it does, I'd pay a flat team price for support and upgrades on the self-hosted version, not $20 per engineer for an early-preview cloud."
+}

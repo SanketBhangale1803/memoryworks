@@ -1,0 +1,24 @@
+{
+  "id": "P001",
+  "inevitable_need": "Before anyone, human or agent, changes a service, something has to automatically put the relevant past postmortems, action items and known constraints for that service in front of them, and it has to block or escalate when the change touches something we already got burned on. Our postmortems can't keep rotting in a Drive folder nobody opens.",
+  "category": "incident_memory",
+  "why_inevitable": "We already repeated an outage we had a written postmortem for, and as agents open more of our PRs the change volume goes up while nobody reading them remembers the history. The first time an agent ships a change that reproduces a documented incident, leadership will demand this exists.",
+  "trigger": "agent_caused_incident",
+  "months_until_needed": 9,
+  "must_have": [
+    "Permission-aware retrieval that enforces our existing Slack/Drive/GitHub ACLs, with audit logs of who and which agent saw what",
+    "Can run inside our own infrastructure (or comes with a SOC 2 Type II report and a clear data-residency story) so it clears security review",
+    "Proven recall on our real history: it would have flagged the postmortem behind our last repeat outage, with citations, and stays quiet when nothing is relevant"
+  ],
+  "deal_breakers": [
+    "Hosted-only early-preview product wanting read access to our entire Slack, Drive and GitHub history",
+    "Noisy briefings or hallucinated 'prior incidents' that engineers learn to ignore within a month",
+    "Per-seat pricing across all 300+ engineers when only the platform/SRE side really drives it"
+  ],
+  "preferred_form": "self_hosted",
+  "pricing_model": "flat_per_team",
+  "team_budget_per_month_usd": 3000,
+  "expected_provider": "Honestly, most likely our incident-management or dev-platform vendor (whoever already holds our postmortems and on-call data) bolts it on, or the AI coding tool makers add a context hook for it; failing that, my team builds a rough internal version on top of our postmortem docs. A new startup only wins if it gets through security faster than those options.",
+  "memoryworks_fit": "close_needs_changes",
+  "memoryworks_would_need": "A self-hosted deployment that respects our existing ACLs and logs every agent and human query, plus a pilot where one of my engineers points it at our postmortems and shows it would have flagged the change behind our last repeat outage. If they want the hosted version, I need a SOC 2 report and flat team pricing, not $20 per head across the whole org."
+}

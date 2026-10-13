@@ -1,0 +1,24 @@
+{
+  "id": "P008",
+  "inevitable_need": "A tamper-evident record of every change an AI agent makes to our production repos and infra: which agent, which human kicked it off or approved it, what it read, what it touched. I need to export it as evidence when an auditor or a customer asks.",
+  "category": "agent_audit_trail",
+  "why_inevitable": "Our enterprise customers' security questionnaires are starting to ask how AI agents touch our code, and our own SOC 2 auditor will ask the same thing. Right now I can't answer beyond 'it's in the PR history, mostly'.",
+  "trigger": "customer_security_review",
+  "months_until_needed": 9,
+  "must_have": [
+    "Runs inside our own infra or reads only what it strictly needs; no copy of source code or private Slack in someone else's early-stage cloud",
+    "Every agent action tied to a named human approver, with an export I can hand straight to an auditor or attach to a questionnaire",
+    "Works across the agents we already use (Claude Code, Cursor, our own scripts) without each engineer having to set it up"
+  ],
+  "deal_breakers": [
+    "A hosted vendor with no SOC 2 Type II report and no signed DPA",
+    "Per-seat pricing that grows with headcount and that I have to defend to finance",
+    "Broad read access to all of GitHub, Slack and Drive just to produce an audit log"
+  ],
+  "preferred_form": "self_hosted",
+  "pricing_model": "flat_per_team",
+  "team_budget_per_month_usd": 500,
+  "expected_provider": "Most likely GitHub or the agent vendors themselves (Anthropic, Cursor) shipping enterprise audit logs, because they already see the actions and already have the paperwork. If that doesn't come fast enough, one of my engineers builds a thin logging layer on top of what they expose.",
+  "memoryworks_fit": "close_needs_changes",
+  "memoryworks_would_need": "Turn the approval and report-back loop into an exportable audit trail first, with the memory and search second, and sell it as a paid self-hosted tier with support at a flat team price so our data never leaves our infra. If it's the managed cloud, it needs a SOC 2 Type II report and a signed DPA before I'd let it near our GitHub."
+}

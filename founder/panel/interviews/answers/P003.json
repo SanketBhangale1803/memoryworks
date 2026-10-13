@@ -1,0 +1,24 @@
+{
+  "id": "P003",
+  "inevitable_need": "Before any AI agent merges or deploys a change to a production service, something has to check it against what we already know about that service: past incidents, who owns it, what depends on it. If the change is risky it has to stop and get a named human to sign off. I don't need another place to search docs. I need a gate in the pipeline that agents can't skip.",
+  "category": "agent_guardrails",
+  "why_inevitable": "Agents are already opening PRs on prod repos. Sooner or later one of them will repeat a change that caused an incident before, and when that happens the postmortem will ask why nothing stopped it. I'll be the one answering that, so I'd rather have the gate in place first.",
+  "trigger": "agent_caused_incident",
+  "months_until_needed": 9,
+  "must_have": [
+    "Runs inside our own infrastructure, or at least never sends our code and Slack out to a vendor",
+    "Lives in the CI/PR and agent flow we already use (GitHub checks, the agent's own tool calls), not a new UI my engineers have to open",
+    "Every block or warning cites the specific incident, owner or doc it's based on, so engineers trust it and don't just override it"
+  ],
+  "deal_breakers": [
+    "Per-seat pricing across every engineer in the org",
+    "Needs broad read access to all of Slack and Drive before it can show any value",
+    "Noisy false positives that slow down normal PRs, because the team will route around it within a week"
+  ],
+  "preferred_form": "self_hosted",
+  "pricing_model": "flat_per_team",
+  "team_budget_per_month_usd": 1500,
+  "expected_provider": "Most likely the platform we already pay for adds it: GitHub or the agent vendors (Anthropic, Cursor) ship policy hooks and pre-merge checks, and my platform team wires our incident history into them. A startup has a shot only if it's open source, self-hosted, and in place before the big players ship something good enough.",
+  "memoryworks_fit": "close_needs_changes",
+  "memoryworks_would_need": "Lead with the pre-change agent briefing and approval gate as a self-hosted GitHub check and MCP hook, scoped to a single team's repos and incident history and not the whole org's Slack and Drive. Price it per team or per agent, not per engineer. Then show me in a one-month pilot that it caught at least one real repeat-incident change."
+}

@@ -1,0 +1,24 @@
+{
+  "id": "P009",
+  "inevitable_need": "A pre-merge, pre-deploy gate for agent-authored changes. It checks the diff against our own postmortem action items and known failure modes for that service. If the change touches something that has burned us before, it blocks or routes to a named human approver and links the exact postmortem. It has to run inside our CI and change-management path, not as a chat window someone has to remember to open.",
+  "category": "agent_guardrails",
+  "why_inevitable": "Agents are already opening PRs on production repos, and the volume is outrunning human reviewers' memory of past incidents. The first time an agent re-ships a fix we already wrote a postmortem about, leadership will demand a hard control, and I'll have to produce one whether I like it or not.",
+  "trigger": "agent_caused_incident",
+  "months_until_needed": 9,
+  "must_have": [
+    "Runs fully inside our network (self-hosted or VPC) with least-privilege, read-only, per-repo scoped access, and nothing leaves our boundary",
+    "Enforced as a required check in CI / branch protection, with a deterministic block-or-approve outcome and an audit log of who approved what",
+    "Every flag cites the specific postmortem or rule it came from, with a low enough false-positive rate that engineers don't start ignoring it"
+  ],
+  "deal_breakers": [
+    "Org-wide read access to code, Slack, Drive and Notion all at once, or a multi-tenant hosted service that can't show a SOC 2 Type II",
+    "Advisory-only output that agents or engineers can silently skip",
+    "Noisy or uncited warnings that turn it into yet another place nobody checks"
+  ],
+  "preferred_form": "self_hosted",
+  "pricing_model": "flat_per_team",
+  "team_budget_per_month_usd": 3000,
+  "expected_provider": "Most likely my own platform team stitching it together on top of GitHub rulesets, our incident tool and a policy engine, or a feature from GitHub or our incident-management vendor, because those already passed my security review. A new startup only wins if it ships a supported self-hosted enterprise tier and proves it catches our real repeats.",
+  "memoryworks_fit": "close_needs_changes",
+  "memoryworks_would_need": "Start narrow: a supported, self-hosted enterprise tier that only needs GitHub plus our postmortem repository and works as a required CI check, not a chat-first memory layer that wants every connector on day one. Then a pilot on our own history where it flags the change that repeated our last outage and links the right postmortem, with a SOC 2 Type II before any hosted option is even on the table."
+}

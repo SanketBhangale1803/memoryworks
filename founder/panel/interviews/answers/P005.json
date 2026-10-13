@@ -1,0 +1,24 @@
+{
+  "id": "P005",
+  "inevitable_need": "Before any agent or engineer changes a service, something has to check our postmortems and incident history for that code path and say, with a link to the postmortem, 'this broke before, here's why, a human signs off.' It has to block or flag the change automatically, not depend on someone remembering to search.",
+  "category": "incident_memory",
+  "why_inevitable": "We already repeated an outage we had a postmortem for, and as agents write more of our changes nobody involved will have the context in their head. The next repeat incident caused by an agent will make leadership ask why our postmortems don't stop it, and I'd rather have the answer ready.",
+  "trigger": "repeat_incidents",
+  "months_until_needed": 6,
+  "must_have": [
+    "Runs inside our infrastructure, or the vendor has proven security (SOC 2), so incident history and internal Slack never go to an unproven cloud",
+    "Every warning cites the actual postmortem or incident and stays quiet when it has nothing, so my team doesn't learn to ignore it",
+    "Sits in the change path for the agents we already use (Claude Code, Cursor) and for PRs, with an approval gate on risky areas"
+  ],
+  "deal_breakers": [
+    "Requires broad Slack, Drive and GitHub access to a hosted product in early preview with no SOC 2 report",
+    "Noisy or uncited warnings that lead people to ignore it within a month",
+    "A vendor that might vanish with no migration path, or self-hosting that turns into a part-time job for one of my SREs"
+  ],
+  "preferred_form": "self_hosted",
+  "pricing_model": "flat_per_team",
+  "team_budget_per_month_usd": 1500,
+  "expected_provider": "Probably our incident-management vendor or the AI coding tool makers bolt something like this on within two years, because they already have the incidents or the agent. Until then it's either a startup we self-host or a script my platform team hacks together around the postmortem docs.",
+  "memoryworks_fit": "close_needs_changes",
+  "memoryworks_would_need": "A self-hosted pilot on our repos that flags the outage we repeated, cited from our own postmortem, before an agent touches that code, without a full-time babysitter. Then, before I'd pay for the cloud: a SOC 2 report or a named reference customer my size, and a flat team price instead of per-seat."
+}

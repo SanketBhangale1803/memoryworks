@@ -1,0 +1,24 @@
+{
+  "id": "P010",
+  "inevitable_need": "A policy gate in front of every AI agent change to production repos and infra: it knows which paths, services and actions are risky, blocks or requires a named human approval before the agent proceeds, and leaves a tamper-evident log of what the agent was told, what it did and who signed off.",
+  "category": "agent_guardrails",
+  "why_inevitable": "Our enterprise customers' security questionnaires are starting to ask how AI agents touch our production code and who approves their changes, and 'engineers review PRs' won't hold up once agents open most of them. One bad agent change to auth or billing code would force it on us overnight anyway.",
+  "trigger": "customer_security_review",
+  "months_until_needed": 9,
+  "must_have": [
+    "Runs in our own infrastructure or our own cloud account, so code, Slack and incident data never leave our perimeter",
+    "Enforced at the agent tool-call or CI level (hooks, MCP, branch protection), not advisory text the agent can ignore",
+    "Exportable audit log of agent actions and human approvals that I can hand to an auditor or a customer's security team"
+  ],
+  "deal_breakers": [
+    "Requires broad read access to private Slack or all repos through a hosted vendor without SOC 2 Type II and a signed DPA",
+    "Adds noticeable latency or approval friction to routine low-risk agent changes, so engineers route around it",
+    "Locks us to a single agent vendor instead of covering Claude Code, Cursor and our own scripts"
+  ],
+  "preferred_form": "self_hosted",
+  "pricing_model": "flat_per_team",
+  "team_budget_per_month_usd": 600,
+  "expected_provider": "Most likely the agent makers and GitHub, since Claude Code hooks, Cursor rules and GitHub rulesets already cover part of it; until they do it well across tools, my own platform engineer will glue it together, and a startup only wins if it's self-hostable and cross-agent.",
+  "memoryworks_fit": "close_needs_changes",
+  "memoryworks_would_need": "Make the pre-change briefing an enforced gate (block or require approval, with an exportable audit log) rather than just context, running fully self-hosted with a supported paid tier, and show on our own repos that it catches risky agent changes. If I ever use the hosted version, SOC 2 Type II and a signed DPA are table stakes."
+}

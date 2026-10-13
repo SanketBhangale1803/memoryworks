@@ -1,0 +1,24 @@
+{
+  "id": "P004",
+  "inevitable_need": "A hard wall between clients for our agents: each client engagement gets its own scoped context and permissions, so an agent working in client A's repo can never see client B's code, Slack or docs, plus a plain log of what the agent read and changed that I can hand to that client.",
+  "category": "access_control_for_agents",
+  "why_inevitable": "Clients are starting to ask in procurement whether we use AI agents on their code and what data those agents can see. Once one of them makes it a contract clause, I either show isolation and a log or I lose the engagement.",
+  "trigger": "customer_security_review",
+  "months_until_needed": 9,
+  "must_have": [
+    "Per-client isolation that holds up: separate stores and credentials per engagement, not a tag on shared data",
+    "Runs on our own infrastructure or the client's, set up in an afternoon with Docker",
+    "Works with the agents we already use (Claude Code, Cursor) through MCP, with no lock-in to a new chat UI"
+  ],
+  "deal_breakers": [
+    "Client code or Slack going through a vendor's hosted service, especially one still in preview",
+    "Per-seat pricing that costs more than the hours it would take us to build a rough version ourselves",
+    "Needing a dedicated person to keep it running or tune it"
+  ],
+  "preferred_form": "self_hosted",
+  "pricing_model": "flat_per_team",
+  "team_budget_per_month_usd": 150,
+  "expected_provider": "Probably my own team first, a vector DB and an MCP server per client wired up in a few weekends. Longer term I expect Anthropic or Cursor to ship workspace-level scoping and audit logs, which would make a separate tool redundant for a shop our size.",
+  "memoryworks_fit": "close_needs_changes",
+  "memoryworks_would_need": "Make per-client isolation a first-class feature of the self-hosted MIT version, with one instance or namespace per client and an exportable log of what each agent was briefed on and did that I can give to the client. Then show it stopping an agent from repeating a real past incident on one of our repos. I'd pay a small flat support fee, not $20 a head."
+}

@@ -1,0 +1,24 @@
+{
+  "id": "P007",
+  "inevitable_need": "A per-client record of exactly what our AI agents read, changed and were allowed to touch in each client's repos, kept separate per client, that I can export and hand to a client when they ask what an AI did to their code.",
+  "category": "agent_audit_trail",
+  "why_inevitable": "Our clients' security questionnaires are already starting to ask whether we use AI on their code. Within a year one of them will make a log of agent activity on their repos a condition of the contract, and 'trust us' won't pass that.",
+  "trigger": "customer_security_review",
+  "months_until_needed": 9,
+  "must_have": [
+    "Strict per-client isolation, so one client's code, logs and context never show up in another client's work",
+    "Data stays in our own cloud account or on our machines; nothing goes to a third party's servers",
+    "Close to zero upkeep: set it up in an afternoon and it keeps running without someone babysitting it"
+  ],
+  "deal_breakers": [
+    "A hosted service from a small vendor with no SOC 2 that reads our clients' Slack and GitHub",
+    "Needs someone to run and patch a multi-service Docker stack every week",
+    "Per-seat pricing that keeps climbing when we bring in contractors for a single client project"
+  ],
+  "preferred_form": "feature_inside_existing_tool",
+  "pricing_model": "flat_per_team",
+  "team_budget_per_month_usd": 150,
+  "expected_provider": "Most likely the AI tool makers or GitHub, built into the agents and repos we already pay for, because they already see every action and clients already trust them. A startup only wins if it's free to self-host and much better than what comes bundled.",
+  "memoryworks_fit": "close_needs_changes",
+  "memoryworks_would_need": "The bit where agents report back what they did would have to become an exportable, per-client audit log that runs entirely in our own cloud with almost no upkeep, and the hosted version would need SOC 2 or a bring-your-own-cloud option. If it also briefed an agent on a past incident before it repeated during a two-week trial on one repo, I'd pay a flat team price."
+}
