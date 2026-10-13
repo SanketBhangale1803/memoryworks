@@ -1,0 +1,222 @@
+[
+ {
+  "id": "P001",
+  "name": "Omar",
+  "age": 27,
+  "segment": "Platform or SRE lead at a larger company (300+ engineers), needs security review and procurement",
+  "income": 253000,
+  "behaviour": "Incident-scarred",
+  "behaviour_how": "Recently had an outage repeat one the team already wrote a postmortem for, and is still annoyed about it.",
+  "objection": "Our agents don't do anything risky enough to need a briefing yet",
+  "habit": "your team's postmortems live in a Google Drive folder nobody opens"
+ },
+ {
+  "id": "P002",
+  "name": "Raj",
+  "age": 36,
+  "segment": "Platform or SRE lead at a larger company (300+ engineers), needs security review and procurement",
+  "income": 191000,
+  "behaviour": "Budget-constrained",
+  "behaviour_how": "Has to justify every per-seat tool to finance with a concrete saving.",
+  "objection": "Will this company still exist in two years?",
+  "habit": "you approve or block every new vendor that touches source code"
+ },
+ {
+  "id": "P003",
+  "name": "Emil",
+  "age": 38,
+  "segment": "Engineering manager at a scale-up (50 to 300 engineers), has a team tooling budget",
+  "income": 237000,
+  "behaviour": "Tool-fatigued",
+  "behaviour_how": "Already pays for Notion, Confluence or Glean, PagerDuty and more; resists every new tool.",
+  "objection": "Another per-seat tool is a hard sell to finance",
+  "habit": "you were paged twice last quarter for something that had happened before"
+ },
+ {
+  "id": "P004",
+  "name": "Owen",
+  "age": 49,
+  "segment": "Small agency or consultancy lead (under 10 engineers)",
+  "income": 149000,
+  "behaviour": "Build-it-ourselves",
+  "behaviour_how": "Default reaction to a dev tool is 'we could build that with a vector DB and an MCP server'.",
+  "objection": "We already have Glean, Notion AI or Confluence search for this",
+  "habit": "you sit in a weekly architecture review where the same questions come back"
+ },
+ {
+  "id": "P005",
+  "name": "Sana",
+  "age": 48,
+  "segment": "Engineering manager at a scale-up (50 to 300 engineers), has a team tooling budget",
+  "income": 258000,
+  "behaviour": "Incident-scarred",
+  "behaviour_how": "Recently had an outage repeat one the team already wrote a postmortem for, and is still annoyed about it.",
+  "objection": "Will this company still exist in two years?",
+  "habit": "you sit in a weekly architecture review where the same questions come back"
+ },
+ {
+  "id": "P006",
+  "name": "Maya",
+  "age": 39,
+  "segment": "Startup CTO or founding engineer (10 to 50 engineers), signs the card themselves",
+  "income": 187000,
+  "behaviour": "Build-it-ourselves",
+  "behaviour_how": "Default reaction to a dev tool is 'we could build that with a vector DB and an MCP server'.",
+  "objection": "My engineers won't change how they work to feed another tool",
+  "habit": "you spend part of every week answering 'who owns this service?' in Slack"
+ },
+ {
+  "id": "P007",
+  "name": "Selin",
+  "age": 39,
+  "segment": "Small agency or consultancy lead (under 10 engineers)",
+  "income": 85000,
+  "behaviour": "Bottom-up trialer",
+  "behaviour_how": "Signs up free, tries it on one repo, and only pays if the team keeps using it after two weeks.",
+  "objection": "Connecting our Slack and GitHub to a small startup is a security risk",
+  "habit": "you were paged twice last quarter for something that had happened before"
+ },
+ {
+  "id": "P008",
+  "name": "Ruby",
+  "age": 41,
+  "segment": "Startup CTO or founding engineer (10 to 50 engineers), signs the card themselves",
+  "income": 159000,
+  "behaviour": "Security gatekeeper",
+  "behaviour_how": "Will not connect Slack or GitHub to a new vendor without SOC 2, a DPA and a security questionnaire.",
+  "objection": "Another per-seat tool is a hard sell to finance",
+  "habit": "you approve or block every new vendor that touches source code"
+ },
+ {
+  "id": "P009",
+  "name": "Nora",
+  "age": 28,
+  "segment": "Platform or SRE lead at a larger company (300+ engineers), needs security review and procurement",
+  "income": 203000,
+  "behaviour": "Incident-scarred",
+  "behaviour_how": "Recently had an outage repeat one the team already wrote a postmortem for, and is still annoyed about it.",
+  "objection": "Our agents don't do anything risky enough to need a briefing yet",
+  "habit": "you approve or block every new vendor that touches source code"
+ },
+ {
+  "id": "P010",
+  "name": "Fatima",
+  "age": 30,
+  "segment": "Startup CTO or founding engineer (10 to 50 engineers), signs the card themselves",
+  "income": 254000,
+  "behaviour": "Security gatekeeper",
+  "behaviour_how": "Will not connect Slack or GitHub to a new vendor without SOC 2, a DPA and a security questionnaire.",
+  "objection": "We already have Glean, Notion AI or Confluence search for this",
+  "habit": "you run Claude Code or Cursor agents on your company's repos most days"
+ },
+ {
+  "id": "P011",
+  "name": "Tariq",
+  "age": 33,
+  "segment": "Engineering manager at a scale-up (50 to 300 engineers), has a team tooling budget",
+  "income": 238000,
+  "behaviour": "AI-agent early adopter",
+  "behaviour_how": "Runs Claude Code or Cursor agents on real repos daily and is actively looking for ways to make them safer.",
+  "objection": "Our agents don't do anything risky enough to need a briefing yet",
+  "habit": "you spend part of every week answering 'who owns this service?' in Slack"
+ },
+ {
+  "id": "P012",
+  "name": "Felix",
+  "age": 35,
+  "segment": "Startup CTO or founding engineer (10 to 50 engineers), signs the card themselves",
+  "income": 255000,
+  "behaviour": "Build-it-ourselves",
+  "behaviour_how": "Default reaction to a dev tool is 'we could build that with a vector DB and an MCP server'.",
+  "objection": "Another per-seat tool is a hard sell to finance",
+  "habit": "you sit in a weekly architecture review where the same questions come back"
+ },
+ {
+  "id": "P013",
+  "name": "Zoe",
+  "age": 30,
+  "segment": "Platform or SRE lead at a larger company (300+ engineers), needs security review and procurement",
+  "income": 205000,
+  "behaviour": "Budget-constrained",
+  "behaviour_how": "Has to justify every per-seat tool to finance with a concrete saving.",
+  "objection": "My engineers won't change how they work to feed another tool",
+  "habit": "you sit in a weekly architecture review where the same questions come back"
+ },
+ {
+  "id": "P014",
+  "name": "Dev",
+  "age": 42,
+  "segment": "Engineering manager at a scale-up (50 to 300 engineers), has a team tooling budget",
+  "income": 223000,
+  "behaviour": "Security gatekeeper",
+  "behaviour_how": "Will not connect Slack or GitHub to a new vendor without SOC 2, a DPA and a security questionnaire.",
+  "objection": "Connecting our Slack and GitHub to a small startup is a security risk",
+  "habit": "you were paged twice last quarter for something that had happened before"
+ },
+ {
+  "id": "P015",
+  "name": "Yusuf",
+  "age": 30,
+  "segment": "Engineering manager at a scale-up (50 to 300 engineers), has a team tooling budget",
+  "income": 252000,
+  "behaviour": "Tool-fatigued",
+  "behaviour_how": "Already pays for Notion, Confluence or Glean, PagerDuty and more; resists every new tool.",
+  "objection": "I could build this with a vector DB and an MCP server in a week",
+  "habit": "you sit in a weekly architecture review where the same questions come back"
+ },
+ {
+  "id": "P016",
+  "name": "Theo",
+  "age": 49,
+  "segment": "Startup CTO or founding engineer (10 to 50 engineers), signs the card themselves",
+  "income": 159000,
+  "behaviour": "AI-agent early adopter",
+  "behaviour_how": "Runs Claude Code or Cursor agents on real repos daily and is actively looking for ways to make them safer.",
+  "objection": "We already have Glean, Notion AI or Confluence search for this",
+  "habit": "you were paged twice last quarter for something that had happened before"
+ },
+ {
+  "id": "P017",
+  "name": "Alma",
+  "age": 43,
+  "segment": "Startup CTO or founding engineer (10 to 50 engineers), signs the card themselves",
+  "income": 183000,
+  "behaviour": "AI-agent early adopter",
+  "behaviour_how": "Runs Claude Code or Cursor agents on real repos daily and is actively looking for ways to make them safer.",
+  "objection": "We already have Glean, Notion AI or Confluence search for this",
+  "habit": "you approve or block every new vendor that touches source code"
+ },
+ {
+  "id": "P018",
+  "name": "Freya",
+  "age": 36,
+  "segment": "Engineering manager at a scale-up (50 to 300 engineers), has a team tooling budget",
+  "income": 278000,
+  "behaviour": "Tool-fatigued",
+  "behaviour_how": "Already pays for Notion, Confluence or Glean, PagerDuty and more; resists every new tool.",
+  "objection": "Connecting our Slack and GitHub to a small startup is a security risk",
+  "habit": "you spend part of every week answering 'who owns this service?' in Slack"
+ },
+ {
+  "id": "P019",
+  "name": "Harper",
+  "age": 35,
+  "segment": "Startup CTO or founding engineer (10 to 50 engineers), signs the card themselves",
+  "income": 202000,
+  "behaviour": "Bottom-up trialer",
+  "behaviour_how": "Signs up free, tries it on one repo, and only pays if the team keeps using it after two weeks.",
+  "objection": "Our agents don't do anything risky enough to need a briefing yet",
+  "habit": "your team's postmortems live in a Google Drive folder nobody opens"
+ },
+ {
+  "id": "P020",
+  "name": "Emma",
+  "age": 34,
+  "segment": "Engineering manager at a scale-up (50 to 300 engineers), has a team tooling budget",
+  "income": 229000,
+  "behaviour": "AI-agent early adopter",
+  "behaviour_how": "Runs Claude Code or Cursor agents on real repos daily and is actively looking for ways to make them safer.",
+  "objection": "Another per-seat tool is a hard sell to finance",
+  "habit": "you spend part of every week answering 'who owns this service?' in Slack"
+ }
+]

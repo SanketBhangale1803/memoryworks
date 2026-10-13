@@ -1,0 +1,103 @@
+{
+ "n": 20,
+ "seed": 7,
+ "customer": {
+  "business": "MemoryWorks (company memory and pre-action briefings for engineering teams and their AI agents)",
+  "target": "Engineering leaders (CTOs, eng managers, platform/SRE leads) at software companies with 10 to 500 engineers whose teams already run AI coding agents on production repos",
+  "where": "Online, B2B SaaS / open-source developer tool, mostly US and Europe",
+  "age": [
+   27,
+   50
+  ],
+  "segments": [
+   {
+    "name": "Startup CTO or founding engineer (10 to 50 engineers), signs the card themselves",
+    "share": 0.35,
+    "income": [
+     140000,
+     260000
+    ]
+   },
+   {
+    "name": "Engineering manager at a scale-up (50 to 300 engineers), has a team tooling budget",
+    "share": 0.35,
+    "income": [
+     170000,
+     280000
+    ]
+   },
+   {
+    "name": "Platform or SRE lead at a larger company (300+ engineers), needs security review and procurement",
+    "share": 0.2,
+    "income": [
+     190000,
+     320000
+    ]
+   },
+   {
+    "name": "Small agency or consultancy lead (under 10 engineers)",
+    "share": 0.1,
+    "income": [
+     80000,
+     160000
+    ]
+   }
+  ],
+  "behaviours": [
+   {
+    "name": "AI-agent early adopter",
+    "share": 0.2,
+    "how": "Runs Claude Code or Cursor agents on real repos daily and is actively looking for ways to make them safer."
+   },
+   {
+    "name": "Incident-scarred",
+    "share": 0.15,
+    "how": "Recently had an outage repeat one the team already wrote a postmortem for, and is still annoyed about it."
+   },
+   {
+    "name": "Build-it-ourselves",
+    "share": 0.15,
+    "how": "Default reaction to a dev tool is 'we could build that with a vector DB and an MCP server'."
+   },
+   {
+    "name": "Security gatekeeper",
+    "share": 0.15,
+    "how": "Will not connect Slack or GitHub to a new vendor without SOC 2, a DPA and a security questionnaire."
+   },
+   {
+    "name": "Tool-fatigued",
+    "share": 0.15,
+    "how": "Already pays for Notion, Confluence or Glean, PagerDuty and more; resists every new tool."
+   },
+   {
+    "name": "Bottom-up trialer",
+    "share": 0.12,
+    "how": "Signs up free, tries it on one repo, and only pays if the team keeps using it after two weeks."
+   },
+   {
+    "name": "Budget-constrained",
+    "share": 0.08,
+    "how": "Has to justify every per-seat tool to finance with a concrete saving."
+   }
+  ],
+  "objections": [
+   "We already have Glean, Notion AI or Confluence search for this",
+   "Connecting our Slack and GitHub to a small startup is a security risk",
+   "Our agents don't do anything risky enough to need a briefing yet",
+   "Who keeps the memory accurate? It will go stale like our wiki",
+   "I could build this with a vector DB and an MCP server in a week",
+   "Another per-seat tool is a hard sell to finance",
+   "Will this company still exist in two years?",
+   "My engineers won't change how they work to feed another tool"
+  ],
+  "habits": [
+   "you run Claude Code or Cursor agents on your company's repos most days",
+   "you were paged twice last quarter for something that had happened before",
+   "your team's postmortems live in a Google Drive folder nobody opens",
+   "you sit in a weekly architecture review where the same questions come back",
+   "you approve or block every new vendor that touches source code",
+   "you spend part of every week answering 'who owns this service?' in Slack"
+  ]
+ },
+ "pitch": "MemoryWorks: a memory layer for your engineering org and the AI agents working in it.\nIt connects GitHub, Slack, Google Drive, Notion and Teams and turns incidents, decisions, owners and dependencies into cited memories. People ask questions in one chat window and every answer shows its sources, or says it doesn't know.\nBefore an AI agent (Claude Code, Cursor, or your own via MCP or API) changes something, it gets a briefing: prior incidents, constraints, blast radius, and whether a person must approve. Agents report back what happened, so the next briefing is better.\nOpen source (MIT) and free to self-host with Docker. Managed cloud: $20 per engineer per month; the hosted version is in early preview."
+}
