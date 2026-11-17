@@ -133,12 +133,14 @@ ORG_AGENT_TOOLS: list[dict[str, Any]] = [
         "description": (
             "Submit changes for human approval. Applies NOTHING. To reconcile a "
             "conflict, pass its conflict_id — the recorded resolution is copied "
-            "by reference, never retyped. Otherwise pass explicit operations, each "
-            "exactly one of: create_task {space_id, title, description, owner, "
-            "priority}, update_task {task_id, status, owner, priority, reason}, "
-            "add_memory {space_id, type, title, content}. space_id is the project_id "
-            "of the space the change belongs to, from AUTHORIZED SPACES. Never "
-            "update_task_status or close_memory."
+            "by reference, never retyped. Otherwise pass operations: a list of "
+            'objects, each with an "op" field, e.g. {"summary": "...", "operations": '
+            '[{"op": "create_task", "space_id": "prj_...", "title": "...", '
+            '"description": "...", "owner": "...", "priority": "high"}]}. op is one of '
+            "create_task (space_id, title, description, owner, priority), update_task "
+            "(task_id, status, owner, priority, reason), add_memory (space_id, type, "
+            "title, content). space_id is the project_id of the space the change "
+            "belongs to, from AUTHORIZED SPACES. Never update_task_status or close_memory."
         ),
         "arguments": ["summary", "operations (or conflict_id)"],
     },
@@ -161,6 +163,7 @@ def _int(value: Any, fallback: int) -> int:
 
 
 _SPACED_OPS = {"create_task", "add_memory"}
+_OPERATION_KINDS = {"create_task", "update_task", "add_memory"}
 
 
 def _place_operations(operations: list, spaces: list[dict], default_space: str) -> list[dict]:
@@ -190,6 +193,12 @@ def _place_operations(operations: list, spaces: list[dict], default_space: str) 
         if not isinstance(operation, dict):
             raise ValueError("each operation must be an object")
         operation = dict(operation)
+        # {"create_task": {...}} is how models most often write an operation
+        # (every plan GLM proposed was refused for it); it means one thing.
+        if "op" not in operation and len(operation) == 1:
+            ((kind, fields),) = operation.items()
+            if kind in _OPERATION_KINDS and isinstance(fields, dict):
+                operation = {"op": kind, **fields}
         if str(operation.get("op") or "") in _SPACED_OPS:
             given = _text(operation.get("space_id"))
             if given and given not in by_id:
@@ -361,9 +370,7 @@ def build_org_executor(
             providers = (
                 [requested]
                 if requested in PROVIDER_NAMES
-                else mentioned_providers(requested)
-                if requested
-                else []
+                else mentioned_providers(requested) if requested else []
             )
             data = status_answer(workspace_id, providers)
             reports = data.pop("_reports")

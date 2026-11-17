@@ -634,6 +634,9 @@ def ask_org_stream(request: AskRequest, authorization: str | None = Header(defau
                 proposal=result.get("proposal"),
                 thoughts=result.get("thoughts", []),
                 mode=result.get("mode", "model"),
+                usage=result.get("usage", {}),
+                models=result.get("models", []),
+                model_calls=result.get("model_calls", 0),
             )
             events.put(
                 (

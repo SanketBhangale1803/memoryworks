@@ -234,3 +234,18 @@ def test_a_model_that_never_answers_gets_every_finding_listed():
     assert len(result["steps"]) == 3  # the answer-only turn ran no tool
     for summary in ("12 matching memories", "3 owners", "0 matching memories"):
         assert summary in result["answer"]
+
+
+def test_runs_started_together_get_separate_sessions(monkeypatch):
+    # Run ids were the start time in milliseconds: two Agent runs started in
+    # the same millisecond shared one session and each showed the other's steps.
+    import app.webmcp_agent as agent_module
+
+    monkeypatch.setattr(agent_module.time, "time", lambda: 1_790_000_000.123)
+    store = AgentSessionStore()
+    first = store.create("which repos are connected?", "glm", "w1")
+    second = store.create("who made the last commit?", "glm", "w1")
+
+    assert first != second
+    store.append_step(first, {"tool": "get_orgmemory_connections"})
+    assert store.get(second, "w1")["steps"] == []

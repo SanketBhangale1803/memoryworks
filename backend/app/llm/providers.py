@@ -14,7 +14,7 @@ import httpx
 
 from app.core.config import settings
 
-from .limits import LLMUnavailable, cancel_event, llm_slot, raise_if_cancelled
+from .limits import LLMUnavailable, cancel_event, current_budget, llm_slot, raise_if_cancelled
 
 
 @dataclass(frozen=True)
@@ -200,6 +200,31 @@ def _open_stream(method: str, url: str, **kwargs: Any) -> Iterator[httpx.Respons
         yield response
 
 
+def _record_usage(reply: Any) -> None:
+    """Add one reply's token usage to the task's budget, whatever the provider."""
+    budget = current_budget()
+    if budget is None or not isinstance(reply, dict):
+        return
+    usage = reply.get("usage") or {}
+    meta = reply.get("usageMetadata") or {}  # Gemini
+    budget.record(
+        str(reply.get("model") or reply.get("modelVersion") or ""),
+        {
+            "input_tokens": usage.get("prompt_tokens")
+            or usage.get("input_tokens")
+            or meta.get("promptTokenCount")
+            or 0,
+            "output_tokens": usage.get("completion_tokens")
+            or usage.get("output_tokens")
+            or meta.get("candidatesTokenCount")
+            or 0,
+            "cache_read_input_tokens": usage.get("cache_read_input_tokens")
+            or (usage.get("prompt_tokens_details") or {}).get("cached_tokens")
+            or 0,
+        },
+    )
+
+
 def _post_json(url: str, headers: dict[str, str], payload: dict[str, Any], seconds: float) -> Any:
     """POST and parse the JSON reply, giving up after ``seconds`` in total.
 
@@ -226,7 +251,9 @@ def _post_json(url: str, headers: dict[str, str], payload: dict[str, Any], secon
             if time.monotonic() > deadline:
                 raise LLMUnavailable("The model did not answer in time.")
         response.raise_for_status()
-    return json.loads(bytes(body))
+    reply = json.loads(bytes(body))
+    _record_usage(reply)
+    return reply
 
 
 def _openai_compatible(provider: ModelProvider, prompt: str, seconds: float) -> str:
@@ -342,6 +369,8 @@ def _stream_text(
                 continue
             if chunk.get("error"):
                 raise RuntimeError(str(chunk["error"].get("message") or chunk["error"]))
+            if chunk.get("usage"):
+                _record_usage(chunk)  # the final chunk carries the totals
             choices = chunk.get("choices") or []
             delta = (choices[0].get("delta") or {}) if choices else {}
             thinking = delta.get("reasoning") or delta.get("reasoning_content")

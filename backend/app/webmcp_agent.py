@@ -19,6 +19,7 @@ import threading
 import time
 from collections.abc import Callable
 from typing import Any
+from uuid import uuid4
 
 from app.core.config import settings
 from app.llm import llm_budget
@@ -120,8 +121,15 @@ class WebMCPAgentRunner:
     def run(self, **kwargs: Any) -> dict:
         """Run one Agent session (see :meth:`_run`) under its own model budget:
         at most one call per step plus a few retries, and a wall-clock limit."""
-        with llm_budget(settings.org_agent_llm_budget_seconds, settings.org_agent_max_llm_calls):
-            return self._run(**kwargs)
+        with llm_budget(
+            settings.org_agent_llm_budget_seconds, settings.org_agent_max_llm_calls
+        ) as budget:
+            result = self._run(**kwargs)
+        # what the run cost, and which models actually served it
+        result["usage"] = dict(budget.usage)
+        result["models"] = sorted(budget.models)
+        result["model_calls"] = budget.calls
+        return result
 
     def _run(
         self,
@@ -244,7 +252,8 @@ class WebMCPAgentRunner:
                     "arguments": arguments,
                     "summary": summary,
                     "thought": thought,
-                    "observation": observation[:600],
+                    # what the model saw (already capped at MAX_OBSERVATION_CHARS)
+                    "observation": observation,
                     "duration_ms": int((time.monotonic() - started) * 1000),
                 }
             )
@@ -470,10 +479,12 @@ BUDGET: {budget}
 Decide the single next step. Reply with ONLY one JSON object:
 - To call a tool: {{"thought": "one sentence", "tool": "<name>", "arguments": {{...}}}}
 - To finish: {{"thought": "one sentence", "answer": "grounded answer citing what you found", "memory_ids": ["mem_..."], "propose": null}}
-- Finish with a proposal ONLY if your observations VERIFIED a finding worth remembering: {{"answer": "...", "memory_ids": [...], "propose": {{"kind": "incident", "subject": "...", "content": "what happened, verified cause, resolution", "service": "...", "reason": "why this is verified"}}}}
+- To also save an incident your observations verified as a memory: {{"answer": "...", "memory_ids": [...], "propose": {{"kind": "incident", "subject": "...", "content": "what happened, verified cause, resolution", "service": "...", "reason": "why this is verified"}}}}
 
 Rules:
 - Ground every claim in the observations. Name the memory_ids you used.
+- If the question asks for a plan, tasks, a fix, next steps or changes, the run must file them: call propose_orgmemory_changes with create_task operations before you answer. A plan written only in the answer text is not filed. If memory records no problems, plan the work that would find or fix them (an investigation, a cleanup) and say why. Give each task an owner from the observations, or "unassigned".
+- If the question does not ask for a plan or changes, do not propose any.
 - You have at most {max_steps} tool calls total. Start with the most specific tool.
 - To reconcile a conflict found by find_orgmemory_conflicts, call propose_orgmemory_changes with that conflict's id as conflict_id. Never retype a resolution's operations yourself.
 - If you must pass explicit operations, each op is exactly one of create_task, update_task, add_memory. Nothing else is valid. Every create_task and add_memory needs space_id: the project_id of the space it belongs to, from AUTHORIZED SPACES.
@@ -650,7 +661,9 @@ class AgentSessionStore:
         self._lock = threading.Lock()
 
     def create(self, question: str, model_id: str, workspace_id: str = "") -> str:
-        run_id = f"agtsess_{int(time.time() * 1000):x}"
+        # Random, not the clock: two runs started in the same millisecond got
+        # the same id and their steps merged into one session.
+        run_id = f"agtsess_{uuid4().hex[:20]}"
         with self._lock:
             self._runs[run_id] = {
                 "id": run_id,

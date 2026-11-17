@@ -78,7 +78,19 @@ class LLMBudget:
     max_calls: int
     calls: int = 0
     parent: LLMBudget | None = None
+    # What the calls in this task consumed, by the model that served them.
+    usage: dict[str, int] = field(default_factory=dict)
+    models: set[str] = field(default_factory=set)
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+
+    def record(self, model: str, usage: dict[str, int]) -> None:
+        if self.parent:
+            self.parent.record(model, usage)
+        with self._lock:
+            if model:
+                self.models.add(model)
+            for key, value in usage.items():
+                self.usage[key] = self.usage.get(key, 0) + int(value or 0)
 
     def remaining_seconds(self) -> float:
         return self.deadline - time.monotonic()

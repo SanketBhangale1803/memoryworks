@@ -1093,7 +1093,11 @@ class OrgOpsService:
                 "source_memory_ids": list(operation.get("source_memory_ids") or []),
                 "reason": operation.get("reason", ""),
             }
-        raise ValueError("op must be one of create_task, update_task, add_memory")
+        raise ValueError(
+            "each operation needs an op field set to create_task, update_task or "
+            'add_memory, e.g. {"op": "create_task", "space_id": "prj_...", '
+            '"title": "...", "owner": "...", "priority": "high"}'
+        )
 
     def get_plan(self, plan_id: str) -> dict:
         record = row("SELECT * FROM org_action_plans WHERE id=?", (plan_id,))

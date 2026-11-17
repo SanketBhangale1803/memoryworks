@@ -30,10 +30,17 @@ def test_legacy_environment_name_is_accepted_with_a_warning(monkeypatch):
 
 @pytest.mark.parametrize(
     "value",
-    ["https://memoryworks.app", "https://memoryworks.app/", "https://memoryworks.app/mcp", "https://memoryworks.app/mcp/"],
+    [
+        "https://memoryworks.app",
+        "https://memoryworks.app/",
+        "https://memoryworks.app/mcp",
+        "https://memoryworks.app/mcp/",
+    ],
 )
 def test_mcp_public_url_is_an_origin_so_mcp_is_not_appended_twice(value):
-    assert Settings(_env_file=None, mcp_public_url=value).mcp_public_url == "https://memoryworks.app"
+    assert (
+        Settings(_env_file=None, mcp_public_url=value).mcp_public_url == "https://memoryworks.app"
+    )
 
 
 def test_storage_issues_name_every_per_process_store():
@@ -70,7 +77,9 @@ def test_hosted_mcp_is_available_only_when_it_answers_with_an_auth_challenge(
     monkeypatch.setattr(routes, "_mcp_probe", {"checked_at": 0.0, "available": False})
     monkeypatch.setattr(routes.time, "monotonic", lambda: 10_000.0)
     monkeypatch.setattr(
-        routes.httpx, "post", lambda url, timeout: httpx.Response(status, request=httpx.Request("POST", url))
+        routes.httpx,
+        "post",
+        lambda url, timeout: httpx.Response(status, request=httpx.Request("POST", url)),
     )
 
     assert routes._hosted_mcp_available() is available
