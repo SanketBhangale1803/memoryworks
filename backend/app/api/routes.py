@@ -79,6 +79,7 @@ from app.execution import list_runs as list_execution_runs
 from app.execution import start as start_execution_run
 from app.governance import ScopeService
 from app.graph import get_graph_store
+from app.graph.arcade_client import ArcadeDBUnavailable
 from app.hcag_adapter import HCAGAdapter
 from app.importers import NotConnectedError, get_importer, importer_statuses
 from app.ingestion.chat_import import DRIVE_KINDS, ImportIntent, parse_import
@@ -215,6 +216,8 @@ connector_sync = SyncEngine(
 
 
 def fail(exc: Exception):
+    if isinstance(exc, ArcadeDBUnavailable):
+        raise exc
     raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
