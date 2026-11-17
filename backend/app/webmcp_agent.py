@@ -24,7 +24,7 @@ from uuid import uuid4
 import httpx
 
 from app.core.config import settings
-from app.llm import llm_budget
+from app.llm import llm_budget, raise_if_cancelled
 from app.llm.providers import configured_model, generate_grounded_json
 
 MAX_STEPS = 8
@@ -178,6 +178,7 @@ class WebMCPAgentRunner:
         )
 
         for step_index in range(1, max_steps + 2):
+            raise_if_cancelled()
             # max_steps tool calls, then one turn that may only answer: a run
             # that spent every turn on tools used to end without an answer.
             remaining = max_steps - len(steps)
@@ -201,6 +202,7 @@ class WebMCPAgentRunner:
                     raise
             if not decision:
                 raise RuntimeError("The configured model did not return a usable decision.")
+            raise_if_cancelled()
             thought = str(decision.get("thought") or "")
             if decision.get("answer"):
                 answer = str(decision["answer"])
@@ -281,6 +283,7 @@ class WebMCPAgentRunner:
                 except Exception:
                     # A model failure cannot undo the already-filed proposal.
                     final_decision = None
+                raise_if_cancelled()
                 final_decision = final_decision if isinstance(final_decision, dict) else {}
                 answer = final_decision.get("answer")
                 if isinstance(answer, str) and answer.strip():

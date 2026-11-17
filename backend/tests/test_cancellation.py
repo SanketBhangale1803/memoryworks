@@ -17,8 +17,8 @@ from fastapi.testclient import TestClient
 
 from app.core import streams
 from app.core.config import settings
-from app.llm import AnswerCancelled, cancellable, providers
-from app.llm.limits import llm_slot, reset_limits
+from app.llm import AnswerCancelled, cancellable, providers, raise_if_cancelled
+from app.llm.limits import cancel_event, llm_slot, reset_limits
 
 
 def test_a_stopped_model_reply_closes_mid_body(monkeypatch):
@@ -139,3 +139,42 @@ def test_a_streamed_answer_ends_with_cancelled_when_stopped(graph, monkeypatch):
     assert events[0] == "start"
     assert events[-1] == "cancelled"
     assert 2 <= events.count("step") < 50
+
+
+def test_polled_agent_run_can_be_stopped_by_its_owner(graph, monkeypatch):
+    from app.api import org_routes
+    from app.main import app
+
+    started = threading.Event()
+
+    def slow_agent(**kwargs):
+        stop = cancel_event()
+        started.set()
+        assert stop is not None and stop.wait(5)
+        raise_if_cancelled()
+        raise AssertionError("A stopped Agent must not continue")
+
+    monkeypatch.setattr(org_routes.org_agent, "run", slow_agent)
+    client = TestClient(app)
+    login = client.post(
+        "/api/auth/dev-login", json={"email": "agent-stop@example.com", "display_name": "Owner"}
+    )
+    headers = {"Authorization": f"Bearer {login.json()['token']}"}
+    project = client.post("/api/projects", json={"name": "Stoppable agent"}, headers=headers)
+    run = client.post(
+        "/api/org/ask",
+        json={"question": "What should we do next?", "space_ids": [project.json()["id"]]},
+        headers=headers,
+    )
+    path = f"/api/org/ask/{run.json()['id']}"
+    assert started.wait(2)
+    assert client.post(f"{path}/cancel", headers=headers).json() == {"cancelled": True}
+
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline:
+        record = client.get(path, headers=headers).json()
+        if record["status"] != "running":
+            break
+        time.sleep(0.01)
+    assert record["status"] == "cancelled"
+    assert record["answer"] == ""

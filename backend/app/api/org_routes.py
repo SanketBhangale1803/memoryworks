@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import queue
 import time
-from threading import Thread
+from threading import Event, Thread
 
 from fastapi import APIRouter, Header, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -500,22 +500,28 @@ def _org_executor(principal: dict, space_ids: list[str]):
     return build_org_executor(orgops, resolve, search, propose)
 
 
-def _run_org_session(run_id: str, principal: dict, question: str, space_ids: list[str], model: str):
+def _run_org_session(
+    run_id: str, principal: dict, question: str, space_ids: list[str], model: str, stop: Event
+):
     def on_step(step: dict) -> None:
+        raise_if_cancelled()
         org_sessions.append_step(run_id, step)
 
     try:
-        result = org_agent.run(
-            principal=principal,
-            question=question,
-            model=model or None,
-            exec_tool=_org_executor(principal, space_ids),
-            list_spaces=lambda _: [
-                {"project_id": space["id"], "name": space["name"]}
-                for space in orgops.list_spaces(space_ids)
-            ],
-            on_step=on_step,
-        )
+        with cancellable(stop):
+            raise_if_cancelled()
+            result = org_agent.run(
+                principal=principal,
+                question=question,
+                model=model or None,
+                exec_tool=_org_executor(principal, space_ids),
+                list_spaces=lambda _: [
+                    {"project_id": space["id"], "name": space["name"]}
+                    for space in orgops.list_spaces(space_ids)
+                ],
+                on_step=on_step,
+            )
+            raise_if_cancelled()
         org_sessions.update(
             run_id,
             status="complete",
@@ -525,9 +531,13 @@ def _run_org_session(run_id: str, principal: dict, question: str, space_ids: lis
             thoughts=result.get("thoughts", []),
             mode=result.get("mode", "model"),
         )
+    except AnswerCancelled:
+        org_sessions.update(run_id, status="cancelled", error="Stopped")
     except Exception as exc:
         logger.exception("Organizational agent session failed")
         org_sessions.update(run_id, status="error", error=str(exc))
+    finally:
+        streams.close_stream(run_id)
 
 
 @org_router.post("/ask")
@@ -552,9 +562,10 @@ def ask_org(request: AskRequest, authorization: str | None = Header(default=None
         actor=str(principal["id"]),
         payload={"session_id": run_id, "spaces": len(space_ids)},
     )
+    stop = streams.open_stream(run_id, str(principal["id"]))
     Thread(
         target=_run_org_session,
-        args=(run_id, principal, request.question, space_ids, request.model or ""),
+        args=(run_id, principal, request.question, space_ids, request.model or "", stop),
         daemon=True,
     ).start()
     return org_sessions.get(run_id, principal.get("active_workspace_id", ""))
