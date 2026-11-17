@@ -40,10 +40,11 @@ ORG_AGENT_TOOLS: list[dict[str, Any]] = [
     {
         "name": "search_orgmemory_records",
         "description": (
-            "Search company memory by free text and optional type (decision, incident, "
-            "policy, dependency, ownership, fact, open_question). Use for a specific topic."
+            "Search company memory by free text, type (decision, incident, policy, "
+            "dependency, ownership, fact, open_question), or both. For all records of "
+            "a given type, pass memory_type and omit query."
         ),
-        "arguments": ["query", "memory_type (optional)", "limit (optional)"],
+        "arguments": ["query (optional)", "memory_type (optional)", "limit (optional)"],
     },
     {
         "name": "get_orgmemory_readiness",
@@ -258,12 +259,13 @@ def build_org_executor(
 
         if name == "search_orgmemory_records":
             query = _text(arguments.get("query"))
-            if not query:
-                raise ValueError("query is required")
+            memory_type = _text(arguments.get("memory_type")) or _text(arguments.get("type"))
+            if not query and not memory_type:
+                raise ValueError("Provide a query, a memory type, or both")
             data = search_records(
                 principal,
                 query,
-                _text(arguments.get("memory_type")),
+                memory_type,
                 _int(arguments.get("limit"), 10),
             )
             return f"{data['count']} matching memories.", data

@@ -131,16 +131,16 @@ def search_memory(
     memory_type: str = "",
     limit: int = Query(10, ge=1, le=50),
     authorization: str | None = Header(default=None),
+    type: str = "",
 ):
     """Same retrieval the product uses, exposed with the agent-facing shape."""
     principal = _authenticate(authorization)
     targets = _spaces(principal, space_ids)
-    single = targets[0] if len(targets) == 1 else ""
-    result = _memory_search_core(principal, query, project_id=single, type=memory_type, limit=limit)
+    result = _memory_search_core(
+        principal, query, type=memory_type or type, limit=limit, space_ids=targets
+    )
     results = [
-        {**orgops.public_memory(item), "score": item.get("score")}
-        for item in result["results"]
-        if not space_ids or item["project_id"] in targets
+        {**orgops.public_memory(item), "score": item.get("score")} for item in result["results"]
     ]
     return {
         "query": query,
@@ -478,11 +478,11 @@ def _org_executor(principal: dict, space_ids: list[str]):
         return space_ids
 
     def search(caller: dict, query: str, memory_type: str, limit: int) -> dict:
-        result = _memory_search_core(caller, query, type=memory_type, limit=limit)
+        result = _memory_search_core(
+            caller, query, type=memory_type, limit=limit, space_ids=space_ids
+        )
         results = [
-            {**orgops.public_memory(item), "score": item.get("score")}
-            for item in result["results"]
-            if item["project_id"] in space_ids
+            {**orgops.public_memory(item), "score": item.get("score")} for item in result["results"]
         ]
         return {"query": query, "count": len(results), "results": results}
 

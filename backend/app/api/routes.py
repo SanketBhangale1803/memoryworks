@@ -2667,26 +2667,20 @@ def _memory_search_core(
     project_id: str = "",
     type: str = "",
     limit: int = 10,
+    *,
+    space_ids: list[str] | None = None,
 ) -> dict:
     """Shared search core for the HTTP route and the WebMCP agent runner."""
     if type and type not in MEMORY_TYPES:
         raise HTTPException(400, f"Unknown memory type; use one of {sorted(MEMORY_TYPES)}")
-    workspace_id = principal.get("active_workspace_id", "")
     if project_id:
         _authorize_project_for_principal(principal, project_id)
         project_ids = [project_id]
     else:
-        visible = _visible_project_ids(principal)
-        if visible is not None:
-            project_ids = sorted(visible)
-        else:
-            project_ids = [
-                item["project_id"]
-                for item in rows(
-                    "SELECT project_id FROM workspace_projects WHERE workspace_id=?",
-                    (workspace_id,),
-                )
-            ]
+        project_ids = _authorized_space_ids(principal)
+        if space_ids is not None:
+            requested = set(space_ids)
+            project_ids = [item for item in project_ids if item in requested]
     team_ids = _principal_team_ids(principal)
     terms = [term for term in re.split(r"\W+", q.casefold()) if term]
     if not terms and not type:

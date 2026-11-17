@@ -8,11 +8,13 @@ review, Infrastructure's deploy dependency, and a meeting note filed in Launch.
 
 import pytest
 from fastapi import HTTPException
+from fastapi.testclient import TestClient
 
 from app.api.org_routes import (
     PlanOperation,
     PlanRequest,
     SeedRequest,
+    _org_executor,
     approve_plan,
     blockers,
     conflicts,
@@ -25,7 +27,9 @@ from app.api.org_routes import (
     reasoning_chain,
     seed_scenario,
 )
+from app.api.routes import _authenticate
 from app.auth.app_auth import create_dev_session, create_workspace, issue_session
+from app.main import app
 
 
 def _session(email: str, name: str, workspace_name: str) -> str:
@@ -73,6 +77,52 @@ def test_scenario_spreads_the_answer_across_spaces(scenario):
     # Every space carries memory; a space that answered everything would make
     # the cross-space reconstruction meaningless.
     assert all(space["memory_count"] > 0 for space in spaces["spaces"])
+
+
+def test_type_only_search_filters_spaces_before_limiting(scenario):
+    from app.api.org_routes import company_memory
+
+    header, seed = scenario
+    spaces = seed["space_ids"]
+    selected = [spaces["Product"], spaces["Engineering"]]
+    incident = company_memory.create(
+        selected[0],
+        "incident",
+        "Connection pool exhausted",
+        "Database pool hit capacity.",
+        [],
+        0.9,
+        {},
+    )
+    company_memory.create(
+        selected[1], "fact", "Pool limits", "The pool has a maximum capacity.", [], 0.9, {}
+    )
+    company_memory.create(
+        spaces["Security"],
+        "incident",
+        "Upload rejected",
+        "The scanner rejected a file.",
+        [],
+        0.9,
+        {},
+    )
+    with TestClient(app) as client:
+        for parameter in ("type", "memory_type"):
+            response = client.get(
+                "/api/org/search",
+                params={parameter: "incident", "space_ids": ",".join(selected), "limit": 1},
+                headers={"Authorization": header},
+            )
+            assert response.status_code == 200
+            assert [record["id"] for record in response.json()["results"]] == [incident["id"]]
+
+    principal = _authenticate(header)
+    execute = _org_executor(principal, selected)
+    for argument in ("type", "memory_type"):
+        _, result = execute(
+            principal, "search_orgmemory_records", {argument: "incident", "limit": 1}
+        )
+        assert [record["id"] for record in result["results"]] == [incident["id"]]
 
 
 def test_seeding_twice_does_not_duplicate_the_organization(scenario):
