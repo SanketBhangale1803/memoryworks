@@ -3,28 +3,20 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import Page from "@/components/Page";
-import { api } from "@/lib/api";
+import { api, errorMessage } from "@/lib/api";
+import type { AuthUser, WorkspaceMember } from "@/lib/types";
 
 /* Identity, membership, and — for whoever owns this workspace — its people.
    Adding a teammate here drops them straight into the company brain: they sign
    in with their own account, land inside this workspace, and their approval
    requests reach the admins inline in the chat. */
 
-type Member = {
-  id: string;
-  user_id?: string;
-  email: string;
-  display_name?: string;
-  role: string;
-  status: string;
-};
-
 const ROLES = ["member", "viewer", "admin", "owner"];
 
 export default function Account() {
-  const [user, setUser] = useState<any>();
+  const [user, setUser] = useState<AuthUser>();
   const [error, setError] = useState("");
-  const [members, setMembers] = useState<Member[]>([]);
+  const [members, setMembers] = useState<WorkspaceMember[]>([]);
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("member");
   const [busy, setBusy] = useState(false);
@@ -32,21 +24,22 @@ export default function Account() {
   const [peopleError, setPeopleError] = useState("");
 
   useEffect(() => {
-    api("/api/auth/me").then(setUser).catch((exc) => setError(exc.message));
+    api<AuthUser>("/api/auth/me").then(setUser).catch((exc) => setError(errorMessage(exc)));
   }, []);
 
   const isAdmin = Boolean(user && (user.role === "owner" || user.role === "admin"));
 
   useEffect(() => {
     if (!isAdmin || !user?.active_workspace_id) return;
-    api<Member[]>(`/api/workspaces/${user.active_workspace_id}/members`)
+    api<WorkspaceMember[]>(`/api/workspaces/${user.active_workspace_id}/members`)
       .then(setMembers)
       .catch(() => undefined);
   }, [isAdmin, user?.active_workspace_id]);
 
   async function loadMembers() {
+    if (!user?.active_workspace_id) return;
     try {
-      const items = await api<Member[]>(
+      const items = await api<WorkspaceMember[]>(
         `/api/workspaces/${user.active_workspace_id}/members`,
       );
       setMembers(items);
@@ -56,7 +49,7 @@ export default function Account() {
   }
 
   async function invite() {
-    if (!email.trim()) return;
+    if (!email.trim() || !user?.active_workspace_id) return;
     setBusy(true);
     setNote("");
     setPeopleError("");
@@ -76,8 +69,8 @@ export default function Account() {
           : `Added ${invited}. No mail server is configured, so share ${window.location.origin}/login with them — signing in with that email drops them straight into this workspace.`,
       );
       await loadMembers();
-    } catch (exc: any) {
-      setPeopleError(exc.message);
+    } catch (exc) {
+      setPeopleError(errorMessage(exc));
     } finally {
       setBusy(false);
     }
@@ -99,7 +92,7 @@ export default function Account() {
               <span>
                 {(user.display_name || "?")
                   .split(/\s+/)
-                  .map((part: string) => part[0])
+                  .map((part) => part[0])
                   .join("")
                   .slice(0, 2)
                   .toUpperCase()}
@@ -118,7 +111,7 @@ export default function Account() {
             <section className="card">
               <div className="section-head"><div><span className="panel-label">Workspace access</span><h2>Memberships</h2></div></div>
               <div>
-                {user.workspaces.map((workspace: any) => (
+                {(user.workspaces || []).map((workspace) => (
                   <div className="workspace-row" key={workspace.id}>
                     <div>
                       <strong>{workspace.name}</strong>

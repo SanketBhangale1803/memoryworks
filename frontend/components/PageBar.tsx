@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { openCommandMenu } from "@/components/CommandMenu";
 import { NavToggle } from "@/components/WorkspaceFrame";
 import { api } from "@/lib/api";
+import type { Connector } from "@/lib/types";
 import { destinationFor, hubTabs } from "@/lib/workspaceMap";
 
 /* The bar on top of every page that is not the chat: which page this is, the
@@ -18,7 +19,7 @@ export default function PageBar({ pathname }: { pathname: string }) {
   useEffect(() => {
     if (destination?.group !== "Sources") return;
     let live = true;
-    api<any[]>("/api/connectors")
+    api<Connector[]>("/api/connectors")
       .then((items) => {
         if (live) setConnected({ on: items.filter((item) => item.connected).length, total: items.length });
       })

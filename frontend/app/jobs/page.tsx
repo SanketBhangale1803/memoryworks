@@ -2,14 +2,15 @@
 
 import { useEffect, useState } from "react";
 import Page from "@/components/Page";
-import { api, formatDate } from "@/lib/api";
+import { api, errorMessage, formatDate } from "@/lib/api";
+import type { IngestJob } from "@/lib/types";
 
 export default function IngestionJobs() {
-  const [jobs, setJobs] = useState<any[]>([]);
+  const [jobs, setJobs] = useState<IngestJob[]>([]);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    api<any[]>("/api/ingest/jobs").then(setJobs).catch((exc) => setError(exc.message));
+    api<IngestJob[]>("/api/ingest/jobs").then(setJobs).catch((exc) => setError(errorMessage(exc)));
   }, []);
 
   return (

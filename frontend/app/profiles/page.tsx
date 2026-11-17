@@ -1,35 +1,56 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Page from "@/components/Page";
-import { api } from "@/lib/api";
+import { api, errorMessage } from "@/lib/api";
+import type { Project } from "@/lib/types";
+
+type ProfileItem = { content?: string };
+type ProjectProfile = {
+  name?: string;
+  sources?: unknown[];
+  current_facts?: ProfileItem[];
+  decisions?: ProfileItem[];
+  policies?: ProfileItem[];
+  procedures?: ProfileItem[];
+  owners?: ProfileItem[];
+  dependencies?: ProfileItem[];
+};
+
+type AgentSkill = {
+  id: string;
+  name: string;
+  version?: string;
+  status: string;
+  spec: { steps: unknown[]; policies: unknown[]; evidence: unknown[] };
+};
 
 export default function Profiles() {
-  const [projects, setProjects] = useState<any[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [project, setProject] = useState("");
-  const [profile, setProfile] = useState<any>();
-  const [skills, setSkills] = useState<any[]>([]);
+  const [profile, setProfile] = useState<ProjectProfile>();
+  const [skills, setSkills] = useState<AgentSkill[]>([]);
   const [skillName, setSkillName] = useState("company-workflow");
   const [error, setError] = useState("");
 
   useEffect(() => {
-    api<any[]>("/api/projects").then(items => {
+    api<Project[]>("/api/projects").then(items => {
       setProjects(items);
       if (items[0]) setProject(items[0].id);
-    }).catch(exc => setError(exc.message));
+    }).catch(exc => setError(errorMessage(exc)));
   }, []);
 
-  async function refresh(activeProject = project) {
+  const refresh = useCallback(async (activeProject = project) => {
     if (!activeProject) return;
     const [nextProfile, nextSkills] = await Promise.all([
-      api(`/api/memory/profiles/project/${activeProject}`),
-      api<any[]>(`/api/memory/skills?project_id=${activeProject}`),
+      api<ProjectProfile>(`/api/memory/profiles/project/${activeProject}`),
+      api<AgentSkill[]>(`/api/memory/skills?project_id=${activeProject}`),
     ]);
     setProfile(nextProfile);
     setSkills(nextSkills);
-  }
+  }, [project]);
 
-  useEffect(() => { refresh(project).catch(exc => setError(exc.message)); }, [project]);
+  useEffect(() => { refresh(project).catch(exc => setError(errorMessage(exc))); }, [project, refresh]);
 
   async function compileSkill() {
     setError("");
@@ -39,10 +60,10 @@ export default function Profiles() {
         body: JSON.stringify({project_id: project, name: skillName}),
       });
       await refresh();
-    } catch (exc: any) { setError(exc.message); }
+    } catch (exc) { setError(errorMessage(exc)); }
   }
 
-  const groups = [
+  const groups: [string, ProfileItem[] | undefined][] = [
     ["Current facts", profile?.current_facts],
     ["Remembered decisions", profile?.decisions],
     ["Policies", profile?.policies],
@@ -55,7 +76,7 @@ export default function Profiles() {
     {error && <div className="notice error">{error}</div>}
     <section className="panel">
       <div className="panel-head"><div><span className="panel-label">Dynamic project profile</span><h2>{profile?.name || "Select a project"}</h2></div><span>{profile?.sources?.length || 0} sources</span></div>
-      <div className="panel-body grid two">{groups.map(([label, items]: any) => <article className="card card-pad" key={label}><span className="panel-label">{label}</span><h2>{items?.length || 0}</h2><p>{items?.[0]?.content || "No current source-backed memory in this category."}</p></article>)}</div>
+      <div className="panel-body grid two">{groups.map(([label, items]) => <article className="card card-pad" key={label}><span className="panel-label">{label}</span><h2>{items?.length || 0}</h2><p>{items?.[0]?.content || "No current source-backed memory in this category."}</p></article>)}</div>
     </section>
     <section className="panel">
       <div className="panel-head"><div><span className="panel-label">Executable company knowledge</span><h2>Agent skill specs</h2></div><div className="row"><input value={skillName} onChange={event => setSkillName(event.target.value)} aria-label="Skill name"/><button className="button secondary" onClick={compileSkill} disabled={!project || !skillName.trim()}>Compile from memory</button></div></div>

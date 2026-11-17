@@ -11,9 +11,10 @@ import { IMPORT_HINT, ImportTurn, type ChatImport } from "@/components/ImportTur
 import MarkdownAnswer from "@/components/MarkdownAnswer";
 import { NavToggle } from "@/components/WorkspaceFrame";
 import { useWorkspaceTools } from "@/hooks/useWorkspaceTools";
-import { AnswerStopped, API, api } from "@/lib/api";
+import { AnswerStopped, API, api, errorMessage } from "@/lib/api";
 import { orgApi, type OrgAgentSession, type OrgPlan } from "@/lib/orgTools";
 import { newThreadId, threads, titleFrom, useThreads, type ThreadMode } from "@/lib/threads";
+import type { AuthUser, Connector, EvidencePanelState, IngestJob } from "@/lib/types";
 import type { MemoryWorksUnit } from "@/lib/webmcp";
 
 /* The one window.
@@ -134,7 +135,7 @@ function threadHistory(turns: Turn[]) {
   return history;
 }
 
-export default function WorkspaceChat({ user }: { user: any }) {
+export default function WorkspaceChat({ user }: { user?: AuthUser }) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [project, setProject] = useState("");
@@ -150,7 +151,7 @@ export default function WorkspaceChat({ user }: { user: any }) {
   const [inFlight, setInFlight] = useState<AbortController | null>(null);
   const [loadError, setLoadError] = useState("");
   const [copied, setCopied] = useState("");
-  const [evidence, setEvidence] = useState<any>(null);
+  const [evidence, setEvidence] = useState<EvidencePanelState | null>(null);
   const [followups, setFollowups] = useState<string[]>([]);
   const [github, setGithub] = useState(false);
   const [importing, setImporting] = useState(0);
@@ -189,10 +190,10 @@ export default function WorkspaceChat({ user }: { user: any }) {
         if (preferred) setModel(preferred.id);
       })
       .catch(() => undefined);
-    api<any[]>("/api/connectors")
+    api<Connector[]>("/api/connectors")
       .then((items) => setGithub(items.some((item) => item.provider === "github" && item.connected)))
       .catch(() => undefined);
-    api<any[]>("/api/ingest/jobs")
+    api<IngestJob[]>("/api/ingest/jobs")
       .then((jobs) => setImporting(jobs.filter((job) => job.status === "running" || job.status === "queued").length))
       .catch(() => undefined);
     const pendingQuestion = window.sessionStorage.getItem("memoryworks.pending-question");
@@ -350,15 +351,15 @@ export default function WorkspaceChat({ user }: { user: any }) {
         void suggestNext(question, response.answer, (response.memory_units || []).map((unit) => unit.subject));
       }
       return response;
-    } catch (error: any) {
+    } catch (error) {
       // Keep the steps it got through: where an answer stopped is the first
       // thing anyone needs to know about why it failed.
       const stopped = error instanceof AnswerStopped || controller.signal.aborted;
       patchTurn(threadId, index, {
-        ...(stopped ? { stopped: true, partial: trace.draft } : { error: error.message }),
+        ...(stopped ? { stopped: true, partial: trace.draft } : { error: errorMessage(error) }),
         trace: trace.steps.length ? { ...trace, draft: "", ms: Date.now() - trace.started } : undefined,
       });
-      throw stopped ? new AnswerStopped() : error;
+      throw stopped ? new AnswerStopped() : new Error(errorMessage(error));
     } finally {
       setLive(null);
       setInFlight(null);
@@ -396,7 +397,7 @@ export default function WorkspaceChat({ user }: { user: any }) {
         },
       });
       void suggestNext(question, session.answer, session.steps.map((step) => step.summary));
-    } catch (error: any) {
+    } catch (error) {
       if (error instanceof AnswerStopped || controller.signal.aborted) {
         // Keep the steps it took; the run is marked stopped, not failed.
         const session: OrgAgentSession | undefined = latest ? { ...latest, status: "cancelled" } : undefined;
@@ -408,7 +409,7 @@ export default function WorkspaceChat({ user }: { user: any }) {
       }
       patchTurn(threadId, index, {
         agent: { steps: [], done: true },
-        error: error?.message || "The agent could not finish.",
+        error: errorMessage(error) || "The agent could not finish.",
       });
     } finally {
       setInFlight(null);
@@ -461,12 +462,14 @@ export default function WorkspaceChat({ user }: { user: any }) {
       const decided = approve ? await orgApi.approvePlan(plan.id) : await orgApi.rejectPlan(plan.id);
       threads.update(threadId, (current) => ({
         ...current,
-        turns: current.turns.map((turn: Turn, position) =>
-          position === index && turn.agent ? { ...turn, agent: { ...turn.agent, plan: decided } } : turn,
-        ),
+        turns: current.turns.map((turn, position) => {
+          if (position !== index) return turn;
+          const prior = turn.agent as AgentState | undefined;
+          return prior ? { ...turn, agent: { ...prior, plan: decided } } : turn;
+        }),
       }));
-    } catch (error: any) {
-      patchTurn(threadId, index, { error: error.message });
+    } catch (error) {
+      patchTurn(threadId, index, { error: errorMessage(error) });
     }
   }
 
@@ -474,8 +477,8 @@ export default function WorkspaceChat({ user }: { user: any }) {
     setEvidence({ loading: true });
     try {
       setEvidence(await orgApi.provenance(memoryId));
-    } catch (error: any) {
-      setEvidence({ error: error?.message || "That memory is no longer available." });
+    } catch (error) {
+      setEvidence({ error: errorMessage(error) || "That memory is no longer available." });
     }
   }
 
@@ -499,7 +502,7 @@ export default function WorkspaceChat({ user }: { user: any }) {
     ask: async (question, projectId, requestedScope) => {
       setProject(projectId);
       setScope(requestedScope);
-      return (await askMemory(question, projectId, "webmcp", requestedScope)) as any;
+      return askMemory(question, projectId, "webmcp", requestedScope);
     },
   });
 
@@ -1004,8 +1007,8 @@ function AnswerBlock({
           body: JSON.stringify({ project_id: project, handoff: answer.handoff, context_event_id: answer.context_event_id }),
         }),
       );
-    } catch (error: any) {
-      setRunError(error.message);
+    } catch (error) {
+      setRunError(errorMessage(error));
     }
   }
 

@@ -2,20 +2,21 @@
 
 import { useEffect, useState } from "react";
 import Page from "@/components/Page";
-import { api, formatDate } from "@/lib/api";
+import { api, errorMessage, formatDate } from "@/lib/api";
+import type { ApiKey, CreatedApiKey } from "@/lib/types";
 
 export default function Keys() {
-  const [keys, setKeys] = useState<any[]>();
+  const [keys, setKeys] = useState<ApiKey[]>();
   const [name, setName] = useState("");
-  const [created, setCreated] = useState<any>();
+  const [created, setCreated] = useState<CreatedApiKey>();
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
 
   async function load() {
     try {
-      setKeys(await api("/api/keys"));
-    } catch (requestError: any) {
-      setError(requestError.message);
+      setKeys(await api<ApiKey[]>("/api/keys"));
+    } catch (requestError) {
+      setError(errorMessage(requestError));
     }
   }
   useEffect(() => { load(); }, []);
@@ -23,12 +24,12 @@ export default function Keys() {
   async function create() {
     setError("");
     try {
-      const result: any = await api("/api/keys", {method:"POST", body:JSON.stringify({name})});
+      const result = await api<CreatedApiKey>("/api/keys", {method:"POST", body:JSON.stringify({name})});
       setCreated(result);
       setName("");
       load();
-    } catch (requestError: any) {
-      setError(requestError.message);
+    } catch (requestError) {
+      setError(errorMessage(requestError));
     }
   }
 
@@ -47,8 +48,8 @@ export default function Keys() {
     try {
       await api(`/api/keys/${id}`, {method:"DELETE"});
       load();
-    } catch (requestError: any) {
-      setError(requestError.message);
+    } catch (requestError) {
+      setError(errorMessage(requestError));
     }
   }
 

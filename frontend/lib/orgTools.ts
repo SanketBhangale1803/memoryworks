@@ -4,6 +4,7 @@ import {
   demoFollowups,
   demoOrgRequest,
   OFFLINE_DEMO_MODE,
+  type DemoBody,
 } from "@/lib/demoMemory";
 
 /**
@@ -22,7 +23,34 @@ export type OrgToolKind = "read" | "gated-write";
 
 export type OrgToolResult = {
   summary: string;
-  data: Record<string, unknown>;
+  data: unknown;
+};
+
+/* Every tool accepts a JSON object; these are the fields the handlers use.
+   Unknown extras stay available for schemas that grow before this type does. */
+export type OrgToolInput = {
+  space_ids?: string[];
+  since?: string;
+  assignee?: string;
+  priority?: string;
+  status?: string;
+  task_id?: string;
+  topic?: string;
+  max_age_days?: number;
+  memory_id?: string;
+  object_id?: string;
+  query?: string;
+  person_id?: string;
+  summary?: string;
+  space_id?: string;
+  conflict_id?: string;
+  operations?: Record<string, unknown>[];
+  title?: string;
+  description?: string;
+  owner?: string;
+  source_memory_ids?: string[];
+  reason?: string;
+  [key: string]: unknown;
 };
 
 export type OrgTool = {
@@ -33,7 +61,7 @@ export type OrgTool = {
   /** What this call replaces when a person does it by hand. */
   manualEquivalent: string;
   inputSchema: Record<string, unknown>;
-  run: (input: Record<string, any>) => Promise<OrgToolResult>;
+  run: (input: OrgToolInput) => Promise<OrgToolResult>;
 };
 
 /* ------------------------------------------------------------------ types */
@@ -194,6 +222,41 @@ export type OrgAgentSession = {
   error: string;
 };
 
+export type OrgPerson = {
+  id: string;
+  name: string;
+  role?: string;
+  owns?: string[];
+  open_tasks?: OrgTask[];
+};
+
+export type OrgProvenance = {
+  memory: {
+    id: string;
+    type: string;
+    title?: string;
+    subject?: string;
+    content: string;
+    confidence?: number;
+    space_name?: string;
+  };
+  sources: { id?: string; title?: string; url?: string; type?: string; status?: string }[];
+  relations: { target_id?: string; target_title?: string; type?: string }[];
+};
+
+export type OrgDependencyGraph = {
+  node_count: number;
+  edge_count: number;
+  nodes: unknown[];
+  edges: { from: string; to: string; type: string }[];
+};
+
+export type OrgOwner = {
+  object_id?: string;
+  owner?: string;
+  evidence?: string[];
+};
+
 export type OrgProjectContext = {
   spaces: OrgSpace[];
   memory_count: number;
@@ -224,7 +287,7 @@ const get = <T,>(path: string, params: Record<string, unknown> = {}) =>
 
 const post = <T,>(path: string, body: unknown) =>
   OFFLINE_DEMO_MODE
-    ? demoOrgRequest<T>("POST", path, {}, body)
+    ? demoOrgRequest<T>("POST", path, {}, body as DemoBody)
     : api<T>(`/api/org${path}`, { method: "POST", body: JSON.stringify(body) });
 
 function plural(count: number, one: string, many = `${one}s`) {
@@ -267,20 +330,17 @@ export const orgApi = {
       `/tasks/${taskId}/dependencies`,
     ),
   people: (queryText = "", personId = "", spaceIds?: string[]) =>
-    get<{ count: number; people: any[] }>("/people", {
+    get<{ count: number; people: OrgPerson[] }>("/people", {
       query: queryText,
       person_id: personId,
       space_ids: spaceIds,
     }),
-  owner: (objectId: string) => get<any>(`/owner/${objectId}`),
-  provenance: (memoryId: string) => get<any>(`/provenance/${memoryId}`),
+  owner: (objectId: string) => get<OrgOwner>(`/owner/${objectId}`),
+  provenance: (memoryId: string) => get<OrgProvenance>(`/provenance/${memoryId}`),
   reasoningChain: (topic: string, spaceIds?: string[]) =>
     get<OrgReasoningChain>("/reasoning-chain", { topic, space_ids: spaceIds }),
   dependencyGraph: (spaceIds?: string[]) =>
-    get<{ node_count: number; edge_count: number; nodes: any[]; edges: any[] }>(
-      "/dependency-graph",
-      { space_ids: spaceIds },
-    ),
+    get<OrgDependencyGraph>("/dependency-graph", { space_ids: spaceIds }),
   blockers: (spaceIds?: string[]) =>
     get<{ count: number; blockers: OrgBlocker[] }>("/blockers", { space_ids: spaceIds }),
   conflicts: (spaceIds?: string[], topic = "") =>
@@ -300,7 +360,7 @@ export const orgApi = {
   plans: (status = "") => get<{ count: number; plans: OrgPlan[] }>("/plans", { status }),
   approvePlan: (planId: string) => post<OrgPlan>(`/plans/${planId}/approve`, {}),
   rejectPlan: (planId: string) => post<OrgPlan>(`/plans/${planId}/reject`, {}),
-  seedScenario: (reset = false) => post<any>("/scenario/seed", { reset }),
+  seedScenario: (reset = false) => post<Record<string, unknown>>("/scenario/seed", { reset }),
   ask: (question: string, spaceIds: string[]) =>
     post<OrgAgentSession>("/ask", { question, space_ids: spaceIds }),
   askStatus: (runId: string) => get<OrgAgentSession>(`/ask/${runId}`),
@@ -335,7 +395,7 @@ export const orgApi = {
   ): Promise<OrgAgentSession> => {
     const publish = (session: OrgAgentSession) => onSession({ ...session, steps: [...session.steps] });
     if (OFFLINE_DEMO_MODE) {
-      return (await demoAgentSession(question, spaceIds, publish as (session: any) => void)) as OrgAgentSession;
+      return await demoAgentSession(question, spaceIds, publish);
     }
     const state: { session: OrgAgentSession | null } = { session: null };
     // An Agent run outlives a dropped connection on purpose, so Stop must say so.
@@ -483,7 +543,7 @@ export const orgApi = {
     post<{ id: string; status: string }>(`/watches/${watchId}/findings/${findingId}/resolve`, {}),
   deleteWatch: (watchId: string) =>
     OFFLINE_DEMO_MODE
-      ? demoOrgRequest("DELETE", `/watches/${watchId}`)
+      ? demoOrgRequest<unknown>("DELETE", `/watches/${watchId}`)
       : api(`/api/org/watches/${watchId}`, { method: "DELETE" }),
 };
 
@@ -534,7 +594,7 @@ export const ORG_TOOLS: Record<string, OrgTool> = {
     },
     run: async (input) => {
       const data = await orgApi.recentChanges(input.since || "", input.space_ids);
-      return { summary: `${plural(data.count, "change")} on record.`, data: data as any };
+      return { summary: `${plural(data.count, "change")} on record.`, data };
     },
   },
 
@@ -562,7 +622,7 @@ export const ORG_TOOLS: Record<string, OrgTool> = {
         input.priority || "",
         input.status || "",
       );
-      return { summary: `${plural(data.count, "open item")}.`, data: data as any };
+      return { summary: `${plural(data.count, "open item")}.`, data };
     },
   },
 
@@ -579,10 +639,10 @@ export const ORG_TOOLS: Record<string, OrgTool> = {
       additionalProperties: false,
     },
     run: async (input) => {
-      const data = await orgApi.taskDependencies(input.task_id);
+      const data = await orgApi.taskDependencies(String(input.task_id || ""));
       return {
         summary: `${plural(data.requires.length, "prerequisite")}, ${plural(data.required_by.length, "dependent item")}.`,
-        data: data as any,
+        data,
       };
     },
   },
@@ -599,7 +659,7 @@ export const ORG_TOOLS: Record<string, OrgTool> = {
       const data = await orgApi.dependencyGraph(input.space_ids);
       return {
         summary: `${plural(data.node_count, "work item")}, ${plural(data.edge_count, "dependency", "dependencies")}.`,
-        data: data as any,
+        data,
       };
     },
   },
@@ -619,7 +679,7 @@ export const ORG_TOOLS: Record<string, OrgTool> = {
         summary: data.count
           ? `${plural(data.count, "blocker")} — ${top.task.title} (${top.severity}), holding ${plural(top.blocks.length, "item")}.`
           : "Nothing is blocking.",
-        data: data as any,
+        data,
       };
     },
   },
@@ -643,7 +703,7 @@ export const ORG_TOOLS: Record<string, OrgTool> = {
         summary: data.count
           ? `${plural(data.count, "conflict")} — “${top.task.title}” is ${top.tracked_state}, but ${top.source.space_name} already settled it.`
           : "No contradictions found.",
-        data: data as any,
+        data,
       };
     },
   },
@@ -665,7 +725,7 @@ export const ORG_TOOLS: Record<string, OrgTool> = {
     },
     run: async (input) => {
       const data = await orgApi.stale(input.topic || "", input.max_age_days || 90, input.space_ids);
-      return { summary: `${plural(data.count, "aging record")}.`, data: data as any };
+      return { summary: `${plural(data.count, "aging record")}.`, data };
     },
   },
 
@@ -681,7 +741,7 @@ export const ORG_TOOLS: Record<string, OrgTool> = {
       const data = await orgApi.readiness(input.space_ids);
       return {
         summary: `${data.status} — ${plural(data.blocker_count, "blocker")}, ${plural(data.checklist.length, "checklist item")}.`,
-        data: data as any,
+        data,
       };
     },
   },
@@ -700,10 +760,10 @@ export const ORG_TOOLS: Record<string, OrgTool> = {
       additionalProperties: false,
     },
     run: async (input) => {
-      const data = await orgApi.reasoningChain(input.topic, input.space_ids);
+      const data = await orgApi.reasoningChain(String(input.topic || ""), input.space_ids);
       return {
         summary: `${plural(data.steps.length, "step")} of recorded reasoning, ${plural(data.edges.length, "link")}.`,
-        data: data as any,
+        data,
       };
     },
   },
@@ -722,7 +782,7 @@ export const ORG_TOOLS: Record<string, OrgTool> = {
       additionalProperties: false,
     },
     run: async (input) => {
-      const data = await orgApi.provenance(input.memory_id);
+      const data = await orgApi.provenance(String(input.memory_id || ""));
       return {
         summary: `${plural(data.sources.length, "source")}, ${plural(data.relations.length, "relationship")}.`,
         data,
@@ -744,7 +804,7 @@ export const ORG_TOOLS: Record<string, OrgTool> = {
     },
     run: async (input) => {
       const data = await orgApi.people(input.query || "", input.person_id || "", input.space_ids);
-      return { summary: `${plural(data.count, "person", "people")}.`, data: data as any };
+      return { summary: `${plural(data.count, "person", "people")}.`, data };
     },
   },
 
@@ -761,7 +821,7 @@ export const ORG_TOOLS: Record<string, OrgTool> = {
       additionalProperties: false,
     },
     run: async (input) => {
-      const data = await orgApi.owner(input.object_id);
+      const data = await orgApi.owner(String(input.object_id || ""));
       return { summary: data.owner ? `Owner: ${data.owner}.` : "No recorded owner.", data };
     },
   },
@@ -827,10 +887,10 @@ export const ORG_TOOLS: Record<string, OrgTool> = {
         spaceId = spaceId || conflict.task.space_id;
         summary = summary || `Reconcile “${conflict.task.title}” with the record that settled it`;
       }
-      const plan = await orgApi.proposePlan(summary, operations || [], spaceId);
+      const plan = await orgApi.proposePlan(summary || "", operations || [], spaceId);
       return {
         summary: `${plural(plan.operations.length, "change")} proposed and waiting for a person. Nothing applied.`,
-        data: plan as any,
+        data: plan,
       };
     },
   },
@@ -859,9 +919,9 @@ export const ORG_TOOLS: Record<string, OrgTool> = {
       const plan = await orgApi.proposePlan(
         `Create task: ${input.title}`,
         [{ ...input, op: "create_task" }],
-        input.space_id,
+        String(input.space_id || ""),
       );
-      return { summary: "Task proposed. Waiting for approval.", data: plan as any };
+      return { summary: "Task proposed. Waiting for approval.", data: plan };
     },
   },
 
@@ -890,7 +950,7 @@ export const ORG_TOOLS: Record<string, OrgTool> = {
         input.reason || "Update a tracked work item",
         [{ ...input, op: "update_task" }],
       );
-      return { summary: "Update proposed. Waiting for approval.", data: plan as any };
+      return { summary: "Update proposed. Waiting for approval.", data: plan };
     },
   },
 };

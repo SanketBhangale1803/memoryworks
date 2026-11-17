@@ -278,7 +278,7 @@ test("sources read as one hub where every provider has one next step", () => {
   for (const href of ["/connectors", "/ingest", "/jobs", "/integrations", "/keys"]) {
     assert.match(map, new RegExp(`href: "${href}",[^}]*group: "Sources"`));
   }
-  assert.match(sources, /function toCards\(connectors: any\[\], catalog: any\[\]\)/);
+  assert.match(sources, /function toCards\(connectors: Connector\[\], catalog: ConnectorCatalogEntry\[\]\)/);
   assert.match(sources, /params\.get\("connected"\)/);
   assert.match(sources, /Choose what to import/);
   assert.match(ingest, /get\("source"\)/);

@@ -2,31 +2,55 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Page from "@/components/Page";
-import { api } from "@/lib/api";
+import { api, errorMessage } from "@/lib/api";
 
 type Project = { id: string; name: string };
+type GraphNode = {
+  id: string;
+  node_type: string;
+  name?: string;
+  path?: string;
+  filename?: string;
+  source_title?: string;
+  [key: string]: unknown;
+};
+type GraphEdge = { from_id?: string; to_id?: string; relationship?: string };
+type GraphService = { id: string; name: string };
+type GraphFile = { id?: string; path?: string; language?: string; summary?: string };
 type GraphSummary = {
   project_id: string;
   node_counts: Record<string, number>;
   edge_counts: Record<string, number>;
   total_nodes: number;
   total_edges: number;
-  services: any[];
-  files: any[];
+  services: GraphService[];
+  files: GraphFile[];
 };
-type GraphView = { summary: GraphSummary; nodes: any[]; edges: any[] };
+type GraphView = { summary: GraphSummary; nodes: GraphNode[]; edges: GraphEdge[] };
+type ServiceGraph = {
+  edges?: GraphEdge[];
+  evidence?: { chunk_id?: string; source_title?: string; snippet?: string }[];
+};
+type BlastRadius = {
+  service_name?: string;
+  dependencies: string[];
+  env_vars: string[];
+  direct_dependents: string[];
+  second_hop_dependents: string[];
+  impact_statements: string[];
+};
 
 export default function RepoGraph() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState("");
   const [summary, setSummary] = useState<GraphSummary | null>(null);
-  const [nodes, setNodes] = useState<any[]>([]);
-  const [edges, setEdges] = useState<any[]>([]);
+  const [nodes, setNodes] = useState<GraphNode[]>([]);
+  const [edges, setEdges] = useState<GraphEdge[]>([]);
   const [nodeType, setNodeType] = useState("");
   const [selectedService, setSelectedService] = useState("");
-  const [serviceGraph, setServiceGraph] = useState<any | null>(null);
-  const [radius, setRadius] = useState<any | null>(null);
-  const [selectedNode, setSelectedNode] = useState<any | null>(null);
+  const [serviceGraph, setServiceGraph] = useState<ServiceGraph | null>(null);
+  const [radius, setRadius] = useState<BlastRadius | null>(null);
+  const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -48,7 +72,7 @@ export default function RepoGraph() {
         setEdges(view.edges);
         setSelectedService(view.summary.services?.[0]?.name || "");
       })
-      .catch((exc) => setError(exc.message))
+      .catch((exc) => setError(errorMessage(exc)))
       .finally(() => setLoading(false));
   }, [projectId]);
 
@@ -57,10 +81,10 @@ export default function RepoGraph() {
       setServiceGraph(null);
       return;
     }
-    api(`/api/projects/${projectId}/graph/service/${encodeURIComponent(selectedService)}`)
+    api<ServiceGraph>(`/api/projects/${projectId}/graph/service/${encodeURIComponent(selectedService)}`)
       .then(setServiceGraph)
       .catch(() => setServiceGraph(null));
-    api(`/api/projects/${projectId}/graph/blast-radius/${encodeURIComponent(selectedService)}`)
+    api<BlastRadius>(`/api/projects/${projectId}/graph/blast-radius/${encodeURIComponent(selectedService)}`)
       .then(setRadius)
       .catch(() => setRadius(null));
   }, [projectId, selectedService]);
@@ -156,7 +180,7 @@ export default function RepoGraph() {
                       <span className="subtle">Evidence chunks</span>
                       <strong>{serviceGraph.evidence?.length || 0}</strong>
                     </div>
-                    {serviceGraph.evidence?.slice(0, 2).map((item: any) => (
+                    {serviceGraph.evidence?.slice(0, 2).map((item) => (
                       <div className="source" key={item.chunk_id}>
                         <strong>{item.source_title}</strong>
                         <p>{item.snippet}</p>
@@ -180,7 +204,7 @@ export default function RepoGraph() {
                 <div className="stack">
                   <h3>Depends on</h3>
                   {radius.dependencies.length ? (
-                    radius.dependencies.map((name: string) => (
+                    radius.dependencies.map((name) => (
                       <span className="badge info" key={name}>{name}</span>
                     ))
                   ) : (
@@ -188,7 +212,7 @@ export default function RepoGraph() {
                   )}
                   <h3>Env vars</h3>
                   {radius.env_vars.length ? (
-                    radius.env_vars.map((name: string) => <code key={name}>{name}</code>)
+                    radius.env_vars.map((name) => <code key={name}>{name}</code>)
                   ) : (
                     <p className="subtle">No env var edges</p>
                   )}
@@ -196,7 +220,7 @@ export default function RepoGraph() {
                 <div className="stack">
                   <h3>Direct dependents</h3>
                   {radius.direct_dependents.length ? (
-                    radius.direct_dependents.map((name: string) => (
+                    radius.direct_dependents.map((name) => (
                       <span className="badge warning" key={name}>{name}</span>
                     ))
                   ) : (
@@ -204,7 +228,7 @@ export default function RepoGraph() {
                   )}
                   <h3>Second hop</h3>
                   {radius.second_hop_dependents.length ? (
-                    radius.second_hop_dependents.map((name: string) => (
+                    radius.second_hop_dependents.map((name) => (
                       <span className="badge" key={name}>{name}</span>
                     ))
                   ) : (
@@ -213,7 +237,7 @@ export default function RepoGraph() {
                 </div>
                 <div className="stack">
                   <h3>Impact</h3>
-                  {radius.impact_statements.map((line: string) => (
+                  {radius.impact_statements.map((line) => (
                     <p className="subtle" key={line}>• {line}</p>
                   ))}
                 </div>
@@ -310,8 +334,8 @@ export default function RepoGraph() {
                     <td>
                       <code>{node.id}</code>
                     </td>
-                    <td>{node.name || node.path || node.source_title || node.route || "—"}</td>
-                    <td className="subtle">{node.summary || node.command || node.pattern || "—"}</td>
+                    <td>{String(node.name || node.path || node.source_title || node.route || "—")}</td>
+                    <td className="subtle">{String(node.summary || node.command || node.pattern || "—")}</td>
                   </tr>
                 ))}
               </tbody>
@@ -331,10 +355,10 @@ function EvidenceGraph({
   selected,
   onSelect,
 }: {
-  nodes: any[];
-  edges: any[];
-  selected: any | null;
-  onSelect: (node: any) => void;
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  selected: GraphNode | null;
+  onSelect: (node: GraphNode) => void;
 }) {
   const graph = useMemo(() => {
     const records = new Map(nodes.map((node) => [String(node.id), node]));
@@ -454,7 +478,7 @@ function inferNodeType(id: string) {
   return "ConnectedNode";
 }
 
-function graphNodeLabel(node: any) {
+function graphNodeLabel(node: GraphNode) {
   const value = node.name || node.path || node.filename || node.source_title || node.id;
   const label = String(value).split("/").pop() || String(value);
   return label.length > 28 ? `${label.slice(0, 26)}…` : label;

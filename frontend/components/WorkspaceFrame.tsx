@@ -6,7 +6,10 @@ import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { BrandMark } from "@/components/BrandLogo";
 import CommandMenu, { openCommandMenu, useCommandMenu } from "@/components/CommandMenu";
 import { api } from "@/lib/api";
+import type { OrgPlan } from "@/lib/orgTools";
 import { threads, useThreads } from "@/lib/threads";
+import type { ApiKey, AuthUser, Connector, Project, WorkspaceMember } from "@/lib/types";
+import type { MemoryWorksProposal, MemoryWorksRefreshRequest } from "@/lib/webmcp";
 import { SIDEBAR_PLACES, destinationFor } from "@/lib/workspaceMap";
 
 /* The signed-in frame, laid out like an editor's: a short sidebar of places,
@@ -40,7 +43,7 @@ export default function WorkspaceFrame({
   ownsCommandMenu,
   children,
 }: {
-  user: any;
+  user: AuthUser;
   /* The chat mounts its own menu (it can answer a typed question in place),
      so the frame only mounts one for the pages that do not. */
   ownsCommandMenu: boolean;
@@ -58,7 +61,7 @@ export default function WorkspaceFrame({
   const history = useThreads();
   const isAdmin = user?.role === "owner" || user?.role === "admin";
   const group = destinationFor(pathname)?.group;
-  const workspace = user?.workspaces?.find((item: any) => item.id === user?.active_workspace_id);
+  const workspace = user?.workspaces?.find((item) => item.id === user?.active_workspace_id);
   const onChat = pathname === "/workspace";
 
   useEffect(() => {
@@ -95,28 +98,28 @@ export default function WorkspaceFrame({
   // are anywhere else.
   useEffect(() => {
     let live = true;
-    const waiting = (items: any) =>
-      (Array.isArray(items) ? items : []).filter((item) => item?.status === "pending_approval").length;
+    const waiting = (items: { status?: string }[]) =>
+      items.filter((item) => item?.status === "pending_approval").length;
     Promise.all([
-      api<any[]>("/api/memory/proposals").catch(() => []),
-      api<any[]>("/api/repository-refresh-requests").catch(() => []),
-      api<{ plans: any[] }>("/api/org/plans?status=pending_approval").catch(() => ({ plans: [] })),
-      api<any[]>("/api/projects").catch(() => []),
-      api<any[]>("/api/connectors").catch(() => []),
-      api<any[]>("/api/keys").catch(() => []),
+      api<MemoryWorksProposal[]>("/api/memory/proposals").catch(() => []),
+      api<MemoryWorksRefreshRequest[]>("/api/repository-refresh-requests").catch(() => []),
+      api<{ plans: OrgPlan[] }>("/api/org/plans?status=pending_approval").catch(() => ({ plans: [] })),
+      api<Project[]>("/api/projects").catch(() => []),
+      api<Connector[]>("/api/connectors").catch(() => []),
+      api<ApiKey[]>("/api/keys").catch(() => []),
       isAdmin && user?.active_workspace_id
-        ? api<any[]>(`/api/workspaces/${user.active_workspace_id}/members`).catch(() => [])
+        ? api<WorkspaceMember[]>(`/api/workspaces/${user.active_workspace_id}/members`).catch(() => [])
         : Promise.resolve([]),
     ]).then(([proposals, requests, plans, projects, connectors, keys, members]) => {
       if (!live) return;
       setPending(waiting(proposals) + waiting(requests) + waiting(plans?.plans));
       setSetup({
-        sources: Array.isArray(projects) ? projects.length : 0,
-        githubConnected: (connectors || []).some(
-          (item: any) => item.provider === "github" && item.connected,
+        sources: projects.length,
+        githubConnected: connectors.some(
+          (item) => item.provider === "github" && item.connected,
         ),
-        teammates: Array.isArray(members) ? members.length : 0,
-        keys: Array.isArray(keys) ? keys.filter((key: any) => !key.revoked_at).length : 0,
+        teammates: members.length,
+        keys: keys.filter((key) => !key.revoked_at).length,
       });
     });
     return () => {

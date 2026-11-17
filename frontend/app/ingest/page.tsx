@@ -4,11 +4,29 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import Page from "@/components/Page";
 import GitHubIcon from "@/components/icons/GitHubIcon";
-import { API, api } from "@/lib/api";
+import { API, api, errorMessage } from "@/lib/api";
+import type { Connector, ConnectorSyncJob, GitHubRepository, IngestJob, Project, SlackChannel, Team } from "@/lib/types";
 
 type SourceKind = "paste" | "github" | "google_drive" | "slack" | "website" | "files";
 
 type DriveFile = {id: string; name: string; mime_type: string; modified_at: string; owner: string; url: string};
+
+type UploadResult = {
+  chunks_created?: number;
+  memory_units_created?: number;
+  warnings?: string[];
+  format?: string;
+};
+
+type IngestResult = UploadResult & {
+  memory_unit_ids?: string[];
+  knowledge_chunks_created?: number;
+  source_revision?: { version?: number };
+  change_set?: { conflicts?: unknown[] };
+  drive_files?: number;
+  project_id?: string;
+  repositories_queued?: number;
+};
 
 const DRIVE_KINDS: Record<string, string> = {
   "application/vnd.google-apps.document": "Doc",
@@ -30,9 +48,9 @@ const sourceChoices = [
 
 export default function Ingest() {
   const [kind, setKind] = useState<SourceKind>("paste");
-  const [projects, setProjects] = useState<any[]>([]);
-  const [repositories, setRepositories] = useState<any[]>([]);
-  const [channels, setChannels] = useState<any[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [repositories, setRepositories] = useState<GitHubRepository[]>([]);
+  const [channels, setChannels] = useState<SlackChannel[]>([]);
   // Listing failures are shown, not swallowed: an empty picker with no reason
   // reads as "you have no repositories" when the request actually failed.
   const [repositoriesError, setRepositoriesError] = useState("");
@@ -42,8 +60,8 @@ export default function Ingest() {
   const [driveSelected, setDriveSelected] = useState<string[]>([]);
   const [driveQuery, setDriveQuery] = useState("");
   const [driveProgress, setDriveProgress] = useState("");
-  const [connections, setConnections] = useState<any[]>([]);
-  const [teams, setTeams] = useState<any[]>([]);
+  const [connections, setConnections] = useState<Connector[]>([]);
+  const [teams, setTeams] = useState<Team[]>([]);
   const [project, setProject] = useState("__new__");
   const [newProject, setNewProject] = useState("Company memory");
   const [team, setTeam] = useState("");
@@ -59,7 +77,7 @@ export default function Ingest() {
   const [busy, setBusy] = useState(false);
   const [phase, setPhase] = useState(0);
   const [error, setError] = useState("");
-  const [result, setResult] = useState<any>();
+  const [result, setResult] = useState<IngestResult>();
   /* Indexing every repository at once is the normal first move after
      connecting GitHub, so it belongs beside the one-repository picker rather
      than only in the API. */
@@ -74,33 +92,33 @@ export default function Ingest() {
   }, []);
 
   useEffect(() => {
-    api<any[]>("/api/projects").then(items => {
+    api<Project[]>("/api/projects").then(items => {
       setProjects(items);
       if (items[0]) setProject(items[0].id);
     });
-    api<any[]>("/api/connectors").then(setConnections);
+    api<Connector[]>("/api/connectors").then(setConnections);
     loadRepositories();
     loadChannels();
-    api<any>("/api/auth/me")
-      .then(me => api<any[]>(`/api/workspaces/${me.active_workspace_id}/teams`))
+    api<{ active_workspace_id: string }>("/api/auth/me")
+      .then(me => api<Team[]>(`/api/workspaces/${me.active_workspace_id}/teams`))
       .then(setTeams).catch(() => undefined);
   }, []);
 
   function loadRepositories() {
     setRepositoriesError("");
-    api<{result?: {repositories?: any[]}}>("/api/connectors/github/tools/list_repositories", {
+    api<{result?: {repositories?: GitHubRepository[]}}>("/api/connectors/github/tools/list_repositories", {
       method: "POST",
       body: JSON.stringify({arguments: {}}),
     }).then(response => setRepositories(response.result?.repositories || []))
-      .catch((cause: any) => setRepositoriesError(cause?.message || "Could not list repositories."));
+      .catch((cause) => setRepositoriesError(errorMessage(cause) || "Could not list repositories."));
   }
 
   function loadChannels() {
     setChannelsError("");
-    api<any[]>("/api/connectors/slack/resources").then(items => {
+    api<SlackChannel[]>("/api/connectors/slack/resources").then(items => {
       setChannels(items);
       if (items[0]) setChannel(items[0].id);
-    }).catch((cause: any) => setChannelsError(cause?.message || "Could not list channels."));
+    }).catch((cause) => setChannelsError(errorMessage(cause) || "Could not list channels."));
   }
 
   function loadDriveFiles() {
@@ -108,17 +126,19 @@ export default function Ingest() {
     setDriveFiles(null);
     api<DriveFile[]>("/api/connectors/google_drive/resources")
       .then(setDriveFiles)
-      .catch((cause: any) => {
+      .catch((cause) => {
         setDriveFiles([]);
-        setDriveError(cause?.message || "Could not list your Drive files.");
+        setDriveError(errorMessage(cause) || "Could not list your Drive files.");
       });
   }
 
   // Drive is listed only when someone opens it: the listing is a live call to
   // Google, and most visits to this page never need it.
   useEffect(() => {
-    if (kind === "google_drive" && connected("google_drive") && driveFiles === null) loadDriveFiles();
-  }, [kind, connections]);
+    if (kind === "google_drive" && connections.some(item => item.provider === "google_drive" && item.connected) && driveFiles === null) {
+      loadDriveFiles();
+    }
+  }, [kind, connections, driveFiles]);
 
   useEffect(() => {
     if (!busy) { setPhase(0); return; }
@@ -135,7 +155,7 @@ export default function Ingest() {
 
   async function ensureProject() {
     if (project !== "__new__") return project;
-    const created: any = await api("/api/projects", {
+    const created = await api<Project>("/api/projects", {
       method: "POST",
       body: JSON.stringify({name: newProject.trim() || "Company memory", team_ids: team ? [team] : []}),
     });
@@ -148,8 +168,8 @@ export default function Ingest() {
     const deadline = Date.now() + 60 * 60 * 1000;
     while (Date.now() < deadline) {
       await new Promise(resolve => window.setTimeout(resolve, 2000));
-      const job = await api<any>(`/api/ingest/jobs/${jobId}`);
-      if (job.status === "succeeded") return {...job, ...(job.result || {})};
+      const job = await api<IngestJob>(`/api/ingest/jobs/${jobId}`);
+      if (job.status === "succeeded") return { ...job, ...(job.result || {}) } as IngestResult;
       if (job.status === "failed") throw new Error(job.error || "Ingestion failed");
     }
     throw new Error("Ingestion is still running; check Sources for its status.");
@@ -159,7 +179,7 @@ export default function Ingest() {
     const deadline = Date.now() + 60 * 60 * 1000;
     while (Date.now() < deadline) {
       await new Promise(resolve => window.setTimeout(resolve, 2000));
-      const job = await api<any>(`/api/connector-sync-jobs/${jobId}`);
+      const job = await api<ConnectorSyncJob>(`/api/connector-sync-jobs/${jobId}`);
       if (job.status === "succeeded") return job;
       if (job.status === "failed") throw new Error(job.last_error || "The import failed");
       // An expired grant won't fix itself between retries; say so now.
@@ -178,7 +198,7 @@ export default function Ingest() {
     setResult(undefined);
     try {
       const team_ids = team ? [team] : [];
-      let response: any;
+      let response: IngestResult;
       if (kind === "github") {
         // A repository takes longer than a proxied request may stay open, so
         // the API ingests in the background and the page polls the job.
@@ -190,7 +210,7 @@ export default function Ingest() {
       } else if (kind === "google_drive") {
         const projectId = await ensureProject();
         setDriveProgress(`Queueing ${driveSelected.length} file${driveSelected.length === 1 ? "" : "s"}…`);
-        const job = await api<any>("/api/connectors/google_drive/sync", {
+        const job = await api<{ id: string }>("/api/connectors/google_drive/sync", {
           method: "POST",
           body: JSON.stringify({
             resource_id: "selected-files",
@@ -217,21 +237,24 @@ export default function Ingest() {
         });
       } else if (kind === "files") {
         const projectId = await ensureProject();
-        const aggregate: any = {chunks_created: 0, memory_units_created: 0, warnings: [] as string[], project_id: projectId};
+        let chunksCreated = 0;
+        let memoriesCreated = 0;
+        const warnings: string[] = [];
+        let format: string | undefined;
         for (let index = 0; index < files.length; index += 1) {
           const file = files[index];
           setFileProgress(`Uploading ${file.name} (${index + 1}/${files.length})…`);
           const form = new FormData();
           form.append("project_id", projectId);
           form.append("file", file);
-          const uploaded: any = await api("/api/ingest/file", {method: "POST", body: form});
-          aggregate.chunks_created += uploaded.chunks_created ?? 0;
-          aggregate.memory_units_created += uploaded.memory_units_created ?? 0;
-          aggregate.warnings.push(...(uploaded.warnings || []));
-          aggregate.format = uploaded.format;
+          const uploaded = await api<UploadResult>("/api/ingest/file", {method: "POST", body: form});
+          chunksCreated += uploaded.chunks_created ?? 0;
+          memoriesCreated += uploaded.memory_units_created ?? 0;
+          warnings.push(...(uploaded.warnings || []));
+          format = uploaded.format;
         }
         setFileProgress("");
-        response = aggregate;
+        response = {chunks_created: chunksCreated, memory_units_created: memoriesCreated, warnings, format, project_id: projectId};
       } else if (kind === "slack") {
         const projectId = await ensureProject();
         response = await api("/api/ingest/slack", {
@@ -247,8 +270,8 @@ export default function Ingest() {
       }
       setPhase(2);
       setResult(response);
-    } catch (exc: any) {
-      setError(exc.message);
+    } catch (exc) {
+      setError(errorMessage(exc));
       setDriveProgress("");
     } finally {
       setBusy(false);
@@ -268,8 +291,8 @@ export default function Ingest() {
         body: JSON.stringify({ include_archived: false }),
       });
       setBulk({ queued: response.repositories_queued });
-    } catch (cause: any) {
-      setError(cause.message);
+    } catch (cause) {
+      setError(errorMessage(cause));
     } finally {
       setBulkBusy(false);
     }
@@ -389,7 +412,7 @@ export default function Ingest() {
         {result.drive_files !== undefined
           ? <p>{result.drive_files} Drive file{result.drive_files === 1 ? " is" : "s are"} now in memory, each linked back to Google Drive.</p>
           : <p>{memoryCount} atomic memories and {result.chunks_created ?? result.knowledge_chunks_created ?? 0} evidence chunks are now available to your agents.</p>}
-        {!!result.warnings?.length && result.drive_files !== undefined && <div className="notice"><strong>Some files couldn't be read:</strong><ul>{result.warnings.map((line: string) => <li key={line}>{line}</li>)}</ul></div>}
+        {!!result.warnings?.length && result.drive_files !== undefined && <div className="notice"><strong>Some files could not be read:</strong><ul>{result.warnings.map(line => <li key={line}>{line}</li>)}</ul></div>}
         {result.drive_files === undefined && <div className="success-stats"><div><strong>{memoryCount}</strong><span>Memories</span></div><div><strong>{result.source_revision?.version || 1}</strong><span>Source version</span></div><div><strong>{result.change_set?.conflicts?.length || 0}</strong><span>Conflicts</span></div></div>}
         <div className="success-actions"><Link className="button" href="/workspace">Ask your memory →</Link><Link className="button secondary" href="/memories">See memories</Link><button className="text-button" onClick={() => {setResult(undefined);setContent("");setTitle("");setDriveSelected([]);}}>Add another source</button></div>
       </section>}

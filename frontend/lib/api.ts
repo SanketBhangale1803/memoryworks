@@ -15,7 +15,7 @@ export const API =
       ? ""
       : "http://localhost:8000");
 
-export async function api<T = any>(path: string, options?: RequestInit): Promise<T> {
+export async function api<T = unknown>(path: string, options?: RequestInit): Promise<T> {
   const headers = new Headers(options?.headers);
   const isFormData = typeof FormData !== "undefined" && options?.body instanceof FormData;
   if (options?.body && !isFormData && !headers.has("Content-Type")) {
@@ -34,9 +34,18 @@ export async function api<T = any>(path: string, options?: RequestInit): Promise
       `Cannot reach the MemoryWorks API at ${API}. Check that the backend is running and refresh the page.`,
     );
   }
-  const payload = await response.json().catch(() => ({}));
+  const payload = (await response.json().catch(() => ({}))) as T & { detail?: string };
   if (!response.ok) throw new Error(payload.detail || `Request failed (${response.status})`);
   return payload;
+}
+
+/* Errors cross the network as messages, but anything caught locally is
+   `unknown` until it is checked. One helper keeps every page reporting a real
+   reason instead of "[object Object]" or a blank notice. */
+export function errorMessage(error: unknown, fallback = "Something went wrong.") {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === "string" && error) return error;
+  return fallback;
 }
 
 export function formatDate(value?: string) {

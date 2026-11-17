@@ -4,7 +4,7 @@ import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import IdeAccess from "@/components/IdeAccess";
 import Page from "@/components/Page";
-import { API, api } from "@/lib/api";
+import { API, api, errorMessage } from "@/lib/api";
 
 /* AI tools & IDEs: every way an agent reaches this workspace.
  *
@@ -27,7 +27,7 @@ export default function AiTools() {
   const [name, setName] = useState("Claude / ChatGPT");
   const [redirectUri, setRedirectUri] = useState("");
   const [write, setWrite] = useState(false);
-  const [registration, setRegistration] = useState<any>();
+  const [registration, setRegistration] = useState<Record<string, unknown>>();
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
 
@@ -42,7 +42,7 @@ export default function AiTools() {
     setError("");
     try {
       setRegistration(
-        await api("/api/mcp/oauth/clients", {
+        await api<Record<string, unknown>>("/api/mcp/oauth/clients", {
           method: "POST",
           body: JSON.stringify({
             name,
@@ -51,8 +51,8 @@ export default function AiTools() {
           }),
         }),
       );
-    } catch (exc: any) {
-      setError(exc.message);
+    } catch (exc) {
+      setError(errorMessage(exc));
     }
   }
 

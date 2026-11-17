@@ -4,7 +4,43 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import MarkdownAnswer from "@/components/MarkdownAnswer";
 import Page from "@/components/Page";
-import { api, formatDate } from "@/lib/api";
+import { api, errorMessage, formatDate } from "@/lib/api";
+import type { Project, SlackChannel } from "@/lib/types";
+
+type WorkEvidence = {
+  source_id?: string;
+  source_url?: string;
+  source_title?: string;
+  title?: string;
+  relevance?: number;
+  confidence?: number;
+  score?: number;
+};
+
+type WorkStep = {
+  id: string;
+  connector?: string;
+  step_type?: string;
+  status?: string;
+  input?: { message?: string; channel_id?: string };
+  output?: { message?: string; error?: string; source_url?: string };
+};
+
+type WorkItem = {
+  id: string;
+  objective: string;
+  status: string;
+  created_at?: string;
+  updated_at?: string;
+  confidence?: number;
+  context?: {
+    evidence?: WorkEvidence[];
+    memory_units?: unknown[];
+    action_only?: boolean;
+    answer?: string;
+  };
+  steps?: WorkStep[];
+};
 
 const STARTERS = [
   "Prepare a release readiness brief from GitHub and remembered decisions.",
@@ -27,14 +63,14 @@ function isDirectNotification(value = "") {
 }
 
 export default function MemoryWorkPage() {
-  const [projects, setProjects] = useState<any[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState("");
   const [objective, setObjective] = useState(STARTERS[0]);
-  const [history, setHistory] = useState<any[]>([]);
-  const [work, setWork] = useState<any>();
+  const [history, setHistory] = useState<WorkItem[]>([]);
+  const [work, setWork] = useState<WorkItem>();
   const [creating, setCreating] = useState(false);
   const [resolving, setResolving] = useState("");
-  const [channels, setChannels] = useState<any[]>([]);
+  const [channels, setChannels] = useState<SlackChannel[]>([]);
   const [channelId, setChannelId] = useState("");
   const [messageDraft, setMessageDraft] = useState("");
   const [slackError, setSlackError] = useState("");
@@ -42,21 +78,21 @@ export default function MemoryWorkPage() {
 
   const loadHistory = useCallback(async (nextProjectId: string, openLatest = false) => {
     if (!nextProjectId) return;
-    const items = await api<any[]>(`/api/work?project_id=${encodeURIComponent(nextProjectId)}`);
+    const items = await api<WorkItem[]>(`/api/work?project_id=${encodeURIComponent(nextProjectId)}`);
     setHistory(items);
-    if (openLatest && items[0]) setWork(await api(`/api/work/${items[0].id}`));
+    if (openLatest && items[0]) setWork(await api<WorkItem>(`/api/work/${items[0].id}`));
   }, []);
 
   useEffect(() => {
-    api<any[]>("/api/projects").then(items => {
+    api<Project[]>("/api/projects").then(items => {
       setProjects(items);
       if (items[0]) setProjectId(items[0].id);
-    }).catch(exc => setError(exc.message));
+    }).catch(exc => setError(errorMessage(exc)));
   }, []);
 
   useEffect(() => {
     setWork(undefined);
-    loadHistory(projectId, true).catch(exc => setError(exc.message));
+    loadHistory(projectId, true).catch(exc => setError(errorMessage(exc)));
   }, [projectId, loadHistory]);
 
   async function createWork() {
@@ -65,14 +101,14 @@ export default function MemoryWorkPage() {
     setError("");
     setSlackError("");
     try {
-      const created = await api<any>("/api/work", {
+      const created = await api<WorkItem>("/api/work", {
         method: "POST",
         body: JSON.stringify({ project_id: projectId, objective: objective.trim() }),
       });
       setWork(created);
       await loadHistory(projectId);
-    } catch (exc: any) {
-      setError(exc.message);
+    } catch (exc) {
+      setError(errorMessage(exc));
     } finally {
       setCreating(false);
     }
@@ -84,7 +120,7 @@ export default function MemoryWorkPage() {
     setError("");
     setSlackError("");
     try {
-      const next: any = await api(`/api/work/${work.id}/steps/${stepId}/resolve`, {
+      const next = await api<WorkItem>(`/api/work/${work.id}/steps/${stepId}/resolve`, {
         method: "POST",
         body: JSON.stringify({
           approved,
@@ -93,18 +129,18 @@ export default function MemoryWorkPage() {
         }),
       });
       setWork(next);
-      const failed = next.steps?.find((step: any) => step.connector === "slack" && step.status === "failed");
+      const failed = next.steps?.find((step) => step.connector === "slack" && step.status === "failed");
       if (failed?.output?.error) setSlackError(failed.output.error);
       await loadHistory(projectId);
-    } catch (exc: any) {
-      setError(exc.message);
+    } catch (exc) {
+      setError(errorMessage(exc));
     } finally {
       setResolving("");
     }
   }
 
   async function openWork(id: string) {
-    setWork(await api(`/api/work/${id}`));
+    setWork(await api<WorkItem>(`/api/work/${id}`));
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -112,8 +148,8 @@ export default function MemoryWorkPage() {
   const memories = work?.context?.memory_units || [];
   const actionOnly = Boolean(work?.context?.action_only);
   const directNotification = isDirectNotification(objective);
-  const slackStep = work?.steps?.find((step: any) => step.connector === "slack" && step.step_type === "connector_action");
-  const approvalStep = slackStep && ["pending_approval", "approved", "failed"].includes(slackStep.status) ? slackStep : undefined;
+  const slackStep = work?.steps?.find((step) => step.connector === "slack" && step.step_type === "connector_action");
+  const approvalStep = slackStep && slackStep.status && ["pending_approval", "approved", "failed"].includes(slackStep.status) ? slackStep : undefined;
   const postedUrl = slackStep?.status === "completed" ? slackStep.output?.source_url : "";
 
   useEffect(() => {
@@ -121,11 +157,11 @@ export default function MemoryWorkPage() {
     setMessageDraft(slackStep.input?.message || slackStep.output?.message || "");
     setChannelId(current => current || slackStep.input?.channel_id || "");
     if (slackStep.status === "failed" && slackStep.output?.error) setSlackError(slackStep.output.error);
-    api<any[]>("/api/connectors/slack/channels").then(items => {
+    api<SlackChannel[]>("/api/connectors/slack/channels").then(items => {
       setChannels(items);
       setChannelId(current => current || items[0]?.id || "");
-    }).catch(exc => setSlackError(exc.message));
-  }, [slackStep?.id, slackStep?.status]);
+    }).catch(exc => setSlackError(errorMessage(exc)));
+  }, [slackStep]);
 
   function startAnother() {
     setWork(undefined);
@@ -206,7 +242,7 @@ export default function MemoryWorkPage() {
         <aside className="work-sidebar">
           <section className="panel work-evidence-panel">
             <div className="panel-head"><div><span className="panel-label">Citations</span><h2>Sources used</h2></div></div>
-            <div className="panel-body">{evidence.length ? evidence.slice(0, 8).map((item: any, index: number) => <a key={`${item.source_id}-${index}`} href={item.source_url || "#"} target={item.source_url ? "_blank" : undefined} rel="noreferrer"><span>{index + 1}</span><div><strong>{item.source_title || item.title || "Company source"}</strong><small>{Math.round((item.relevance ?? item.confidence ?? item.score ?? 0) * 100)}% retrieval match</small></div></a>) : <p className="muted">No evidence attached.</p>}</div>
+            <div className="panel-body">{evidence.length ? evidence.slice(0, 8).map((item, index) => <a key={`${item.source_id}-${index}`} href={item.source_url || "#"} target={item.source_url ? "_blank" : undefined} rel="noreferrer"><span>{index + 1}</span><div><strong>{item.source_title || item.title || "Company source"}</strong><small>{Math.round((item.relevance ?? item.confidence ?? item.score ?? 0) * 100)}% retrieval match</small></div></a>) : <p className="muted">No evidence attached.</p>}</div>
           </section>
         </aside>
       </div>}
