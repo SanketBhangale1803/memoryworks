@@ -96,9 +96,14 @@ export default function Ingest() {
       setProjects(items);
       if (items[0]) setProject(items[0].id);
     });
-    api<Connector[]>("/api/connectors").then(setConnections);
-    loadRepositories();
-    loadChannels();
+    // Only list what the person has actually authorized. Asking a provider for
+    // its resources before it is connected is a guaranteed failure, and the
+    // empty picker it leaves behind reads as "you have nothing".
+    api<Connector[]>("/api/connectors").then(items => {
+      setConnections(items);
+      if (items.some(item => item.provider === "github" && item.connected)) loadRepositories();
+      if (items.some(item => item.provider === "slack" && item.connected)) loadChannels();
+    });
     api<{ active_workspace_id: string }>("/api/auth/me")
       .then(me => api<Team[]>(`/api/workspaces/${me.active_workspace_id}/teams`))
       .then(setTeams).catch(() => undefined);
