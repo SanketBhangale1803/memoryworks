@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { api, formatDate } from "@/lib/api";
+import { api, errorMessage, formatDate } from "@/lib/api";
 
 /* The outcome loop, made visible.
  *
@@ -90,7 +90,7 @@ export default function OutcomeLoop() {
         setRecords(nextExport.records || []);
         setSkills(nextSkills.skills || []);
       })
-      .catch((exc: any) => live && setError(exc.message))
+      .catch((exc) => live && setError(errorMessage(exc)))
       .finally(() => live && setLoading(false));
     return () => {
       live = false;

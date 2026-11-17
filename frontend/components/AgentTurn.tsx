@@ -3,6 +3,7 @@
 import { useState } from "react";
 import MarkdownAnswer from "@/components/MarkdownAnswer";
 import type { OrgAgentSession, OrgPlan } from "@/lib/orgTools";
+import type { EvidencePanelState } from "@/lib/types";
 
 /* What Agent mode renders inside the chat: the steps the agent took, its
  * answer, the memories it cited, and — when it wants to change something —
@@ -224,7 +225,7 @@ function PlanCard({
   );
 }
 
-export function EvidencePanel({ evidence, onClose }: { evidence: any; onClose: () => void }) {
+export function EvidencePanel({ evidence, onClose }: { evidence: EvidencePanelState; onClose: () => void }) {
   return (
     <div className="ws-evidence" role="dialog" aria-label="Evidence" onClick={onClose}>
       <div className="ws-evidence-card" onClick={(event) => event.stopPropagation()}>
@@ -250,12 +251,12 @@ export function EvidencePanel({ evidence, onClose }: { evidence: any; onClose: (
                 <dd>{Math.round((evidence.memory?.confidence || 0) * 100)}%</dd>
               </div>
             </dl>
-            {evidence.sources?.length > 0 && (
+            {(evidence.sources?.length ?? 0) > 0 && (
               <>
                 <small>Sources</small>
                 <ul>
-                  {evidence.sources.map((source: any) => (
-                    <li key={source.id}>
+                  {(evidence.sources ?? []).map((source, index) => (
+                    <li key={source.id || source.url || source.title || index}>
                       {source.url ? (
                         <a href={source.url} target="_blank" rel="noreferrer">{source.title}</a>
                       ) : (

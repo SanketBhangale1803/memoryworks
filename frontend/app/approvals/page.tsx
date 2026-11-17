@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { api, formatDate } from "@/lib/api";
+import { api, errorMessage, formatDate } from "@/lib/api";
 import { orgApi, type OrgPlan } from "@/lib/orgTools";
 import type { MemoryWorksProposal, MemoryWorksRefreshRequest } from "@/lib/webmcp";
 
@@ -14,6 +14,19 @@ import type { MemoryWorksProposal, MemoryWorksRefreshRequest } from "@/lib/webmc
  * so an empty inbox reads as one calm line instead of four empty boxes. */
 
 type Principal = { id: string; role: string };
+
+/* A write an agent wants to make through a connected tool. Only its declared
+   field names are shown until a person approves it. */
+type ConnectorToolCall = {
+  id: string;
+  provider: string;
+  tool_name: string;
+  status: string;
+  risk_level: string;
+  user_id?: string;
+  requested_at?: string;
+  arguments?: { declared_keys?: string[] };
+};
 
 const REFRESH_STATES: Record<string, { label: string; tone: "info" | "success" | "danger" | "warning" }> = {
   queued: { label: "queued", tone: "info" },
@@ -29,7 +42,7 @@ export default function Approvals() {
   const [requests, setRequests] = useState<MemoryWorksRefreshRequest[]>([]);
   const [proposals, setProposals] = useState<MemoryWorksProposal[]>([]);
   const [plans, setPlans] = useState<OrgPlan[]>([]);
-  const [connectorCalls, setConnectorCalls] = useState<any[]>([]);
+  const [connectorCalls, setConnectorCalls] = useState<ConnectorToolCall[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [busyId, setBusyId] = useState("");
   const [note, setNote] = useState("");
@@ -40,7 +53,7 @@ export default function Approvals() {
       api<MemoryWorksRefreshRequest[]>("/api/repository-refresh-requests").then(setRequests).catch(() => undefined),
       api<MemoryWorksProposal[]>("/api/memory/proposals").then(setProposals).catch(() => undefined),
       orgApi.plans("pending_approval").then((result) => setPlans(result.plans || [])).catch(() => undefined),
-      api<any[]>("/api/connector-tool-calls").then(setConnectorCalls).catch(() => undefined),
+      api<ConnectorToolCall[]>("/api/connector-tool-calls").then(setConnectorCalls).catch(() => undefined),
     ]).finally(() => setLoaded(true));
   }, []);
 
@@ -73,8 +86,8 @@ export default function Approvals() {
     try {
       setNote(await work());
       await load();
-    } catch (exc: any) {
-      setError(exc.message);
+    } catch (exc) {
+      setError(errorMessage(exc));
     } finally {
       setBusyId("");
     }
@@ -109,9 +122,9 @@ export default function Approvals() {
         : `Declined ${request.requested_by_name ? `${request.requested_by_name}'s request` : "the request"}.`;
     });
 
-  const resolveConnector = (call: any, approved: boolean) =>
+  const resolveConnector = (call: ConnectorToolCall, approved: boolean) =>
     decide(call.id, async () => {
-      const result: any = await api(`/api/connector-tool-calls/${call.id}/resolve`, {
+      const result = await api<{ status?: string }>(`/api/connector-tool-calls/${call.id}/resolve`, {
         method: "POST",
         body: JSON.stringify({ approved }),
       });

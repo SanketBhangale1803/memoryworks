@@ -32,7 +32,7 @@ type StreamEvent =
   | { type: "text"; text: string }
   | { type: "thinking"; text: string }
   | { type: "draft_reset" }
-  | { type: "done"; answer: any }
+  | { type: "done"; answer: unknown }
   | { type: "error"; message: string }
   | { type: "ping" };
 

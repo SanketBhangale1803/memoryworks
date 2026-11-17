@@ -217,10 +217,6 @@ const mcpConfig = `# Claude Desktop / any MCP client (stdio):
   }
 }`;
 
-const testSuite = `make test   # backend pytest · frontend node:test · SDK pytest
-make lint   # ruff · black · tsc
-make ci     # test + lint + next build`;
-
 const coreCurl = `curl -X POST "https://your-host/api/ask" \\
   -H "Authorization: Bearer $ORGMEMORY_API_KEY" \\
   -H "Content-Type: application/json" \\

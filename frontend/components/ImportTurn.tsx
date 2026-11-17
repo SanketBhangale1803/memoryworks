@@ -3,6 +3,17 @@
 import Link from "next/link";
 import { useEffect } from "react";
 import { API, api } from "@/lib/api";
+import type { ConnectorSyncJob } from "@/lib/types";
+
+type IngestJobRecord = {
+  status: string;
+  error?: string;
+  result?: {
+    memory_units_created?: number;
+    files_scanned?: number;
+    knowledge_chunks_created?: number;
+  };
+};
 
 /* An import asked for in the chat ("import the docs from my Google Drive").
    The server starts it and returns this; the card follows the job until it
@@ -97,7 +108,7 @@ export function ImportTurn({
 async function follow(state: ChatImport): Promise<ChatImport | null> {
   const job = state.job!;
   if (job.kind === "ingest") {
-    const record = await api<any>(`/api/ingest/jobs/${job.id}`);
+    const record = await api<IngestJobRecord>(`/api/ingest/jobs/${job.id}`);
     if (record.status === "failed") {
       return { ...state, status: "failed", message: `Couldn’t import ${state.label}: ${record.error || "the import failed"}.` };
     }
@@ -115,7 +126,7 @@ async function follow(state: ChatImport): Promise<ChatImport | null> {
       result: { memories, chunks: result.knowledge_chunks_created },
     };
   }
-  const record = await api<any>(`/api/connector-sync-jobs/${job.id}`);
+  const record = await api<ConnectorSyncJob>(`/api/connector-sync-jobs/${job.id}`);
   // A grant that needs reconnecting won't recover on retry; say so now.
   if (record.status === "failed" || /reconnect/i.test(record.last_error || "")) {
     return {
