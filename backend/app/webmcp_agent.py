@@ -260,26 +260,44 @@ class WebMCPAgentRunner:
             if on_step:
                 on_step(steps[-1])
             if tool_name == "propose_orgmemory_changes" and "waiting for a person" in summary:
-                # The write path's contract is to stop at a person. Once a plan
-                # is filed, the session's work is done whether or not the model
-                # spends its next turn saying so — answer now, grounded in the
-                # observations, instead of risking the step budget.
-                findings = [
-                    step["summary"]
-                    for step in steps[:-1]
-                    if step["tool"] != "propose_orgmemory_changes" and step.get("summary")
-                ]
-                basis = " Basis: " + " ".join(findings[-2:]).rstrip(".") + "." if findings else ""
-                memory_ids = list(
-                    dict.fromkeys(
-                        match.group(0) for match in re.finditer(r"mem_[a-z0-9]+", transcript)
+                # Filing is the last tool call. Give the model one answer-only
+                # turn with the complete transcript, including the filed plan.
+                final_prompt = self._prompt(question, spaces, transcript, max_steps, 0)
+                final_prompt += (
+                    "\nThe plan has already been filed. Explain the proposed plan and its "
+                    "supporting evidence, and say it is waiting for human approval. "
+                    "Return only the final answer JSON with propose set to null."
+                )
+                try:
+                    final_decision = llm(final_prompt)
+                except Exception:
+                    # A model failure cannot undo the already-filed proposal.
+                    final_decision = None
+                final_decision = final_decision if isinstance(final_decision, dict) else {}
+                answer = final_decision.get("answer")
+                if isinstance(answer, str) and answer.strip():
+                    final_ids = final_decision.get("memory_ids")
+                    memory_ids = (
+                        [str(item) for item in final_ids] if isinstance(final_ids, list) else []
                     )
-                )[:6]
-                return {
-                    "answer": (
+                    thought = str(final_decision.get("thought") or "")
+                else:
+                    findings = [
+                        step["summary"]
+                        for step in steps[:-1]
+                        if step["tool"] != "propose_orgmemory_changes" and step.get("summary")
+                    ]
+                    basis = (
+                        " Basis: " + " ".join(findings[-2:]).rstrip(".") + "." if findings else ""
+                    )
+                    memory_ids = list(dict.fromkeys(re.findall(r"mem_[a-z0-9]+", transcript)))[:6]
+                    answer = (
                         f"{summary}{basis} The proposed changes are shown below — approving "
                         "or declining them is a person's call, not the agent's."
-                    ),
+                    )
+                    thought = ""
+                return {
+                    "answer": answer,
                     "memory_ids": memory_ids,
                     "steps": steps,
                     "proposal": structured if isinstance(structured, dict) else None,

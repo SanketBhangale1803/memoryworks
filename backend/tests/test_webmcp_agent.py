@@ -236,6 +236,52 @@ def test_a_model_that_never_answers_gets_every_finding_listed():
         assert summary in result["answer"]
 
 
+@pytest.mark.parametrize("final_turn", ["answer", "tool", "failure"])
+def test_filed_plan_gets_one_answer_only_turn(final_turn):
+    proposal = {"id": "prop_plan", "status": "pending_approval"}
+    answer = "Priya should repair retries based on mem_retry. The plan awaits approval."
+    prompts = []
+    tool_calls = []
+
+    def llm(prompt):
+        prompts.append(prompt)
+        if len(prompts) == 1:
+            return {"tool": "search_orgmemory", "arguments": {}}
+        if len(prompts) == 2:
+            return {"tool": "propose_orgmemory_changes", "arguments": {}}
+        assert "NO tool calls left" in prompt
+        assert "mem_retry" in prompt and "prop_plan" in prompt
+        if final_turn == "failure":
+            raise RuntimeError("Model unavailable")
+        if final_turn == "tool":
+            return {"tool": "propose_orgmemory_changes", "arguments": {}}
+        return {"answer": answer, "memory_ids": ["mem_retry"], "propose": {"kind": "incident"}}
+
+    def execute(principal, name, arguments):
+        tool_calls.append(name)
+        if name == "search_orgmemory":
+            return "Priya owns retries.", {"id": "mem_retry"}
+        return "Plan filed and waiting for a person to approve.", proposal
+
+    result = WebMCPAgentRunner(llm=llm).run(
+        principal={},
+        question="Make a plan for fixing retries.",
+        exec_tool=execute,
+        list_spaces=lambda _: [{"project_id": "proj_a"}],
+        max_steps=2,
+    )
+
+    assert len(prompts) == 3
+    assert tool_calls == ["search_orgmemory", "propose_orgmemory_changes"]
+    assert result["proposal"] == proposal
+    assert result["memory_ids"] == ["mem_retry"]
+    if final_turn == "answer":
+        assert result["answer"] == answer
+    else:
+        assert "waiting for a person to approve" in result["answer"]
+        assert "Priya owns retries" in result["answer"]
+
+
 def test_runs_started_together_get_separate_sessions(monkeypatch):
     # Run ids were the start time in milliseconds: two Agent runs started in
     # the same millisecond shared one session and each showed the other's steps.
