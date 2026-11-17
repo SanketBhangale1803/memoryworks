@@ -21,6 +21,8 @@ from collections.abc import Callable
 from typing import Any
 from uuid import uuid4
 
+import httpx
+
 from app.core.config import settings
 from app.llm import llm_budget
 from app.llm.providers import configured_model, generate_grounded_json
@@ -168,8 +170,12 @@ class WebMCPAgentRunner:
         steps: list[dict] = []
         transcript = ""
         proposal = None
-        llm = self._llm or self._provider_call(model)
         mode = "model" if (self._llm or configured_model(model)) else "guided"
+        llm = self._llm or (
+            self._provider_call(model)
+            if mode == "model"
+            else self._guided(question, spaces, default_project)
+        )
 
         for step_index in range(1, max_steps + 2):
             # max_steps tool calls, then one turn that may only answer: a run
@@ -179,7 +185,9 @@ class WebMCPAgentRunner:
             started = time.monotonic()
             try:
                 decision = llm(prompt)
-            except RuntimeError:
+                if not decision:
+                    raise RuntimeError("The configured model did not return a usable decision.")
+            except (RuntimeError, httpx.HTTPError):
                 # The show must go on: if the model is unreachable mid-session,
                 # fall back to the guided policy for the rest of the session.
                 # Tools, observations, and the proposal boundary stay completely

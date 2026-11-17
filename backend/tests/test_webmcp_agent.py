@@ -5,6 +5,7 @@ real workspace, so the loop's behavior — tool grounding, proposal gating, and
 workspace-private sessions — is verified without any network call.
 """
 
+import httpx
 import pytest
 from fastapi import HTTPException
 
@@ -22,6 +23,7 @@ from app.auth.app_auth import create_dev_session, create_workspace, issue_sessio
 from app.core.database import connect, row
 from app.hcag_adapter import HCAGAdapter
 from app.ingestion import IngestionService
+from app.llm.providers import ModelProvider
 from app.memory.company import CompanyMemoryService
 from app.webmcp_agent import AgentSessionStore, WebMCPAgentRunner
 
@@ -280,6 +282,38 @@ def test_filed_plan_gets_one_answer_only_turn(final_turn):
     else:
         assert "waiting for a person to approve" in result["answer"]
         assert "Priya owns retries" in result["answer"]
+
+
+@pytest.mark.parametrize("unavailable", ["unconfigured", "http_error", "empty_reply"])
+def test_agent_uses_guided_tools_when_model_is_unavailable(monkeypatch, unavailable):
+    from app import webmcp_agent
+
+    provider = ModelProvider("gpt", "GPT", "OpenAI", "test", "test", "openai_compatible")
+    monkeypatch.setattr(
+        webmcp_agent,
+        "configured_model",
+        lambda _: None if unavailable == "unconfigured" else provider,
+    )
+
+    def generate(*args):
+        assert unavailable != "unconfigured"
+        if unavailable == "http_error":
+            raise httpx.ConnectError("Model unavailable")
+        return None
+
+    monkeypatch.setattr(webmcp_agent, "generate_grounded_json", generate)
+    answer = WebMCPAgentRunner().run(
+        principal={},
+        question="What did we decide?",
+        model="gpt",
+        list_spaces=lambda _: [{"project_id": "proj_a"}],
+        exec_tool=lambda *args: ("1 matching memory", {"id": "mem_decision"}),
+    )
+
+    assert answer["mode"] == "guided"
+    assert answer["answer"]
+    assert answer["memory_ids"] == ["mem_decision"]
+    assert answer["steps"][0]["tool"] == "search_orgmemory"
 
 
 def test_runs_started_together_get_separate_sessions(monkeypatch):
