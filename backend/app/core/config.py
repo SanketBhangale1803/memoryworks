@@ -265,12 +265,16 @@ class Settings(BaseSettings):
     mcp_public_url: str = Field(
         default="http://localhost:8001",
         validation_alias=AliasChoices(
-            "ORGMEMORY_MCP_PUBLIC_URL", "MCP_PUBLIC_URL", "mcp_public_url"
+            "MEMORYWORKS_MCP_PUBLIC_URL",
+            "ORGMEMORY_MCP_PUBLIC_URL",
+            "MCP_PUBLIC_URL",
+            "mcp_public_url",
         ),
     )
     mcp_oauth_issuer_url: str = Field(
         default="http://localhost:8000",
         validation_alias=AliasChoices(
+            "MEMORYWORKS_MCP_OAUTH_ISSUER_URL",
             "ORGMEMORY_MCP_OAUTH_ISSUER_URL",
             "MCP_OAUTH_ISSUER_URL",
             "mcp_oauth_issuer_url",
