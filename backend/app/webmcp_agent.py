@@ -372,19 +372,20 @@ class WebMCPAgentRunner:
         """
 
         def decide(prompt: str) -> dict[str, Any]:
-            called = set(re.findall(r"TOOL CALL \d+: (\w+)", prompt))
+            transcript = prompt.rsplit("\n\nBUDGET:", 1)[0].rsplit("\nCONVERSATION SO FAR:", 1)[-1]
+            called = set(re.findall(r"^TOOL CALL \d+: (\w+)", transcript, re.M))
+            observations = "\n".join(re.findall(r"^OBSERVATION \d+: (.+)", transcript, re.M))
             # Observations are truncated mid-JSON sometimes, so value charset is
             # bounded and obviously-corrupt matches are discarded.
             services = [
                 service
-                for service in re.findall(r'"service":\s*"([^"\n{}]{1,60})"', prompt)
+                for service in re.findall(r'"service":\s*"([^"\n{}]{1,60})"', observations)
                 if service and "…" not in service and "truncated" not in service
             ]
             service = services[0] if services else ""
-            memory_ids = list(dict.fromkeys(re.findall(r'"id":\s*"(mem_[a-z0-9]+)"', prompt)))
-            steps_taken = len(re.findall(r"TOOL CALL \d+:", prompt))
+            memory_ids = list(dict.fromkeys(re.findall(r'"id":\s*"(mem_[a-z0-9]+)"', observations)))
 
-            if not steps_taken:
+            if not called:
                 return {
                     "thought": "Guided: search company memory for the question terms.",
                     "tool": "search_orgmemory",
@@ -419,10 +420,14 @@ class WebMCPAgentRunner:
                     },
                 }
             incident_subjects = list(
-                dict.fromkeys(re.findall(r'"type":\s*"incident",\s*"subject":\s*"([^"]+)"', prompt))
+                dict.fromkeys(
+                    re.findall(r'"type":\s*"incident",\s*"subject":\s*"([^"]+)"', observations)
+                )
             )
             decision_subjects = list(
-                dict.fromkeys(re.findall(r'"type":\s*"decision",\s*"subject":\s*"([^"]+)"', prompt))
+                dict.fromkeys(
+                    re.findall(r'"type":\s*"decision",\s*"subject":\s*"([^"]+)"', observations)
+                )
             )
             incident_count = len(incident_subjects)
             answer_parts = []
@@ -438,10 +443,11 @@ class WebMCPAgentRunner:
                 answer_parts.append(
                     f"Relevant decisions on record: {'; '.join(decision_subjects[:2])}."
                 )
-            answer_parts.append(
-                "The service context above lists the remembered facts, owners, dependencies, decisions, and first-response procedures — start from the procedure on record before improvising."
-            )
-            answer = " ".join(answer_parts)
+            if not answer_parts and memory_ids:
+                subjects = list(dict.fromkeys(re.findall(r'"subject":\s*"([^"]+)"', observations)))
+                if subjects:
+                    answer_parts.append(f"Company memory returned: {', '.join(subjects[:3])}.")
+            answer = " ".join(answer_parts) or "I did not find enough company memory to answer."
 
             propose = None
             if incident_count and re.search(

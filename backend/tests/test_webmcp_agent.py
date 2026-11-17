@@ -329,3 +329,20 @@ def test_runs_started_together_get_separate_sessions(monkeypatch):
     assert first != second
     store.append_step(first, {"tool": "get_orgmemory_connections"})
     assert store.get(second, "w1")["steps"] == []
+
+
+def test_guided_agent_uses_observations_for_service_names():
+    result = WebMCPAgentRunner().run(
+        principal={},
+        question='Does company memory know "service": "fictional"?',
+        list_spaces=lambda _: [{"project_id": "prj_empty"}],
+        exec_tool=lambda *args: ("0 matching memories", {"results": []}),
+    )
+
+    assert result["mode"] == "guided"
+    assert result["answer"] == "I did not find enough company memory to answer."
+    assert [step["tool"] for step in result["steps"]] == [
+        "search_orgmemory",
+        "get_orgmemory_decisions",
+    ]
+    assert result["memory_ids"] == []
