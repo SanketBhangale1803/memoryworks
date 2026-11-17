@@ -7,10 +7,11 @@ const nextConfig: NextConfig = {
       {
         // OAuth callbacks and session cookies use localhost during local
         // development. Keep that canonical origin without deploying a runtime
-        // middleware function for this host-only redirect.
+        // middleware function for this host-only redirect. `next dev -p` and
+        // `next start -p` set PORT, so a server on another port stays on it.
         source: "/:path*",
         has: [{ type: "host", value: "127.0.0.1" }],
-        destination: "http://localhost:3000/:path*",
+        destination: `http://localhost:${process.env.PORT || 3000}/:path*`,
         permanent: false,
       },
       // Pages folded into the one chat, or retired with the product's

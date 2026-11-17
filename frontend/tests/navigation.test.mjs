@@ -223,6 +223,10 @@ test("browser API calls use the secure session cookie instead of local storage t
   assert.doesNotMatch(api, /localStorage\.getItem\("runbook_token"\)/);
   assert.doesNotMatch(api, /Authorization: `Bearer/);
   assert.match(nextConfig, /type: "host", value: "127\.0\.0\.1"/);
+  // The canonical-host redirect keeps the server's own port instead of
+  // bouncing every non-3000 dev server to :3000.
+  assert.match(nextConfig, /destination: `http:\/\/localhost:\$\{process\.env\.PORT \|\| 3000\}\/:path\*`/);
+  assert.doesNotMatch(nextConfig, /destination: "http:\/\/localhost:3000/);
 });
 
 test("sign-in uses real OAuth; only the public-demo guest path uses demo-login", () => {
