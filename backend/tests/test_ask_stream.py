@@ -11,14 +11,26 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
 
 FAKE_MODEL = SimpleNamespace(id="glm", label="GLM", model="z-ai/glm-test")
+RETRY_DECISION = (
+    "Decision (2026-11-10): The payments team moved webhook retries from a fixed 5s "
+    "interval to exponential backoff with jitter (max 10 minutes), because fixed "
+    "retries caused a retry storm during the Nov 3 outage. Owner: Priya Shah. "
+    "The checkout-api service must call the idempotency endpoint before every retry."
+)
 
 
-def _signed_in_project(client: TestClient) -> tuple[dict[str, str], str]:
+def _signed_in_project(
+    client: TestClient,
+    *,
+    title: str = "docs/checkout.md",
+    content: str = "Checkout retries failed card charges three times before alerting.",
+) -> tuple[dict[str, str], str]:
     token = client.post(
         "/api/auth/dev-login",
         json={"email": "stream@example.com", "display_name": "Stream"},
@@ -30,8 +42,8 @@ def _signed_in_project(client: TestClient) -> tuple[dict[str, str], str]:
         json={
             "project_id": project["id"],
             "source_type": "doc",
-            "title": "docs/checkout.md",
-            "content": "Checkout retries failed card charges three times before alerting.",
+            "title": title,
+            "content": content,
         },
         headers=headers,
     ).raise_for_status()
@@ -126,3 +138,66 @@ def test_without_a_model_the_stream_still_ends_with_an_answer(graph, monkeypatch
 
     assert events[-1]["type"] == "done"
     assert "text" not in {event["type"] for event in events}
+
+
+@pytest.mark.parametrize(
+    ("query", "expects_rationale"),
+    [
+        ("Who owns the webhook retry change?", False),
+        ("Why did we change webhook retries, and who owns it?", True),
+    ],
+)
+def test_ask_stream_grounds_the_decisions_explicit_owner(graph, query, expects_rationale):
+    title = "Webhook retry decision"
+    with TestClient(app) as client:
+        headers, project_id = _signed_in_project(client, title=title, content=RETRY_DECISION)
+        events = _events(
+            client.post(
+                "/api/ask/stream",
+                json={"project_id": project_id, "query": query, "scope": "workspace"},
+                headers=headers,
+            ).raise_for_status()
+        )
+
+    assert events[-1]["type"] == "done"
+    final = events[-1]["answer"]
+    assert final["answer_sufficient"]
+    assert "Priya Shah" in final["answer"]
+    assert ("retry storm" in final["answer"]) == expects_rationale
+    assert f"[{title}]" in final["answer"]
+    assert [item["source_title"] for item in final["evidence"]] == [title]
+    assert "Owner: Priya Shah." in final["evidence"][0]["exact_chunk"]
+    assert final["memory_units"][0]["type"] == "decision"
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "Who owns the invoice webhook retry change?",
+        "Who owns the Nov 3 outage?",
+        "Who owns the checkout-api idempotency endpoint?",
+        "Who owns the checkout timeout change?",
+        "Why did we change the chargeback window, and who owns it?",
+    ],
+)
+def test_ask_stream_refuses_when_the_decision_does_not_support_the_question(graph, query):
+    content = (
+        f"{RETRY_DECISION} "
+        "Decision: The checkout timeout was set to 30 seconds to prevent long waits. "
+        "Decision: The chargeback window was set to 14 days. Owner: Mei Tan."
+    )
+    with TestClient(app) as client:
+        headers, project_id = _signed_in_project(client, content=content)
+        events = _events(
+            client.post(
+                "/api/ask/stream",
+                json={"project_id": project_id, "query": query, "scope": "workspace"},
+                headers=headers,
+            ).raise_for_status()
+        )
+
+    assert events[-1]["type"] == "done"
+    final = events[-1]["answer"]
+    assert not final["answer_sufficient"]
+    assert final["answer"] == "I do not have enough company memory to answer this confidently."
+    assert final["evidence"] == []
