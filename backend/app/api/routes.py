@@ -1111,14 +1111,26 @@ def repair_project_memory(
         fail(exc)
 
 
-def _github_webhook_project(repository: str) -> dict:
+def _github_webhook_projects(repository: str) -> list[dict]:
+    """Every project that indexes this repository, oldest first.
+
+    Each workspace that imports a repository gets its own project, so one push
+    must refresh all of them; refreshing only the first would leave the other
+    workspaces answering from a stale copy.
+    """
+    matches: dict[str, dict] = {}
     for project in rows(
         """SELECT p.*,wp.workspace_id FROM projects p
-        LEFT JOIN workspace_projects wp ON wp.project_id=p.id"""
+        LEFT JOIN workspace_projects wp ON wp.project_id=p.id
+        ORDER BY p.created_at,p.id,wp.workspace_id"""
     ):
+        # A project shared by several workspaces (from before projects were
+        # per-workspace) is refreshed once.
         if GitHubConnector.slug(str(project.get("repository") or "")) == repository:
-            return project
-    raise HTTPException(404, "No MemoryWorks project is connected to this GitHub repository")
+            matches.setdefault(project["id"], project)
+    if not matches:
+        raise HTTPException(404, "No MemoryWorks project is connected to this GitHub repository")
+    return list(matches.values())
 
 
 def _process_github_webhook_event(event_id: str, payload: dict, workspace_id: str) -> None:
@@ -1269,7 +1281,7 @@ async def github_change_webhook(
     except json.JSONDecodeError as exc:
         raise HTTPException(400, "GitHub webhook body is not valid JSON") from exc
     repository = str((payload.get("repository") or {}).get("full_name") or "")
-    project = _github_webhook_project(repository)
+    projects = _github_webhook_projects(repository)
     delivery_id = x_github_delivery or hashlib.sha256(body).hexdigest()
     pull_request = payload.get("pull_request") or {}
     commit_sha = str(((pull_request.get("head") or {}).get("sha")) or payload.get("after") or "")
@@ -1279,26 +1291,38 @@ async def github_change_webhook(
         or (payload.get("repository") or {}).get("html_url")
         or ""
     )
-    event, created = change_intelligence.observe(
-        project["id"],
-        delivery_id,
-        f"github_{x_github_event}",
-        repository,
-        commit_sha,
-        source_url,
-        payload,
-    )
-    if created:
-        background_jobs.enqueue(
-            "github.webhook",
-            {
-                "event_id": event["id"],
-                "payload": payload,
-                "workspace_id": str(project.get("workspace_id") or ""),
-            },
-            background_tasks=background_tasks,
+    events: list[tuple[dict, bool]] = []
+    for index, project in enumerate(projects):
+        # Deliveries are deduplicated by id; the first project keeps GitHub's
+        # own id so replays of earlier deliveries are still recognised.
+        project_delivery_id = delivery_id if index == 0 else f"{delivery_id}:{project['id']}"
+        event, created = change_intelligence.observe(
+            project["id"],
+            project_delivery_id,
+            f"github_{x_github_event}",
+            repository,
+            commit_sha,
+            source_url,
+            payload,
         )
-    return {**event, "accepted": created, "replayed": not created}
+        events.append((event, created))
+        if created:
+            background_jobs.enqueue(
+                "github.webhook",
+                {
+                    "event_id": event["id"],
+                    "payload": payload,
+                    "workspace_id": str(project.get("workspace_id") or ""),
+                },
+                background_tasks=background_tasks,
+            )
+    event, created = events[0]
+    return {
+        **event,
+        "accepted": created,
+        "replayed": not created,
+        "projects_refreshed": sum(1 for _, was_created in events if was_created),
+    }
 
 
 @router.post("/webhooks/slack")

@@ -223,3 +223,51 @@ def test_persistent_conflicts_eventually_fail(monkeypatch):
 
     with pytest.raises(arcade_client.ArcadeDBError, match="ConcurrentModification"):
         arcade_client.ArcadeClient().command("select 1")
+
+
+def test_a_github_push_refreshes_every_workspace_copy_of_the_repository(graph, monkeypatch):
+    import hashlib
+    import hmac
+    import json
+
+    from app.api import routes
+
+    client, token, _ = _client_and_token("webhook@example.com")
+    first_workspace = create_workspace("Webhook A", f"Bearer {token}")["id"]
+    second_workspace = create_workspace("Webhook B", f"Bearer {token}")["id"]
+    assert first_workspace != second_workspace
+    repository = "https://github.com/acme/orders"
+    first = routes.ingestion.create_project("Orders", repository, workspace_id=first_workspace)
+    second = routes.ingestion.create_project("Orders", repository, workspace_id=second_workspace)
+    assert first != second
+
+    queued: list[dict] = []
+    monkeypatch.setattr(settings, "github_webhook_secret", "test-secret")
+    monkeypatch.setattr(
+        routes.background_jobs,
+        "enqueue",
+        lambda kind, payload, **_: queued.append({"kind": kind, **payload}),
+    )
+    body = json.dumps(
+        {"repository": {"full_name": "acme/orders"}, "after": "abc123", "ref": "refs/heads/main"}
+    ).encode()
+    signature = "sha256=" + hmac.new(b"test-secret", body, hashlib.sha256).hexdigest()
+    headers = {
+        "X-Hub-Signature-256": signature,
+        "X-GitHub-Delivery": "delivery-1",
+        "X-GitHub-Event": "push",
+        "Content-Type": "application/json",
+    }
+
+    response = client.post("/api/webhooks/github", content=body, headers=headers)
+    assert response.status_code == 202, response.text
+    assert response.json()["projects_refreshed"] == 2
+    events = {routes.change_intelligence.get(job["event_id"])["project_id"]: job for job in queued}
+    assert set(events) == {first, second}
+    assert events[first]["workspace_id"] == first_workspace
+    assert events[second]["workspace_id"] == second_workspace
+
+    replay = client.post("/api/webhooks/github", content=body, headers=headers)
+    assert replay.json()["replayed"] is True
+    assert replay.json()["projects_refreshed"] == 0
+    assert len(queued) == 2
