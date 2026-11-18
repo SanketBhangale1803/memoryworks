@@ -60,16 +60,39 @@ class IngestionService:
         self.brain = CompanyBrainService(graph)
         self.scopes = ScopeService()
 
-    def create_project(self, name: str, repository: str = "", project_id: str | None = None) -> str:
-        existing = (
-            row("SELECT id,created_at FROM projects WHERE repository=?", (repository,))
-            if repository and not project_id
-            else None
-        )
-        project_id = project_id or (existing["id"] if existing else new_id("prj"))
+    def create_project(
+        self,
+        name: str,
+        repository: str = "",
+        project_id: str | None = None,
+        *,
+        workspace_id: str = "",
+        team_ids: list[str] | None = None,
+    ) -> str:
         now = utcnow()
-        created_at = existing["created_at"] if existing else now
         with connect() as conn:
+            existing = None
+            if project_id:
+                existing = conn.execute(
+                    "SELECT id,created_at FROM projects WHERE id=?", (project_id,)
+                ).fetchone()
+            elif repository and workspace_id:
+                # Reserve the project and its workspace membership together so
+                # another worker cannot create a duplicate while we index it.
+                conn.execute("BEGIN IMMEDIATE")
+                existing = conn.execute(
+                    """SELECT p.id,p.created_at FROM projects p
+                    JOIN workspace_projects wp ON wp.project_id=p.id
+                    WHERE wp.workspace_id=? AND p.repository=?
+                    ORDER BY p.created_at,p.id LIMIT 1""",
+                    (workspace_id, repository),
+                ).fetchone()
+            elif repository:
+                existing = conn.execute(
+                    "SELECT id,created_at FROM projects WHERE repository=?", (repository,)
+                ).fetchone()
+            project_id = project_id or (existing["id"] if existing else new_id("prj"))
+            created_at = existing["created_at"] if existing else now
             conn.execute(
                 """INSERT INTO projects(id,name,repository,status,created_at,updated_at)
                 VALUES (?,?,?,?,?,?)
@@ -77,6 +100,13 @@ class IngestionService:
                 repository=excluded.repository,status=excluded.status,updated_at=excluded.updated_at""",
                 (project_id, name, repository, "ready", created_at, now),
             )
+            if workspace_id:
+                conn.execute(
+                    "INSERT OR IGNORE INTO workspace_projects VALUES (?,?)",
+                    (workspace_id, project_id),
+                )
+            for team_id in team_ids or []:
+                self.scopes.assign_project(project_id, team_id, "write", connection=conn)
         self.graph.upsert_project(
             {
                 "id": project_id,
