@@ -5,6 +5,7 @@ import pytest
 from app.audit import AuditService
 from app.hcag_adapter import HCAGAdapter
 from app.ingestion import IngestionService
+from app.llm.providers import model_runtime
 from app.outcomes import (
     export_training_records,
     record_action,
@@ -57,6 +58,23 @@ def test_asking_records_the_context_that_was_served(graph):
 
     assert result["context_event_id"]
     assert stats(WORKSPACE)["contexts"] == 1
+
+
+def test_stats_attribute_answers_to_the_provider_that_was_used(graph):
+    _, project_id = _project(graph)
+    for used in ("gemini", None):
+        event_id = record_context(
+            project_id=project_id,
+            query="Why did checkout fail?",
+            result={**_served(project_id), "model": model_runtime("glm", used)},
+            workspace_id=WORKSPACE,
+        )
+        record_outcome(context_event_id=event_id, outcome="succeeded", workspace_id=WORKSPACE)
+
+    assert {item["model_provider"]: item["served"] for item in stats(WORKSPACE)["by_model"]} == {
+        "gemini": 1,
+        "—": 1,
+    }
 
 
 def test_a_logging_failure_never_breaks_the_answer(graph, monkeypatch):

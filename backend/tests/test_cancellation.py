@@ -98,6 +98,40 @@ def test_only_the_owner_can_stop_a_stream():
     assert streams.cancel("answer_test", "user_a") is False
 
 
+def test_org_stream_session_is_readable_from_a_fresh_registry(graph, monkeypatch):
+    from app.api import org_routes
+    from app.main import app
+
+    def agent(**kwargs):
+        kwargs["on_step"]({"summary": "Found the source"})
+        return {"answer": "The source is indexed.", "memory_ids": ["mem_example"]}
+
+    monkeypatch.setattr(org_routes.org_agent, "run", agent)
+    client = TestClient(app)
+    login = client.post("/api/auth/dev-login", json={"email": "agent-history@example.com"})
+    headers = {"Authorization": f"Bearer {login.json()['token']}"}
+    project = client.post("/api/projects", json={"name": "Agent history"}, headers=headers)
+    response = client.post(
+        "/api/org/ask/stream",
+        json={"question": "What did we index?", "space_ids": [project.json()["id"]]},
+        headers=headers,
+    )
+    events = [json.loads(line) for line in response.text.splitlines()]
+    assert [item["type"] for item in events] == ["start", "step", "done"]
+    session = events[-1]["session"]
+
+    monkeypatch.setattr(org_routes, "org_sessions", type(org_routes.org_sessions)())
+    path = f"/api/org/ask/{session['id']}"
+    assert client.get(path, headers=headers).json() == session
+
+    other = client.post("/api/workspaces", json={"name": "Other Agent Workspace"}, headers=headers)
+    assert other.status_code == 200
+    other_login = client.post("/api/auth/dev-login", json={"email": "agent-history@example.com"})
+    assert other_login.json()["user"]["active_workspace_id"] == other.json()["id"]
+    other_headers = {"Authorization": f"Bearer {other_login.json()['token']}"}
+    assert client.get(path, headers=other_headers).status_code == 404
+
+
 def test_a_streamed_answer_ends_with_cancelled_when_stopped(graph, monkeypatch):
     from app.api import routes
     from app.main import app

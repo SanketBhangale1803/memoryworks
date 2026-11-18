@@ -1069,6 +1069,7 @@ def repair_project_memory(
             reingestion = RepositoryIngestor(ingestion, graph, connector).ingest(
                 project["repository"],
                 project["name"],
+                project_id=project_id,
             )
         retained_memories = rebuild_atomic_memories_from_index(
             graph,
@@ -1110,27 +1111,45 @@ def repair_project_memory(
         fail(exc)
 
 
-def _github_webhook_project(repository: str) -> dict:
+def _github_webhook_projects(repository: str) -> list[dict]:
+    """Every project that indexes this repository, oldest first.
+
+    Each workspace that imports a repository gets its own project, so one push
+    must refresh all of them; refreshing only the first would leave the other
+    workspaces answering from a stale copy.
+    """
+    matches: dict[str, dict] = {}
     for project in rows(
         """SELECT p.*,wp.workspace_id FROM projects p
-        LEFT JOIN workspace_projects wp ON wp.project_id=p.id"""
+        LEFT JOIN workspace_projects wp ON wp.project_id=p.id
+        ORDER BY p.created_at,p.id,wp.workspace_id"""
     ):
+        # A project shared by several workspaces (from before projects were
+        # per-workspace) is refreshed once.
         if GitHubConnector.slug(str(project.get("repository") or "")) == repository:
-            return project
-    raise HTTPException(404, "No MemoryWorks project is connected to this GitHub repository")
+            matches.setdefault(project["id"], project)
+    if not matches:
+        raise HTTPException(404, "No MemoryWorks project is connected to this GitHub repository")
+    return list(matches.values())
 
 
 def _process_github_webhook_event(event_id: str, payload: dict, workspace_id: str) -> None:
     try:
         connector = GitHubConnector(ConnectorSecrets(workspace_id))
         repository = str((payload.get("repository") or {}).get("full_name") or "")
-        project = _github_webhook_project(repository)
+        event = change_intelligence.get(event_id)
+        project = (
+            row("SELECT * FROM projects WHERE id=?", (event["project_id"],)) if event else None
+        )
+        if not project:
+            raise ValueError("The webhook project no longer exists")
         # A webhook is a source revision signal, not just a notification.
         # Reconcile the repository corpus first so HCAG can answer against the
         # new commit immediately after this background task completes.
         RepositoryIngestor(ingestion, graph, connector).ingest(
             str(project.get("repository") or ""),
             str(project.get("name") or repository),
+            project_id=project["id"],
         )
         diff, metadata = github_diff(payload, connector)
         change_intelligence.process(
@@ -1262,7 +1281,7 @@ async def github_change_webhook(
     except json.JSONDecodeError as exc:
         raise HTTPException(400, "GitHub webhook body is not valid JSON") from exc
     repository = str((payload.get("repository") or {}).get("full_name") or "")
-    project = _github_webhook_project(repository)
+    projects = _github_webhook_projects(repository)
     delivery_id = x_github_delivery or hashlib.sha256(body).hexdigest()
     pull_request = payload.get("pull_request") or {}
     commit_sha = str(((pull_request.get("head") or {}).get("sha")) or payload.get("after") or "")
@@ -1272,26 +1291,38 @@ async def github_change_webhook(
         or (payload.get("repository") or {}).get("html_url")
         or ""
     )
-    event, created = change_intelligence.observe(
-        project["id"],
-        delivery_id,
-        f"github_{x_github_event}",
-        repository,
-        commit_sha,
-        source_url,
-        payload,
-    )
-    if created:
-        background_jobs.enqueue(
-            "github.webhook",
-            {
-                "event_id": event["id"],
-                "payload": payload,
-                "workspace_id": str(project.get("workspace_id") or ""),
-            },
-            background_tasks=background_tasks,
+    events: list[tuple[dict, bool]] = []
+    for index, project in enumerate(projects):
+        # Deliveries are deduplicated by id; the first project keeps GitHub's
+        # own id so replays of earlier deliveries are still recognised.
+        project_delivery_id = delivery_id if index == 0 else f"{delivery_id}:{project['id']}"
+        event, created = change_intelligence.observe(
+            project["id"],
+            project_delivery_id,
+            f"github_{x_github_event}",
+            repository,
+            commit_sha,
+            source_url,
+            payload,
         )
-    return {**event, "accepted": created, "replayed": not created}
+        events.append((event, created))
+        if created:
+            background_jobs.enqueue(
+                "github.webhook",
+                {
+                    "event_id": event["id"],
+                    "payload": payload,
+                    "workspace_id": str(project.get("workspace_id") or ""),
+                },
+                background_tasks=background_tasks,
+            )
+    event, created = events[0]
+    return {
+        **event,
+        "accepted": created,
+        "replayed": not created,
+        "projects_refreshed": sum(1 for _, was_created in events if was_created),
+    }
 
 
 @router.post("/webhooks/slack")
@@ -1399,15 +1430,11 @@ def _ingest_github_repository(
 ) -> dict:
     with _REPOSITORY_INGEST_LOCK:
         result = RepositoryIngestor(ingestion, graph, connector).ingest(
-            request.repo_url_or_path, request.project_name
+            request.repo_url_or_path,
+            request.project_name,
+            workspace_id=principal["active_workspace_id"],
+            team_ids=team_ids,
         )
-    with connect() as conn:
-        conn.execute(
-            "INSERT OR IGNORE INTO workspace_projects VALUES (?,?)",
-            (principal["active_workspace_id"], result["project_id"]),
-        )
-    for team_id in team_ids:
-        scopes.assign_project(result["project_id"], team_id, "write")
     repository_resource = GitHubConnector.slug(request.repo_url_or_path) or request.repo_url_or_path
     connector_sync.enqueue(
         "github",
@@ -1562,16 +1589,9 @@ def _run_github_inventory(
     for item in queued:
         try:
             with _REPOSITORY_INGEST_LOCK:
-                result = ingestor.ingest(item["source"], item["repository"])
-            # Without this link the repository is ingested but invisible: it never
-            # appears in the workspace, and asking about it fails authorization.
-            # The single-repository route has always done this; bulk did not.
-            if workspace_id:
-                with connect() as conn:
-                    conn.execute(
-                        "INSERT OR IGNORE INTO workspace_projects VALUES (?,?)",
-                        (workspace_id, result["project_id"]),
-                    )
+                result = ingestor.ingest(
+                    item["source"], item["repository"], workspace_id=workspace_id
+                )
             _finish_job(item["job_id"], "succeeded", result)
         except Exception as exc:
             _fail_job(item["job_id"], exc)
@@ -3710,7 +3730,7 @@ def _run_repository_refresh(request_id: str) -> None:
             raise ValueError("The selected project no longer has a GitHub repository")
         connector = GitHubConnector(ConnectorSecrets(record["workspace_id"], record["user_id"]))
         result = RepositoryIngestor(ingestion, graph, connector).ingest(
-            project["repository"], project["name"]
+            project["repository"], project["name"], project_id=record["project_id"]
         )
         repository_resource = GitHubConnector.slug(project["repository"]) or project["repository"]
         connector_sync.enqueue(
