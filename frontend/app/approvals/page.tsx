@@ -47,6 +47,9 @@ export default function Approvals() {
   const [busyId, setBusyId] = useState("");
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
+  // Kept apart from action errors: the next successful poll clears it, so an
+  // outage banner does not outlive the outage.
+  const [loadError, setLoadError] = useState("");
 
   const load = useCallback(() => {
     const failures: unknown[] = [];
@@ -66,7 +69,7 @@ export default function Approvals() {
           sendToSignIn();
           return;
         }
-        if (failures[0]) setError(errorMessage(failures[0]));
+        setLoadError(failures[0] ? errorMessage(failures[0]) : "");
       })
       .finally(() => setLoaded(true));
   }, []);
@@ -174,8 +177,9 @@ export default function Approvals() {
 
       {note && <div className="notice">{note}</div>}
       {error && <div className="notice error">{error}</div>}
+      {loadError && <div className="notice error">{loadError}</div>}
 
-      {loaded && !error && !waiting && !recentRequests.length && (
+      {loaded && !loadError && !waiting && !recentRequests.length && (
         <div className="ap-empty ap-all-clear">
           <strong>Nothing is waiting on you.</strong>
           <span>
