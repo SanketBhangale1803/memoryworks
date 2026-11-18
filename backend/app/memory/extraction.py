@@ -76,14 +76,24 @@ PROSE_LABEL_RE = re.compile(
 )
 NON_ASSERTION_RE = re.compile(
     r"^(?:hi|hello|hey|thanks|thank you|good morning|good afternoon|good evening)(?:\s|[,.!]|$)"
-    r"|^(?:(?:who|what|when|where|why|which|how)\s+)?"
+    r"|^(?!do\s+not\b)(?:(?:who|what|when|where|why|which|how)\s+)?"
     r"(?:is|are|was|were|can|could|do|does|did|should|would|will|ought to)\b"
+    r"|^don['’]t\s+(?:i|we|you|he|she|it|they)\b"
     r"|^who\s+(?:owns|maintains|runs)\b"
     r"|^(?:some(?:one|thing|body)|some stuff|some things|more details)\b"
     r"|\b(?:i|we)\s+(?:think|believe|feel|guess|prefer|hope|suspect|wonder|suggest|recommend|might)\b"
+    r"|^(?:do\s+not|don['’]t|never|always)\s+"
+    r"(?:think|thought|believe[d]?|feel|felt|know|knew|wonder(?:ed)?|want(?:ed)?|"
+    r"prefer(?:red)?|hop(?:e|ed)|had|got|was|were)\b"
     r"|\b(?:in (?:my|our) opinion|imho|imo|maybe|perhaps|probably|possibly|not sure|"
     r"to be determined|tbd|do something|figure (?:it|this|that) out)\b"
     r"|\b(?:is|are)\s+(?:the\s+)?(?:best|better than|great|awesome|terrible|amazing|nice|cool)\b",
+    re.I,
+)
+IMPERATIVE_POLICY_RE = re.compile(
+    r"^(?:(?:do\s+not|don['’]t|never|always)\s+"
+    r"|only\s+(?!(?:then|now|after|when|if)\b)[^.!?]+?\s+may\s+)"
+    r"(?!(?:i|we|you|he|she|it|they|not)\b)[a-z][\w-]*\s+\S",
     re.I,
 )
 PRESENT_FACT_RE = re.compile(
@@ -171,7 +181,9 @@ def _markdown_structure(content: str) -> list[MemoryCandidate]:
         prose = line.lstrip("-*#> \t")
         endpoint = (
             ENDPOINT_RE.search(line.replace("`", ""))
-            if not PROSE_LABEL_RE.match(prose) and _is_assertion(prose)
+            if not PROSE_LABEL_RE.match(prose)
+            and not IMPERATIVE_POLICY_RE.match(prose)
+            and _is_assertion(prose)
             else None
         )
         if endpoint:
@@ -365,14 +377,15 @@ def _prose_candidates(content: str) -> list[MemoryCandidate]:
         text = re.sub(r"^[-*#>\s]+", "", raw).strip().strip("`")
         label = PROSE_LABEL_RE.match(text)
         statement = text[label.end() :] if label else text
+        imperative_policy = IMPERATIVE_POLICY_RE.match(statement)
         lower = statement.casefold()
         if (
-            len(text) < 18
+            (len(text) < 18 and not imperative_policy)
             or len(text) > 600
             or len(statement) < 12
             or text.endswith(":")
             or text.startswith("|")
-            or (not label and ENDPOINT_RE.search(text))
+            or (not (label or imperative_policy) and ENDPOINT_RE.search(text))
             or re.search(r"\b(demo|fixture|placeholder|example only|sample data)\b", lower)
             or not _is_assertion(statement, labeled=bool(label))
             or _looks_like_code(statement)
@@ -383,6 +396,8 @@ def _prose_candidates(content: str) -> list[MemoryCandidate]:
             kind, confidence = (
                 ("decision", 0.92) if label[1].casefold() == "decision" else ("policy", 0.9)
             )
+        elif imperative_policy:
+            kind, confidence = "policy", 0.9
         elif re.search(r"\b(decided|decision|we will|should|must use|use .+ instead)\b", lower):
             kind, confidence = "decision", 0.92
         elif re.search(r"\b(must|required|prohibited|only allowed|may not)\b", lower):
