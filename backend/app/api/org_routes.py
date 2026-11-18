@@ -23,7 +23,8 @@ from app.llm.providers import configured_model, generate_grounded_json
 from app.orgops import OrgOpsService, WatchService
 from app.orgops.agent import build_org_executor, org_guided_decider, org_tool_catalog
 from app.orgops.seed import reset_launch_scenario, seed_launch_scenario
-from app.webmcp_agent import AgentSessionStore, WebMCPAgentRunner
+from app.orgops.sessions import OrgAgentSessionStore
+from app.webmcp_agent import WebMCPAgentRunner
 
 from .routes import (
     _authenticate,
@@ -40,7 +41,7 @@ from .routes import (
 org_router = APIRouter(prefix="/api/org", tags=["organization"])
 orgops = OrgOpsService(company_memory)
 watches = WatchService(orgops)
-org_sessions = AgentSessionStore()
+org_sessions = OrgAgentSessionStore()
 # Same loop the browser-tool agent uses; only the catalog differs, so a question
 # typed into the console is answered by a model choosing tools, not by a script.
 org_agent = WebMCPAgentRunner(catalog=org_tool_catalog, guided=org_guided_decider)
@@ -591,12 +592,10 @@ def org_session(run_id: str, authorization: str | None = Header(default=None)):
 def ask_org_stream(request: AskRequest, authorization: str | None = Header(default=None)):
     """Stream one agent session as NDJSON over a single request.
 
-    The session registry is process-local, so a console that polls
-    ``/ask/{run_id}`` can reach a different instance mid-run and lose the
-    trace entirely. Running the same loop inside the request keeps the run,
-    its tool calls, and its trace on one instance — and lets the console
-    render each step the moment it lands. ``POST /ask`` stays for SDK and
-    single-instance deployments.
+    Active runs and cancellation are local to the worker. The stream delivers
+    each step as it lands, and finished runs are readable through
+    ``/ask/{run_id}`` from any worker sharing the database. ``POST /ask``
+    stays for SDK and single-instance polling while runs are active.
     """
     principal = _authenticate(authorization)
     space_ids = _spaces(principal, ",".join(request.space_ids))
