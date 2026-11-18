@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import Page from "@/components/Page";
-import { api, errorMessage } from "@/lib/api";
+import { api, errorMessage, reportApiFailure } from "@/lib/api";
 import type { AuthUser, WorkspaceMember } from "@/lib/types";
 
 /* Identity, membership, and — for whoever owns this workspace — its people.
@@ -20,11 +20,14 @@ export default function Account() {
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("member");
   const [busy, setBusy] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const [note, setNote] = useState("");
   const [peopleError, setPeopleError] = useState("");
 
   useEffect(() => {
-    api<AuthUser>("/api/auth/me").then(setUser).catch((exc) => setError(errorMessage(exc)));
+    api<AuthUser>("/api/auth/me")
+      .then(setUser)
+      .catch((exc) => reportApiFailure(exc, setError));
   }, []);
 
   const isAdmin = Boolean(user && (user.role === "owner" || user.role === "admin"));
@@ -33,7 +36,7 @@ export default function Account() {
     if (!isAdmin || !user?.active_workspace_id) return;
     api<WorkspaceMember[]>(`/api/workspaces/${user.active_workspace_id}/members`)
       .then(setMembers)
-      .catch(() => undefined);
+      .catch((exc) => reportApiFailure(exc, setPeopleError));
   }, [isAdmin, user?.active_workspace_id]);
 
   async function loadMembers() {
@@ -43,8 +46,8 @@ export default function Account() {
         `/api/workspaces/${user.active_workspace_id}/members`,
       );
       setMembers(items);
-    } catch {
-      /* the roster refreshes on the next invite or reload either way */
+    } catch (exc) {
+      reportApiFailure(exc, setPeopleError);
     }
   }
 
@@ -77,7 +80,14 @@ export default function Account() {
   }
 
   async function signOut() {
-    await api("/api/auth/logout", { method: "POST" });
+    setSigningOut(true);
+    try {
+      await api("/api/auth/logout", { method: "POST" });
+    } catch (exc) {
+      reportApiFailure(exc, setError);
+      setSigningOut(false);
+      return;
+    }
     localStorage.removeItem("runbook_token");
     window.location.assign("/login");
   }
@@ -104,7 +114,7 @@ export default function Account() {
             </div>
             <div className="account-detail"><span>Identity provider</span><strong>{user.auth_provider}</strong></div>
             <div className="account-detail"><span>Workspace role</span><strong>{user.role}</strong></div>
-            <button className="button secondary" onClick={signOut}>Sign out</button>
+            <button className="button secondary" disabled={signingOut} onClick={signOut}>{signingOut ? "Signing out…" : "Sign out"}</button>
           </section>
 
           <div className="stack" style={{ gap: 18 }}>

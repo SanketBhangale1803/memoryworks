@@ -11,7 +11,15 @@ import { IMPORT_HINT, ImportTurn, type ChatImport } from "@/components/ImportTur
 import MarkdownAnswer from "@/components/MarkdownAnswer";
 import { NavToggle } from "@/components/WorkspaceFrame";
 import { useWorkspaceTools } from "@/hooks/useWorkspaceTools";
-import { AnswerStopped, API, api, errorMessage } from "@/lib/api";
+import {
+  AnswerStopped,
+  API,
+  api,
+  errorMessage,
+  isUnauthorized,
+  reportApiFailure,
+  sendToSignIn,
+} from "@/lib/api";
 import { orgApi, type OrgAgentSession, type OrgPlan } from "@/lib/orgTools";
 import { newThreadId, threads, titleFrom, useThreads, type ThreadMode } from "@/lib/threads";
 import type { AuthUser, Connector, EvidencePanelState, IngestJob } from "@/lib/types";
@@ -176,7 +184,7 @@ export default function WorkspaceChat({ user }: { user?: AuthUser }) {
         setProjects(items);
         if (items[0]) setProject((current) => current || items[0].id);
       })
-      .catch((error) => setLoadError(error.message))
+      .catch((error) => reportApiFailure(error, setLoadError))
       .finally(() => setLoaded(true));
     api<{ models: Model[]; default: string }>("/api/models")
       .then((catalog) => {
@@ -353,10 +361,17 @@ export default function WorkspaceChat({ user }: { user?: AuthUser }) {
       return response;
     } catch (error) {
       // Keep the steps it got through: where an answer stopped is the first
-      // thing anyone needs to know about why it failed.
+      // thing anyone needs to know about why it failed. An expired session is
+      // not a failure to explain; it goes back to sign-in.
+      const unauthorized = isUnauthorized(error);
+      if (unauthorized) sendToSignIn();
       const stopped = error instanceof AnswerStopped || controller.signal.aborted;
       patchTurn(threadId, index, {
-        ...(stopped ? { stopped: true, partial: trace.draft } : { error: errorMessage(error) }),
+        ...(stopped
+          ? { stopped: true, partial: trace.draft }
+          : unauthorized
+            ? {}
+            : { error: errorMessage(error) }),
         trace: trace.steps.length ? { ...trace, draft: "", ms: Date.now() - trace.started } : undefined,
       });
       throw stopped ? new AnswerStopped() : new Error(errorMessage(error));
@@ -407,6 +422,11 @@ export default function WorkspaceChat({ user }: { user?: AuthUser }) {
         });
         return;
       }
+      if (isUnauthorized(error)) {
+        sendToSignIn();
+        patchTurn(threadId, index, { agent: { steps: [], done: true } });
+        return;
+      }
       patchTurn(threadId, index, {
         agent: { steps: [], done: true },
         error: errorMessage(error) || "The agent could not finish.",
@@ -435,7 +455,8 @@ export default function WorkspaceChat({ user }: { user?: AuthUser }) {
       const { threadId, index } = beginTurn(question, mode, project, scope);
       patchTurn(threadId, index, { imported: reply });
       return true;
-    } catch {
+    } catch (error) {
+      if (isUnauthorized(error)) sendToSignIn();
       return false;
     } finally {
       setBusy(false);
@@ -469,7 +490,8 @@ export default function WorkspaceChat({ user }: { user?: AuthUser }) {
         }),
       }));
     } catch (error) {
-      patchTurn(threadId, index, { error: errorMessage(error) });
+      if (isUnauthorized(error)) sendToSignIn();
+      else patchTurn(threadId, index, { error: errorMessage(error) });
     }
   }
 
@@ -478,6 +500,11 @@ export default function WorkspaceChat({ user }: { user?: AuthUser }) {
     try {
       setEvidence(await orgApi.provenance(memoryId));
     } catch (error) {
+      if (isUnauthorized(error)) {
+        sendToSignIn();
+        setEvidence(null);
+        return;
+      }
       setEvidence({ error: errorMessage(error) || "That memory is no longer available." });
     }
   }
@@ -988,8 +1015,10 @@ function AnswerBlock({
       try {
         const next = await api<Run>(`/api/execute/${run.id}`);
         if (live) setRun(next);
-      } catch {
-        /* a transient poll failure should not kill the run display */
+      } catch (error) {
+        /* A transient poll failure should not kill the run display, but an
+           expired session still belongs at sign-in. */
+        if (isUnauthorized(error)) sendToSignIn();
       }
     }, 3000);
     return () => {
@@ -1008,7 +1037,8 @@ function AnswerBlock({
         }),
       );
     } catch (error) {
-      setRunError(errorMessage(error));
+      if (isUnauthorized(error)) sendToSignIn();
+      else setRunError(errorMessage(error));
     }
   }
 

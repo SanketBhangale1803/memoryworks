@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import MarkdownAnswer from "@/components/MarkdownAnswer";
-import { API, api, AnswerStopped, cancelStream } from "@/lib/api";
+import { API, ApiError, api, AnswerStopped, cancelStream } from "@/lib/api";
 
 /* Ask mode, narrated.
  *
@@ -90,7 +90,11 @@ export async function streamAnswer<T>(
     }
     if (!response.ok || !response.body) {
       const payload = await response.json().catch(() => ({}));
-      throw new Error(payload.detail || `Request failed (${response.status})`);
+      throw new ApiError(
+        payload.detail || `Request failed (${response.status})`,
+        response.status,
+        "/api/ask/stream",
+      );
     }
 
     const reader = response.body.getReader();

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect } from "react";
-import { API, api } from "@/lib/api";
+import { API, api, errorMessage, isUnauthorized, sendToSignIn } from "@/lib/api";
 import type { ConnectorSyncJob } from "@/lib/types";
 
 type IngestJobRecord = {
@@ -49,15 +49,33 @@ export function ImportTurn({
   useEffect(() => {
     if (!state.job || (state.status !== "running" && state.status !== "queued")) return;
     let stopped = false;
+    let failures = 0;
     const tick = async () => {
       if (stopped) return;
       try {
         const next = await follow(state);
         if (stopped) return;
+        failures = 0;
         if (next) onUpdate(next);
         else window.setTimeout(tick, POLL_MS);
-      } catch {
-        if (!stopped) window.setTimeout(tick, POLL_MS * 2);
+      } catch (error) {
+        if (stopped) return;
+        if (isUnauthorized(error)) {
+          sendToSignIn();
+          return;
+        }
+        failures += 1;
+        // A persistent failure must end in a readable state, not a spinner
+        // that retries forever.
+        if (failures >= 3) {
+          onUpdate({
+            ...state,
+            status: "failed",
+            message: errorMessage(error, "Couldn’t check the import status. Open Sync status to see its progress."),
+          });
+          return;
+        }
+        window.setTimeout(tick, POLL_MS * 2);
       }
     };
     const timer = window.setTimeout(tick, POLL_MS);

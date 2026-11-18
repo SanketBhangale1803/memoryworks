@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Page from "@/components/Page";
-import { API, api, errorMessage, formatDate } from "@/lib/api";
+import { API, api, formatDate, reportApiFailure } from "@/lib/api";
 import type {
   Connector,
   ConnectorAccount,
@@ -129,6 +129,7 @@ export default function Sources() {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("All");
   const [registering, setRegistering] = useState(false);
+  const [busyId, setBusyId] = useState("");
   const [custom, setCustom] = useState({
     name: "",
     serverUrl: "",
@@ -149,11 +150,10 @@ export default function Sources() {
       setConnectors(nextConnectors);
       setCatalog(nextCatalog);
       setCoverage(nextCoverage);
-      setLoaded(true);
-    });
+    }).finally(() => setLoaded(true));
 
   useEffect(() => {
-    load().catch((exc) => setError(errorMessage(exc)));
+    load().catch((exc) => reportApiFailure(exc, setError));
     const params = new URLSearchParams(window.location.search);
     if (params.get("connected")) setJustConnected(params.get("connected")!);
     if (params.get("error")) setError(params.get("error")!);
@@ -180,18 +180,22 @@ export default function Sources() {
 
   async function disconnect(card: Card) {
     if (!window.confirm(`Disconnect ${card.label} for your delegated account?`)) return;
+    setBusyId(card.provider);
     try {
       await api(`/api/connectors/${encodeURIComponent(card.provider)}`, { method: "DELETE" });
       setMessage(`${card.label} disconnected.`);
       setJustConnected("");
       await load();
     } catch (exc) {
-      setError(errorMessage(exc));
+      reportApiFailure(exc, setError);
+    } finally {
+      setBusyId("");
     }
   }
 
   async function revokeRegistration(provider: string) {
     if (!window.confirm("Revoke this custom MCP registration for the whole workspace?")) return;
+    setBusyId(provider);
     try {
       await api(`/api/connectors/custom/registrations/${encodeURIComponent(provider)}`, {
         method: "DELETE",
@@ -199,7 +203,9 @@ export default function Sources() {
       setMessage("Custom MCP registration revoked.");
       await load();
     } catch (exc) {
-      setError(errorMessage(exc));
+      reportApiFailure(exc, setError);
+    } finally {
+      setBusyId("");
     }
   }
 
@@ -229,7 +235,7 @@ export default function Sources() {
       setCustom((value) => ({ ...value, name: "", serverUrl: "", clientId: "" }));
       await load();
     } catch (exc) {
-      setError(errorMessage(exc));
+      reportApiFailure(exc, setError);
     } finally {
       setRegistering(false);
     }
@@ -281,7 +287,7 @@ export default function Sources() {
         </div>
       </div>
 
-      {loaded && !visible.length && (
+      {loaded && !error && !visible.length && (
         <p className="subtle source-empty">
           Nothing matches that. <Link href="/ingest?source=paste">Paste it in directly →</Link>
         </p>
@@ -292,6 +298,7 @@ export default function Sources() {
           <SourceCard
             key={card.provider}
             card={card}
+            busy={busyId === card.provider}
             onDisconnect={() => disconnect(card)}
             onRevoke={() => revokeRegistration(card.provider)}
           />
@@ -387,10 +394,12 @@ export default function Sources() {
 
 function SourceCard({
   card,
+  busy,
   onDisconnect,
   onRevoke,
 }: {
   card: Card;
+  busy: boolean;
   onDisconnect: () => void;
   onRevoke: () => void;
 }) {
@@ -450,7 +459,7 @@ function SourceCard({
             <a className="text-button" href={`${API}/api/connectors/${provider}/auth/start`}>
               Reconnect
             </a>
-            <button className="text-button danger-text" onClick={onDisconnect}>
+            <button className="text-button danger-text" disabled={busy} onClick={onDisconnect}>
               Disconnect
             </button>
           </>
@@ -483,7 +492,7 @@ function SourceCard({
         )}
         {card.status === "soon" && <span className="subtle">Not available yet</span>}
         {card.provider.startsWith("custom.") && (
-          <button className="text-button danger-text" onClick={onRevoke}>
+          <button className="text-button danger-text" disabled={busy} onClick={onRevoke}>
             Revoke package
           </button>
         )}

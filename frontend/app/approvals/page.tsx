@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { api, errorMessage, formatDate } from "@/lib/api";
+import { api, errorMessage, formatDate, isUnauthorized, reportApiFailure, sendToSignIn } from "@/lib/api";
 import { orgApi, type OrgPlan } from "@/lib/orgTools";
 import type { MemoryWorksProposal, MemoryWorksRefreshRequest } from "@/lib/webmcp";
 
@@ -49,16 +49,34 @@ export default function Approvals() {
   const [error, setError] = useState("");
 
   const load = useCallback(() => {
+    const failures: unknown[] = [];
+    const track = <T,>(request: Promise<T>, apply: (value: T) => void) =>
+      request.then(apply).catch((error: unknown) => {
+        failures.push(error);
+      });
     return Promise.all([
-      api<MemoryWorksRefreshRequest[]>("/api/repository-refresh-requests").then(setRequests).catch(() => undefined),
-      api<MemoryWorksProposal[]>("/api/memory/proposals").then(setProposals).catch(() => undefined),
-      orgApi.plans("pending_approval").then((result) => setPlans(result.plans || [])).catch(() => undefined),
-      api<ConnectorToolCall[]>("/api/connector-tool-calls").then(setConnectorCalls).catch(() => undefined),
-    ]).finally(() => setLoaded(true));
+      track(api<MemoryWorksRefreshRequest[]>("/api/repository-refresh-requests"), setRequests),
+      track(api<MemoryWorksProposal[]>("/api/memory/proposals"), setProposals),
+      track(orgApi.plans("pending_approval").then((result) => result.plans || []), setPlans),
+      track(api<ConnectorToolCall[]>("/api/connector-tool-calls"), setConnectorCalls),
+    ])
+      .then(() => {
+        const expired = failures.find(isUnauthorized);
+        if (expired) {
+          sendToSignIn();
+          return;
+        }
+        if (failures[0]) setError(errorMessage(failures[0]));
+      })
+      .finally(() => setLoaded(true));
   }, []);
 
   useEffect(() => {
-    api<Principal>("/api/auth/me").then(setPrincipal).catch(() => undefined);
+    api<Principal>("/api/auth/me")
+      .then(setPrincipal)
+      .catch((exc) => {
+        if (isUnauthorized(exc)) sendToSignIn();
+      });
     load();
     // Stays live without a refresh: something an agent proposes, or another
     // admin decides, shows up here within seconds.
@@ -87,7 +105,7 @@ export default function Approvals() {
       setNote(await work());
       await load();
     } catch (exc) {
-      setError(errorMessage(exc));
+      reportApiFailure(exc, setError);
     } finally {
       setBusyId("");
     }
@@ -157,7 +175,7 @@ export default function Approvals() {
       {note && <div className="notice">{note}</div>}
       {error && <div className="notice error">{error}</div>}
 
-      {loaded && !waiting && !recentRequests.length && (
+      {loaded && !error && !waiting && !recentRequests.length && (
         <div className="ap-empty ap-all-clear">
           <strong>Nothing is waiting on you.</strong>
           <span>
