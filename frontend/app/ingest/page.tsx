@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import Page from "@/components/Page";
 import GitHubIcon from "@/components/icons/GitHubIcon";
-import { API, api, errorMessage } from "@/lib/api";
+import { API, api, reportApiFailure } from "@/lib/api";
 import type { Connector, ConnectorSyncJob, GitHubRepository, IngestJob, Project, SlackChannel, Team } from "@/lib/types";
 
 type SourceKind = "paste" | "github" | "google_drive" | "slack" | "website" | "files";
@@ -95,7 +95,7 @@ export default function Ingest() {
     api<Project[]>("/api/projects").then(items => {
       setProjects(items);
       if (items[0]) setProject(items[0].id);
-    });
+    }).catch(exc => reportApiFailure(exc, setError));
     // Only list what the person has actually authorized. Asking a provider for
     // its resources before it is connected is a guaranteed failure, and the
     // empty picker it leaves behind reads as "you have nothing".
@@ -103,10 +103,10 @@ export default function Ingest() {
       setConnections(items);
       if (items.some(item => item.provider === "github" && item.connected)) loadRepositories();
       if (items.some(item => item.provider === "slack" && item.connected)) loadChannels();
-    });
+    }).catch(exc => reportApiFailure(exc, setError));
     api<{ active_workspace_id: string }>("/api/auth/me")
       .then(me => api<Team[]>(`/api/workspaces/${me.active_workspace_id}/teams`))
-      .then(setTeams).catch(() => undefined);
+      .then(setTeams).catch(exc => reportApiFailure(exc, setError));
   }, []);
 
   function loadRepositories() {
@@ -115,7 +115,7 @@ export default function Ingest() {
       method: "POST",
       body: JSON.stringify({arguments: {}}),
     }).then(response => setRepositories(response.result?.repositories || []))
-      .catch((cause) => setRepositoriesError(errorMessage(cause) || "Could not list repositories."));
+      .catch((cause) => reportApiFailure(cause, setRepositoriesError, "Could not list repositories."));
   }
 
   function loadChannels() {
@@ -123,7 +123,7 @@ export default function Ingest() {
     api<SlackChannel[]>("/api/connectors/slack/resources").then(items => {
       setChannels(items);
       if (items[0]) setChannel(items[0].id);
-    }).catch((cause) => setChannelsError(errorMessage(cause) || "Could not list channels."));
+    }).catch((cause) => reportApiFailure(cause, setChannelsError, "Could not list channels."));
   }
 
   function loadDriveFiles() {
@@ -133,7 +133,7 @@ export default function Ingest() {
       .then(setDriveFiles)
       .catch((cause) => {
         setDriveFiles([]);
-        setDriveError(errorMessage(cause) || "Could not list your Drive files.");
+        reportApiFailure(cause, setDriveError, "Could not list your Drive files.");
       });
   }
 
@@ -276,7 +276,7 @@ export default function Ingest() {
       setPhase(2);
       setResult(response);
     } catch (exc) {
-      setError(errorMessage(exc));
+      reportApiFailure(exc, setError);
       setDriveProgress("");
     } finally {
       setBusy(false);
@@ -297,7 +297,7 @@ export default function Ingest() {
       });
       setBulk({ queued: response.repositories_queued });
     } catch (cause) {
-      setError(errorMessage(cause));
+      reportApiFailure(cause, setError);
     } finally {
       setBulkBusy(false);
     }

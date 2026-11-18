@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Page from "@/components/Page";
-import { api, errorMessage } from "@/lib/api";
+import { api, reportApiFailure } from "@/lib/api";
 
 type Project = { id: string; name: string };
 type GraphNode = {
@@ -52,19 +52,27 @@ export default function RepoGraph() {
   const [radius, setRadius] = useState<BlastRadius | null>(null);
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [error, setError] = useState("");
+  const [serviceError, setServiceError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [projectsLoaded, setProjectsLoaded] = useState(false);
 
   useEffect(() => {
-    api<Project[]>("/api/projects").then((items) => {
-      setProjects(items);
-      if (items[0]) setProjectId(items[0].id);
-    });
+    api<Project[]>("/api/projects")
+      .then((items) => {
+        setProjects(items);
+        if (items[0]) setProjectId(items[0].id);
+      })
+      .catch((exc) => reportApiFailure(exc, setError))
+      .finally(() => setProjectsLoaded(true));
   }, []);
 
   useEffect(() => {
     if (!projectId) return;
     setLoading(true);
     setError("");
+    setSummary(null);
+    setNodes([]);
+    setEdges([]);
     api<GraphView>(`/api/projects/${projectId}/graph/view?limit=300`)
       .then((view) => {
         setSummary(view.summary);
@@ -72,7 +80,7 @@ export default function RepoGraph() {
         setEdges(view.edges);
         setSelectedService(view.summary.services?.[0]?.name || "");
       })
-      .catch((exc) => setError(errorMessage(exc)))
+      .catch((exc) => reportApiFailure(exc, setError))
       .finally(() => setLoading(false));
   }, [projectId]);
 
@@ -81,12 +89,19 @@ export default function RepoGraph() {
       setServiceGraph(null);
       return;
     }
+    setServiceError("");
     api<ServiceGraph>(`/api/projects/${projectId}/graph/service/${encodeURIComponent(selectedService)}`)
       .then(setServiceGraph)
-      .catch(() => setServiceGraph(null));
+      .catch((exc) => {
+        setServiceGraph(null);
+        reportApiFailure(exc, setServiceError);
+      });
     api<BlastRadius>(`/api/projects/${projectId}/graph/blast-radius/${encodeURIComponent(selectedService)}`)
       .then(setRadius)
-      .catch(() => setRadius(null));
+      .catch((exc) => {
+        setRadius(null);
+        reportApiFailure(exc, setServiceError);
+      });
   }, [projectId, selectedService]);
 
   const filteredNodes = useMemo(
@@ -170,6 +185,7 @@ export default function RepoGraph() {
                     </option>
                   ))}
                 </select>
+                {serviceError && <div className="notice error">{serviceError}</div>}
                 {serviceGraph ? (
                   <div className="stack">
                     <div className="row between">
@@ -342,9 +358,11 @@ export default function RepoGraph() {
             </table>
           </section>
         </>
-      ) : (
+      ) : !projectsLoaded ? (
+        <div className="empty">Loading…</div>
+      ) : !error ? (
         <div className="empty">Ingest a repository to populate the graph explorer.</div>
-      )}
+      ) : null}
     </Page>
   );
 }

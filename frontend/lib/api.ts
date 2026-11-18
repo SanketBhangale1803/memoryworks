@@ -15,6 +15,21 @@ export const API =
       ? ""
       : "http://localhost:8000");
 
+/* A failed request keeps its status, so callers can tell an expired session
+   (401, go to sign-in) from a backend that is down (503, show the reason).
+   Message format stays the same as before: the server's `detail`, or the code. */
+export class ApiError extends Error {
+  status: number;
+  path: string;
+
+  constructor(message: string, status: number, path = "") {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.path = path;
+  }
+}
+
 export async function api<T = unknown>(path: string, options?: RequestInit): Promise<T> {
   const headers = new Headers(options?.headers);
   const isFormData = typeof FormData !== "undefined" && options?.body instanceof FormData;
@@ -35,7 +50,9 @@ export async function api<T = unknown>(path: string, options?: RequestInit): Pro
     );
   }
   const payload = (await response.json().catch(() => ({}))) as T & { detail?: string };
-  if (!response.ok) throw new Error(payload.detail || `Request failed (${response.status})`);
+  if (!response.ok) {
+    throw new ApiError(payload.detail || `Request failed (${response.status})`, response.status, path);
+  }
   return payload;
 }
 
@@ -46,6 +63,31 @@ export function errorMessage(error: unknown, fallback = "Something went wrong.")
   if (error instanceof Error && error.message) return error.message;
   if (typeof error === "string" && error) return error;
   return fallback;
+}
+
+/* An expired session is not a failure to explain — it is a request to sign in
+   again. Every load and every mutation routes its catch through this helper so
+   a 401 never leaves someone staring at an error wall. */
+export function isUnauthorized(error: unknown) {
+  return error instanceof ApiError && error.status === 401;
+}
+
+export function sendToSignIn() {
+  if (typeof window === "undefined" || window.location.pathname === "/login") return false;
+  window.location.assign("/login");
+  return true;
+}
+
+/* One failure path for pages: redirect on an expired session, otherwise hand
+   the caller a readable message to render. Returns true when it navigated. */
+export function reportApiFailure(
+  error: unknown,
+  onMessage: (message: string) => void,
+  fallback?: string,
+) {
+  if (isUnauthorized(error)) return sendToSignIn();
+  onMessage(errorMessage(error, fallback));
+  return false;
 }
 
 export function formatDate(value?: string) {

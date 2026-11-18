@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import WorkspaceChat from "@/components/WorkspaceChat";
-import { api } from "@/lib/api";
+import { api, reportApiFailure } from "@/lib/api";
 import type { AuthUser } from "@/lib/types";
 
 /* The workspace is the chat. Everything else — memories, graph, connectors,
@@ -12,7 +12,9 @@ export default function Workspace() {
   const [user, setUser] = useState<AuthUser>();
 
   useEffect(() => {
-    api<AuthUser>("/api/auth/me").then(setUser).catch(() => setUser({ id: "", email: "" }));
+    api<AuthUser>("/api/auth/me")
+      .then(setUser)
+      .catch((exc) => reportApiFailure(exc, () => setUser({ id: "", email: "" })));
   }, []);
 
   return <WorkspaceChat user={user} />;

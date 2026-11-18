@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import MarkdownAnswer from "@/components/MarkdownAnswer";
 import Page from "@/components/Page";
-import { api, errorMessage, formatDate } from "@/lib/api";
+import { api, formatDate, reportApiFailure } from "@/lib/api";
 import type { Project, SlackChannel } from "@/lib/types";
 
 type WorkEvidence = {
@@ -87,12 +87,12 @@ export default function MemoryWorkPage() {
     api<Project[]>("/api/projects").then(items => {
       setProjects(items);
       if (items[0]) setProjectId(items[0].id);
-    }).catch(exc => setError(errorMessage(exc)));
+    }).catch(exc => reportApiFailure(exc, setError));
   }, []);
 
   useEffect(() => {
     setWork(undefined);
-    loadHistory(projectId, true).catch(exc => setError(errorMessage(exc)));
+    loadHistory(projectId, true).catch(exc => reportApiFailure(exc, setError));
   }, [projectId, loadHistory]);
 
   async function createWork() {
@@ -108,7 +108,7 @@ export default function MemoryWorkPage() {
       setWork(created);
       await loadHistory(projectId);
     } catch (exc) {
-      setError(errorMessage(exc));
+      reportApiFailure(exc, setError);
     } finally {
       setCreating(false);
     }
@@ -133,15 +133,20 @@ export default function MemoryWorkPage() {
       if (failed?.output?.error) setSlackError(failed.output.error);
       await loadHistory(projectId);
     } catch (exc) {
-      setError(errorMessage(exc));
+      reportApiFailure(exc, setError);
     } finally {
       setResolving("");
     }
   }
 
   async function openWork(id: string) {
-    setWork(await api<WorkItem>(`/api/work/${id}`));
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    setError("");
+    try {
+      setWork(await api<WorkItem>(`/api/work/${id}`));
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch (exc) {
+      reportApiFailure(exc, setError);
+    }
   }
 
   const evidence = work?.context?.evidence || [];
@@ -160,7 +165,7 @@ export default function MemoryWorkPage() {
     api<SlackChannel[]>("/api/connectors/slack/channels").then(items => {
       setChannels(items);
       setChannelId(current => current || items[0]?.id || "");
-    }).catch(exc => setSlackError(errorMessage(exc)));
+    }).catch(exc => reportApiFailure(exc, setSlackError));
   }, [slackStep]);
 
   function startAnother() {

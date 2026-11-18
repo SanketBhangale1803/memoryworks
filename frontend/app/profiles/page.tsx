@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Page from "@/components/Page";
-import { api, errorMessage } from "@/lib/api";
+import { api, reportApiFailure } from "@/lib/api";
 import type { Project } from "@/lib/types";
 
 type ProfileItem = { content?: string };
@@ -31,13 +31,14 @@ export default function Profiles() {
   const [profile, setProfile] = useState<ProjectProfile>();
   const [skills, setSkills] = useState<AgentSkill[]>([]);
   const [skillName, setSkillName] = useState("company-workflow");
+  const [compiling, setCompiling] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
     api<Project[]>("/api/projects").then(items => {
       setProjects(items);
       if (items[0]) setProject(items[0].id);
-    }).catch(exc => setError(errorMessage(exc)));
+    }).catch(exc => reportApiFailure(exc, setError));
   }, []);
 
   const refresh = useCallback(async (activeProject = project) => {
@@ -50,17 +51,22 @@ export default function Profiles() {
     setSkills(nextSkills);
   }, [project]);
 
-  useEffect(() => { refresh(project).catch(exc => setError(errorMessage(exc))); }, [project, refresh]);
+  useEffect(() => { refresh(project).catch(exc => reportApiFailure(exc, setError)); }, [project, refresh]);
 
   async function compileSkill() {
     setError("");
+    setCompiling(true);
     try {
       await api("/api/memory/skills/compile", {
         method: "POST",
         body: JSON.stringify({project_id: project, name: skillName}),
       });
       await refresh();
-    } catch (exc) { setError(errorMessage(exc)); }
+    } catch (exc) {
+      reportApiFailure(exc, setError);
+    } finally {
+      setCompiling(false);
+    }
   }
 
   const groups: [string, ProfileItem[] | undefined][] = [
@@ -79,7 +85,7 @@ export default function Profiles() {
       <div className="panel-body grid two">{groups.map(([label, items]) => <article className="card card-pad" key={label}><span className="panel-label">{label}</span><h2>{items?.length || 0}</h2><p>{items?.[0]?.content || "No current source-backed memory in this category."}</p></article>)}</div>
     </section>
     <section className="panel">
-      <div className="panel-head"><div><span className="panel-label">Executable company knowledge</span><h2>Agent skill specs</h2></div><div className="row"><input value={skillName} onChange={event => setSkillName(event.target.value)} aria-label="Skill name"/><button className="button secondary" onClick={compileSkill} disabled={!project || !skillName.trim()}>Compile from memory</button></div></div>
+      <div className="panel-head"><div><span className="panel-label">Executable company knowledge</span><h2>Agent skill specs</h2></div><div className="row"><input value={skillName} onChange={event => setSkillName(event.target.value)} aria-label="Skill name"/><button className="button secondary" onClick={compileSkill} disabled={compiling || !project || !skillName.trim()}>{compiling ? "Compiling…" : "Compile from memory"}</button></div></div>
       <div className="panel-body">{skills.length ? skills.map((skill, index) => <article className="clean-source-row" key={skill.id}><span>{String(index + 1).padStart(2, "0")}</span><div><div className="row between"><strong>{skill.name}</strong><small>v{skill.version}</small></div><p>{skill.spec.steps.length} steps · {skill.spec.policies.length} policies · {skill.spec.evidence.length} evidence sources</p><span className={`badge ${skill.status === "current" ? "success" : "warning"}`}>{skill.status}</span></div></article>) : <div className="empty">Compile a skill after ingesting high-confidence procedures or policies.</div>}</div>
     </section>
   </Page>;
