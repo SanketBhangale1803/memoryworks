@@ -70,6 +70,26 @@ JS_ROUTE_RE = re.compile(
     r"\b(?:app|router)\.(get|post|put|patch|delete|options|head)" r"\(\s*[\"']([^\"']+)[\"']",
     re.I,
 )
+PROSE_LABEL_RE = re.compile(
+    r"^(decision|(?:company[ \t]+)?policy)(?:[ \t]+\(\d{4}-\d{2}-\d{2}\))?[ \t]*:[ \t]*",
+    re.I,
+)
+NON_ASSERTION_RE = re.compile(
+    r"^(?:hi|hello|hey|thanks|thank you|good morning|good afternoon|good evening)(?:\s|[,.!]|$)"
+    r"|^(?:(?:who|what|when|where|why|which|how)\s+)?"
+    r"(?:is|are|was|were|can|could|do|does|did|should|would|will|ought to)\b"
+    r"|^who\s+(?:owns|maintains|runs)\b"
+    r"|^(?:some(?:one|thing|body)|some stuff|some things|more details)\b"
+    r"|\b(?:i|we)\s+(?:think|believe|feel|guess|prefer|hope|suspect|wonder|suggest|recommend|might)\b"
+    r"|\b(?:in (?:my|our) opinion|imho|imo|maybe|perhaps|probably|possibly|not sure|"
+    r"to be determined|tbd|do something|figure (?:it|this|that) out)\b"
+    r"|\b(?:is|are)\s+(?:the\s+)?(?:best|better than|great|awesome|terrible|amazing|nice|cool)\b",
+    re.I,
+)
+PRESENT_FACT_RE = re.compile(
+    r"^(?:we|(?:our|the)\s+[\w-]+(?:\s+[\w-]+){0,4})\s+(?:use|run|store|retain)s?\s+\S",
+    re.I,
+)
 
 
 def extract_atomic_memories(
@@ -148,7 +168,12 @@ def _markdown_structure(content: str) -> list[MemoryCandidate]:
         line = raw.strip()
         if not line:
             continue
-        endpoint = ENDPOINT_RE.search(line.replace("`", ""))
+        prose = line.lstrip("-*#> \t")
+        endpoint = (
+            ENDPOINT_RE.search(line.replace("`", ""))
+            if not PROSE_LABEL_RE.match(prose) and _is_assertion(prose)
+            else None
+        )
         if endpoint:
             method, path = endpoint.groups()
             detail = _after_dash(line)
@@ -338,23 +363,29 @@ def _prose_candidates(content: str) -> list[MemoryCandidate]:
     output: list[MemoryCandidate] = []
     for raw in re.split(r"(?<=[.!?])\s+|\n+", content):
         text = re.sub(r"^[-*#>\s]+", "", raw).strip().strip("`")
-        lower = text.casefold()
+        label = PROSE_LABEL_RE.match(text)
+        statement = text[label.end() :] if label else text
+        lower = statement.casefold()
         if (
             len(text) < 18
             or len(text) > 600
+            or len(statement) < 12
             or text.endswith(":")
             or text.startswith("|")
-            or ENDPOINT_RE.search(text)
+            or (not label and ENDPOINT_RE.search(text))
             or re.search(r"\b(demo|fixture|placeholder|example only|sample data)\b", lower)
-            or _looks_like_code(text)
+            or not _is_assertion(statement, labeled=bool(label))
+            or _looks_like_code(statement)
         ):
             continue
         kind, confidence = "", 0.0
-        if re.search(r"\b(decided|decision|we will|should|must use|use .+ instead)\b", lower):
+        if label:
+            kind, confidence = (
+                ("decision", 0.92) if label[1].casefold() == "decision" else ("policy", 0.9)
+            )
+        elif re.search(r"\b(decided|decision|we will|should|must use|use .+ instead)\b", lower):
             kind, confidence = "decision", 0.92
-        elif re.search(r"\b(must|required|prohibited|only allowed|may not)\b", lower) or re.match(
-            r"^(?:company\s+)?policy\s*:", lower
-        ):
+        elif re.search(r"\b(must|required|prohibited|only allowed|may not)\b", lower):
             kind, confidence = "policy", 0.9
         elif re.search(r"\b(owner|owns|owned by|maintained by|responsible for)\b", lower):
             kind, confidence = "ownership", 0.9
@@ -373,11 +404,19 @@ def _prose_candidates(content: str) -> list[MemoryCandidate]:
             lower,
         ):
             kind, confidence = "fact", 0.88
-        elif re.search(r"\b(is|are|uses|built with|powered by|defaults to|listens on)\b", lower):
+        elif PRESENT_FACT_RE.match(statement) or re.search(
+            r"\b(is|are|uses|built with|powered by|defaults to|listens on)\b", lower
+        ):
             kind, confidence = "fact", 0.82
         if kind:
             output.append((kind, _subject(text), text, confidence))
     return output
+
+
+def _is_assertion(text: str, *, labeled: bool = False) -> bool:
+    if not labeled and re.match(r"^we should\b", text, re.I):
+        return False
+    return not text.rstrip("`*\"')").endswith("?") and not NON_ASSERTION_RE.search(text)
 
 
 def _looks_like_code(text: str) -> bool:
