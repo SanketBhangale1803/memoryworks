@@ -674,7 +674,9 @@ Service matching is against `scope.service`, the subject, and the body. If the e
 
 ## License
 
-MemoryWorks is released under the [MIT License](LICENSE).
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
+
+MemoryWorks is released under the [GNU Affero General Public License v3.0](LICENSE). This means you are free to use, modify, and distribute this software, but if you run a modified version as a network service, you must make your source code available to users of that service.
 
 ## Naming note
 
