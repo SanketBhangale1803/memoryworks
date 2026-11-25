@@ -7,9 +7,11 @@ export const metadata: Metadata = {
   title: "Docs — MemoryWorks",
   description:
     "Run MemoryWorks end to end: local setup, production deploy, authentication, model providers, the agent API, Python SDK, CLI, and MCP server.",
+  alternates: { canonical: "/docs" },
 };
 
 const sections = [
+  ["connect", "Connect your agent"],
   ["quickstart", "Quickstart"],
   ["production", "Run in production"],
   ["authentication", "Authentication"],
@@ -24,6 +26,26 @@ const sections = [
   ["mcp", "MCP server"],
   ["testing", "Testing and CI"],
   ["security", "Security"],
+] as const;
+
+const HOSTED_MCP_URL = "https://mcp.memoryworks.app/mcp";
+
+const claudeCodeConnect = `claude mcp add --transport http memoryworks ${HOSTED_MCP_URL}
+# Then run /mcp in Claude Code and choose Authenticate.`;
+
+const hostedTools = [
+  ["get_orgmemory_briefing", "read", "Cited verdict, constraints, and precedents before consequential work."],
+  ["record_orgmemory_outcome", "write", "Record what happened after a briefing."],
+  ["orgmemory_ask", "read", "Answer with current company memory and evidence."],
+  ["orgmemory_search_memories", "read", "Search source-backed atomic memories."],
+  ["orgmemory_get_company_profile · _project_profile · _service_profile", "read", "Profiles assembled from current memory."],
+  ["orgmemory_get_memory_graph", "read", "Memory graph counts and relationships."],
+  ["orgmemory_list_memory_conflicts · _memory_updates", "read", "Contradictions and newer-than relationships."],
+  ["orgmemory_list_source_revisions · _change_sets", "read", "Source history and memory commits."],
+  ["orgmemory_list_skills", "read", "Company skills and whether they are stale."],
+  ["orgmemory_list_work · orgmemory_get_work", "read", "Memory Work packages."],
+  ["orgmemory_request_connector_action", "write", "Ask to write to a connected tool; always waits for approval."],
+  ["orgmemory_list_connector_action_requests", "read", "Those requests and their status."],
 ] as const;
 
 const quickstartDocker = `# 1. Configure once — every provider key is optional.
@@ -96,14 +118,14 @@ SMTP_PASSWORD=...`;
 
 const apiKeyExample = `# Create a workspace-scoped key in the UI (Sources → API keys),
 # or with the endpoint:
-curl -X POST "$ORGMEMORY_API_URL/api/keys" \\
+curl -X POST "$MEMORYWORKS_API_URL/api/keys" \\
   -H "Authorization: Bearer $SESSION_TOKEN" \\
   -H "Content-Type: application/json" \\
   -d '{"name": "ci-agent"}'
 
 # Agents then authenticate as a bearer token:
-export ORGMEMORY_API_URL=https://your-host
-export ORGMEMORY_API_KEY=om_live_...`;
+export MEMORYWORKS_API_URL=https://your-host
+export MEMORYWORKS_API_KEY=om_live_...`;
 
 const modelConfig = `OPENROUTER_API_KEY=...          # GLM (default)
 GLM_MODEL=z-ai/glm-5.3-flash
@@ -184,8 +206,8 @@ print(context.compiled_context)
 # Pass the source-backed context to any model or agent.
 agent.run(context.compiled_context)`;
 
-const cliExample = `export ORGMEMORY_API_URL=http://localhost:8000
-export ORGMEMORY_API_KEY=om_live_...
+const cliExample = `export MEMORYWORKS_API_URL=http://localhost:8000
+export MEMORYWORKS_API_KEY=om_live_...
 
 orgmemory health
 orgmemory projects
@@ -205,7 +227,7 @@ orgmemory ingest prj_platform \\
   --content "Release 48 moved checkout to the new ledger." \\
   --source-type other`;
 
-const mcpConfig = `# Claude Desktop / any MCP client (stdio):
+const mcpConfig = `# Local stdio bridge against your own backend (API key):
 {
   "mcpServers": {
     "memoryworks": {
@@ -222,7 +244,7 @@ make lint   # ruff · black · tsc
 make ci     # test + lint + next build`;
 
 const coreCurl = `curl -X POST "https://your-host/api/ask" \\
-  -H "Authorization: Bearer $ORGMEMORY_API_KEY" \\
+  -H "Authorization: Bearer $MEMORYWORKS_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
     "project_id": "prj_platform",
@@ -279,8 +301,8 @@ export default function DocsPage() {
               browser, the terminal, or any agent runtime.
             </p>
             <div className="docs-hero__actions">
-              <a className="om-button" href="#quickstart">
-                Start building
+              <a className="om-button" href="#connect">
+                Connect your agent
                 <span aria-hidden="true">↘</span>
               </a>
               <Link className="om-button ghost" href="/workspace">
@@ -289,8 +311,46 @@ export default function DocsPage() {
             </div>
           </header>
 
+          <section id="connect" className="docs-section">
+            <div className="docs-kicker">01 / Connect your agent</div>
+            <h2>Use MemoryWorks from Claude, ChatGPT, or any MCP client.</h2>
+            <p className="docs-lede">
+              The hosted MCP server is at <code>{HOSTED_MCP_URL}</code> (streamable HTTP). It
+              uses OAuth: sign in with your MemoryWorks account and approve the connector. API
+              keys are not accepted by the hosted server.
+            </p>
+            <CodeBlock label="Claude Code" language="bash">
+              {claudeCodeConnect}
+            </CodeBlock>
+            <div className="docs-note">
+              <strong>Claude and ChatGPT</strong>
+              <span>
+                Claude: Settings → Connectors → Add custom connector, paste the URL, then Connect.
+                ChatGPT: Settings → Apps &amp; Connectors (turn on Developer mode under Advanced
+                settings if Create is missing) → Create, paste the URL as the MCP server URL,
+                choose OAuth, then sign in and approve.
+              </span>
+            </div>
+            <p>
+              Tokens carry <code>read</code> and, if you approve it, <code>write</code>. Writes
+              only record outcomes or request connector actions, which still wait for a person
+              to approve them.
+            </p>
+            <div className="docs-api-table" aria-label="Hosted MCP tools">
+              {hostedTools.map(([name, scope, purpose]) => (
+                <div className="docs-api-row" key={name}>
+                  <code className={`docs-method docs-method--${scope === "write" ? "post" : "get"}`}>
+                    {scope}
+                  </code>
+                  <code>{name}</code>
+                  <span>{purpose}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+
           <section id="quickstart" className="docs-section">
-            <div className="docs-kicker">01 / Quickstart</div>
+            <div className="docs-kicker">02 / Quickstart</div>
             <h2>From zero to source-backed context.</h2>
             <p className="docs-lede">
               Everything runs from one repository. Docker is the default path;
@@ -326,7 +386,7 @@ export default function DocsPage() {
           </section>
 
           <section id="production" className="docs-section">
-            <div className="docs-kicker">02 / Run in production</div>
+            <div className="docs-kicker">03 / Run in production</div>
             <h2>Same repo, two services.</h2>
             <p>
               The frontend is a Next.js app; the backend is a FastAPI container.
@@ -356,7 +416,7 @@ export default function DocsPage() {
           </section>
 
           <section id="authentication" className="docs-section">
-            <div className="docs-kicker">03 / Authentication</div>
+            <div className="docs-kicker">04 / Authentication</div>
             <h2>Work identity for people. Scoped keys for agents.</h2>
             <p>
               People sign in with GitHub, Google, or a passwordless email code.
@@ -394,9 +454,10 @@ GOOGLE_REDIRECT_URI=http://localhost:8000/api/auth/google/callback`}
             <div className="docs-note">
               <strong>Agents and automation</strong>
               <span>
-                Workspace-scoped API keys authenticate CLIs, SDKs, MCP clients,
-                and server-side agents. Create one under{" "}
-                <code>POST /api/keys</code> and pass it as a bearer token.
+                Workspace-scoped <code>om_live_…</code> API keys authenticate the CLI,
+                the SDK, the local stdio MCP bridge, and server-side agents. Create one
+                under <code>POST /api/keys</code> and pass it as a bearer token. The hosted
+                MCP server is OAuth-only and does not accept API keys.
               </span>
             </div>
             <CodeBlock label="Agent configuration" language="bash">
@@ -405,7 +466,7 @@ GOOGLE_REDIRECT_URI=http://localhost:8000/api/auth/google/callback`}
           </section>
 
           <section id="models" className="docs-section">
-            <div className="docs-kicker">04 / Model providers</div>
+            <div className="docs-kicker">05 / Model providers</div>
             <h2>One company context. Your choice of model.</h2>
             <p>
               MemoryWorks retrieves, scopes, and compiles the evidence before a
@@ -419,7 +480,7 @@ GOOGLE_REDIRECT_URI=http://localhost:8000/api/auth/google/callback`}
           </section>
 
           <section id="connectors" className="docs-section">
-            <div className="docs-kicker">05 / Connectors</div>
+            <div className="docs-kicker">06 / Connectors</div>
             <h2>Make capability status explicit.</h2>
             <p>
               GitHub, Slack, uploads, the API, Python SDK, CLI, and MCP are
@@ -437,7 +498,7 @@ GOOGLE_REDIRECT_URI=http://localhost:8000/api/auth/google/callback`}
           </section>
 
           <section id="org-api" className="docs-section">
-            <div className="docs-kicker">06 / Agent API</div>
+            <div className="docs-kicker">07 / Agent API</div>
             <h2>The cross-space operations Agent mode runs on.</h2>
             <p>
               Every agent step maps to one HTTP route under <code>/api/org</code>.
@@ -473,7 +534,7 @@ GOOGLE_REDIRECT_URI=http://localhost:8000/api/auth/google/callback`}
           </section>
 
           <section id="core-api" className="docs-section">
-            <div className="docs-kicker">07 / Core API</div>
+            <div className="docs-kicker">08 / Core API</div>
             <h2>A small surface for a large memory.</h2>
             <CodeBlock label="Ask with HTTP" language="bash">
               {coreCurl}
@@ -492,7 +553,7 @@ GOOGLE_REDIRECT_URI=http://localhost:8000/api/auth/google/callback`}
           </section>
 
           <section id="python-sdk" className="docs-section">
-            <div className="docs-kicker">08 / Python SDK</div>
+            <div className="docs-kicker">09 / Python SDK</div>
             <h2>Context assembly, typed in Python.</h2>
             <p>
               Install from this repository. The synchronous and asynchronous
@@ -508,7 +569,7 @@ GOOGLE_REDIRECT_URI=http://localhost:8000/api/auth/google/callback`}
           </section>
 
           <section id="cli" className="docs-section">
-            <div className="docs-kicker">09 / CLI</div>
+            <div className="docs-kicker">10 / CLI</div>
             <h2>Inspect memory from your terminal.</h2>
             <p>
               The CLI ships with the Python SDK: query projects, ingest
@@ -523,7 +584,7 @@ GOOGLE_REDIRECT_URI=http://localhost:8000/api/auth/google/callback`}
           </section>
 
           <section id="swarm" className="docs-section docs-section--swarm">
-            <div className="docs-kicker">10 / Context swarm</div>
+            <div className="docs-kicker">11 / Context swarm</div>
             <h2>Specialists forage. One compiler decides.</h2>
             <p>
               A query activates a small ecosystem of retrieval specialists.
@@ -547,7 +608,7 @@ GOOGLE_REDIRECT_URI=http://localhost:8000/api/auth/google/callback`}
           </section>
 
           <section id="envelopes" className="docs-section">
-            <div className="docs-kicker">11 / Context envelopes</div>
+            <div className="docs-kicker">12 / Context envelopes</div>
             <h2>The answer is not the artifact.</h2>
             <p>
               Every ask returns an answer plus its compiled context, evidence,
@@ -576,12 +637,14 @@ GOOGLE_REDIRECT_URI=http://localhost:8000/api/auth/google/callback`}
           </section>
 
           <section id="mcp" className="docs-section">
-            <div className="docs-kicker">12 / MCP server</div>
+            <div className="docs-kicker">13 / MCP server</div>
             <h2>Memory for tool-using agents outside the browser.</h2>
             <p>
               The same memory surface is exposed over MCP for assistants that
-              are not browser-native: stdio for local clients, streamable HTTP
-              for remote ones, with MCP OAuth for client registration.
+              are not browser-native. The hosted server (see{" "}
+              <a href="#connect">Connect your agent</a>) and any self-hosted HTTP
+              server use OAuth only; an API key works only with the local stdio
+              bridge below.
             </p>
             <CodeBlock label="Run the server" language="bash">
               {`make mcp        # stdio transport
@@ -593,7 +656,7 @@ make mcp-http   # streamable HTTP on :8001`}
           </section>
 
           <section id="testing" className="docs-section">
-            <div className="docs-kicker">13 / Testing and CI</div>
+            <div className="docs-kicker">14 / Testing and CI</div>
             <h2>Every behavior above is under test.</h2>
             <p>
               The suite covers the org tools, the approval boundary, the agent
@@ -609,7 +672,7 @@ make reset   # reset local data to a clean slate`}
           </section>
 
           <section id="security" className="docs-section">
-            <div className="docs-kicker">14 / Security</div>
+            <div className="docs-kicker">15 / Security</div>
             <h2>Retrieval respects the caller.</h2>
             <p>
               Project boundaries, bearer authentication, and source metadata

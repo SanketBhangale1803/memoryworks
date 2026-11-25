@@ -4,6 +4,7 @@ import base64
 import hashlib
 from datetime import UTC, datetime, timedelta
 from secrets import token_urlsafe
+from urllib.parse import urlparse
 
 import jwt
 from starlette.requests import Request
@@ -75,6 +76,31 @@ def public_base_url(request: Request) -> str:
     return str(request.base_url).rstrip("/")
 
 
+DEFAULT_SIGNED_IN_PATH = "/workspace"
+
+
+def safe_next_path(value: str | None, default: str = DEFAULT_SIGNED_IN_PATH) -> str:
+    """Return ``value`` only when it is a same-origin relative path.
+
+    ``next`` survives a sign-in round trip, so it must never become an open
+    redirect: absolute URLs, scheme-relative ``//host`` paths, backslash
+    tricks browsers normalise to ``//``, and control characters are refused.
+    """
+    candidate = (value or "").strip()
+    if (
+        not candidate.startswith("/")
+        or candidate.startswith("//")
+        or "\\" in candidate
+        or any(ord(char) < 32 or ord(char) == 127 for char in candidate)
+        or len(candidate) > 2048
+    ):
+        return default
+    parsed = urlparse(candidate)
+    if parsed.scheme or parsed.netloc:
+        return default
+    return candidate
+
+
 def oauth_redirect_uri(request: Request, configured: str, callback_path: str) -> str:
     """The redirect_uri for one OAuth round trip.
 
@@ -111,6 +137,7 @@ class OAuthStateStore:
         user_id: str = "",
         use_pkce: bool = False,
         redirect_uri: str = "",
+        next_path: str = "",
     ) -> dict[str, str]:
         state = sign_flow_state(
             {
@@ -122,6 +149,8 @@ class OAuthStateStore:
                 # Keep the callback byte-identical across the authorization
                 # and token-exchange legs, including on stateless hosts.
                 "redirect_uri": redirect_uri,
+                # Where to land after sign-in; signed, and re-checked on use.
+                "n": safe_next_path(next_path, ""),
             }
         )
         verifier = read_flow_state(state).get("v", "") if read_flow_state(state) else ""
@@ -158,6 +187,7 @@ class OAuthStateStore:
                 "user_id": claims.get("u", ""),
                 "code_verifier": claims.get("v", ""),
                 "redirect_uri": claims.get("redirect_uri", ""),
+                "next_path": claims.get("n", ""),
                 "expires_at": datetime.now(UTC).isoformat(),
             }
         with connect() as conn:

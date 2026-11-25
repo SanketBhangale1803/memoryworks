@@ -22,6 +22,10 @@
       "destination": "https://api.memoryworks.app/.well-known/:path*"
     },
     {
+      "source": "/oauth/:path*",
+      "destination": "https://api.memoryworks.app/oauth/:path*"
+    },
+    {
       "source": "/:path*",
       "destination": {
         "service": "frontend"

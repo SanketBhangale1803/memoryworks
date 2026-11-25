@@ -11,12 +11,8 @@ const TABS = [
     code: `{
   "mcpServers": {
     "memoryworks": {
-      "command": "mcp_server/.venv/bin/python",
-      "args": ["mcp_server/server.py", "--transport", "stdio"],
-      "env": {
-        "MEMORYWORKS_API_URL": "https://memoryworks.app",
-        "MEMORYWORKS_API_KEY": "om_live_..."
-      }
+      "type": "http",
+      "url": "https://mcp.memoryworks.app/mcp"
     }
   }
 }`,
@@ -44,8 +40,8 @@ agent.run(context.compiled_context)`,
     id: "cli",
     label: "CLI",
     file: "terminal",
-    code: `export ORGMEMORY_API_URL=https://memoryworks.app
-export ORGMEMORY_API_KEY=om_live_...
+    code: `export MEMORYWORKS_API_URL=https://memoryworks.app
+export MEMORYWORKS_API_KEY=om_live_...
 
 orgmemory projects
 orgmemory ask prj_platform "Who owns the ingest pipeline?"

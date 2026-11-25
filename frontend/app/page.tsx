@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { BrandLockup, BrandMark } from "@/components/BrandLogo";
 import HomeCommandOrb from "@/components/HomeCommandOrb";
@@ -8,6 +9,8 @@ import LandingMotion from "@/components/landing/LandingMotion";
 import MemoryGraph from "@/components/landing/MemoryGraph";
 import "./site.css";
 
+export const metadata: Metadata = { alternates: { canonical: "/" } };
+
 /* The page is server-rendered text; every moving part is a small client island
    that loads after it. The 3D scenes fetch three.js only when idle or near. */
 
@@ -15,6 +18,8 @@ const EYEBROW = "The memory layer for engineering organizations";
 
 const SOURCES = ["GitHub", "Slack", "Google Drive", "Notion", "Microsoft Teams", "PDFs & docs", "Websites"];
 const AGENTS = ["Claude Code", "Cursor", "VS Code", "Claude", "ChatGPT", "Python SDK", "CLI", "MCP"];
+// Shown in the strip, but not live for everyone yet; labelled so nobody signs up for them.
+const COMING_SOON = new Set(["Google Drive", "Notion", "Microsoft Teams", "Cursor", "VS Code"]);
 
 const LOOP = [
   { tag: "Brief", title: "Context served", body: "The agent says what it is about to do and gets back the incidents, decisions, and constraints that apply — each with its source.", code: "get_orgmemory_briefing" },
@@ -91,7 +96,12 @@ export default function HomePage() {
           <div className="mw-marquee-track">
             {[0, 1].map((copy) => (
               <ul key={copy} aria-hidden={copy === 1 ? true : undefined}>
-                {[...SOURCES, ...AGENTS].map((name) => <li key={name}>{name}</li>)}
+                {[...SOURCES, ...AGENTS].map((name) => (
+                  <li key={name} className={COMING_SOON.has(name) ? "soon" : undefined}>
+                    {name}
+                    {COMING_SOON.has(name) && <small> · coming soon</small>}
+                  </li>
+                ))}
               </ul>
             ))}
           </div>

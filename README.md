@@ -422,7 +422,7 @@ Verified GitHub webhooks trigger incremental repository reconciliation — chunk
 make sdk-install
 ```
 
-The client reads `ORGMEMORY_API_URL` and `ORGMEMORY_API_KEY`, or takes them explicitly:
+The client reads `MEMORYWORKS_API_URL` and `MEMORYWORKS_API_KEY` (the older `ORGMEMORY_*` names still work), or takes them explicitly:
 
 ```python
 from orgmemory import MemoryWorks
@@ -462,7 +462,13 @@ make mcp        # stdio
 make mcp-http   # streamable HTTP on :8001, with OAuth
 ```
 
-The Vercel deployment at memoryworks.app does not run the MCP server; point the stdio bridge at it with an API key.
+**Hosted:** connect any MCP client to `https://mcp.memoryworks.app/mcp` (streamable HTTP, OAuth; API keys are not accepted there). In Claude Code:
+
+```bash
+claude mcp add --transport http memoryworks https://mcp.memoryworks.app/mcp
+```
+
+ChatGPT, Claude, and the hosted tool list are in [Connect your agent](docs/MCP.md#connect-your-agent-hosted). An `om_live_…` API key is only for the local stdio bridge against your own backend. The full catalog a self-hosted server can expose:
 
 ```text
 get_orgmemory_briefing                 record_orgmemory_outcome
@@ -555,7 +561,7 @@ Production runs at **https://memoryworks.app** as a Vercel Services project (`or
 - **Storage on Vercel is not durable.** The backend container keeps SQLite under `/tmp/orgmemory/` and uses the in-memory graph, and Vercel containers are stateless, so workspace data can reset when a new container starts. For durable data, run the single-VM deployment in [`deploy/server/`](deploy/server/README.md) (Caddy, ArcadeDB, persistent volumes).
 - Production needs the values in `.env.production.example`, plus a sensitive `JWT_SECRET` and a model key. Environment changes take effect on the next deployment.
 - The URL settings — `FRONTEND_URL`, `PUBLIC_BASE_URL`, `APP_BASE_URL`, `API_URL`, `MCP_OAUTH_ISSUER_URL`, `NEXT_PUBLIC_SITE_URL` — are `https://memoryworks.app`.
-- The MCP server does not run on Vercel. Editors connect to memoryworks.app through the stdio bridge with an API key; HTTP MCP with OAuth needs the Docker `mcp` profile or the single-VM deployment.
+- The MCP server does not run on Vercel. memoryworks.app's hosted MCP server runs on the API server at `https://mcp.memoryworks.app/mcp` (OAuth only); self-hosting HTTP MCP needs the Docker `mcp` profile or the single-VM deployment.
 
 ### The domain
 

@@ -49,14 +49,14 @@ receipt = memory.record_briefing_outcome(
 print(receipt.status)
 ```
 
-The client also reads `ORGMEMORY_API_URL` and `ORGMEMORY_API_KEY`. Use
+The client also reads `MEMORYWORKS_API_URL` and `MEMORYWORKS_API_KEY` (the older `ORGMEMORY_API_URL` and `ORGMEMORY_API_KEY` still work). Use
 `AsyncMemoryWorks` in asynchronous applications.
 
 ## CLI
 
 ```bash
-export ORGMEMORY_API_URL=http://localhost:8000
-export ORGMEMORY_API_KEY=om_live_...
+export MEMORYWORKS_API_URL=http://localhost:8000
+export MEMORYWORKS_API_KEY=om_live_...
 
 orgmemory health
 orgmemory projects

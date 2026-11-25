@@ -22,14 +22,25 @@ ClientT = TypeVar("ClientT", bound="MemoryWorks")
 AsyncClientT = TypeVar("AsyncClientT", bound="AsyncMemoryWorks")
 
 
+def env_setting(name: str, default: str = "") -> str:
+    """Read ``MEMORYWORKS_<name>``, falling back to the older ``ORGMEMORY_<name>``.
+
+    MEMORYWORKS_* is the documented name everywhere (SDK, CLI, MCP server);
+    ORGMEMORY_* keeps working for existing setups.
+    """
+    for prefix in ("MEMORYWORKS_", "ORGMEMORY_"):
+        value = os.getenv(prefix + name)
+        if value:
+            return value
+    return default
+
+
 def _base_url(value: str | None) -> str:
-    return (value or os.getenv("ORGMEMORY_API_URL") or "http://localhost:8000").rstrip(
-        "/"
-    )
+    return (value or env_setting("API_URL") or "http://localhost:8000").rstrip("/")
 
 
 def _api_key(value: str | None) -> str:
-    return value if value is not None else os.getenv("ORGMEMORY_API_KEY", "")
+    return value if value is not None else env_setting("API_KEY")
 
 
 def _headers(api_key: str) -> dict[str, str]:
