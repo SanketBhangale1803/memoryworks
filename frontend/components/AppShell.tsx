@@ -6,6 +6,7 @@ import { BrandMark } from "@/components/BrandLogo";
 import PageBar from "@/components/PageBar";
 import WorkspaceFrame from "@/components/WorkspaceFrame";
 import { api } from "@/lib/api";
+import { safeNextPath } from "@/lib/safeNext";
 import { titleFor } from "@/lib/workspaceMap";
 
 const SECURING_MIN_MS = 450;
@@ -33,7 +34,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       .then((principal) => {
         if (!current) return;
         if (isLogin) {
-          router.replace("/workspace");
+          // Already signed in: continue to where sign-in was meant to lead.
+          // A full navigation, because `next` may be a backend route such as
+          // a connector's /oauth/authorize step.
+          window.location.replace(
+            safeNextPath(new URLSearchParams(window.location.search).get("next")),
+          );
           return;
         }
         const remaining = Math.max(0, SECURING_MIN_MS - (Date.now() - securingStartedAt));
@@ -46,7 +52,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       .catch(() => {
         if (!current) return;
         setReady(true);
-        if (!isPublic) router.replace("/login");
+        if (!isPublic) {
+          const here = `${window.location.pathname}${window.location.search}`;
+          const next = safeNextPath(here);
+          router.replace(next === "/workspace" ? "/login" : `/login?${new URLSearchParams({ next })}`);
+        }
       });
     return () => {
       current = false;

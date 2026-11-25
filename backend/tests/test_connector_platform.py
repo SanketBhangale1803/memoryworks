@@ -229,8 +229,17 @@ def test_remote_mcp_oauth_uses_pkce_and_delegated_user(graph):
         },
         follow_redirects=False,
     )
-    assert authorization.status_code in {302, 307}
-    code = authorization.headers["location"].split("code=", 1)[1].split("&", 1)[0]
+    # A signed-in person is asked first; nothing is issued without consent.
+    assert authorization.status_code == 200
+    assert "Allow Remote agent" in authorization.text
+    consent = authorization.text.split('name="consent" value="', 1)[1].split('"', 1)[0]
+    approved = client.post(
+        "/oauth/authorize",
+        data={"consent": consent, "decision": "allow"},
+        follow_redirects=False,
+    )
+    assert approved.status_code == 302
+    code = approved.headers["location"].split("code=", 1)[1].split("&", 1)[0]
     token = client.post(
         "/oauth/token",
         data={
