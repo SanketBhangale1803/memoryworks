@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -12,7 +11,7 @@ from typing import Any
 
 import httpx
 
-from .client import MemoryWorks
+from .client import MemoryWorks, env_setting
 from .exceptions import MemoryWorksError
 from .models import AskResponse
 
@@ -33,13 +32,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--api-url",
-        default=os.getenv("ORGMEMORY_API_URL", "http://localhost:8000"),
-        help="MemoryWorks API URL (default: ORGMEMORY_API_URL or localhost).",
+        default=env_setting("API_URL", "http://localhost:8000"),
+        help="MemoryWorks API URL (default: MEMORYWORKS_API_URL, then ORGMEMORY_API_URL, "
+        "or localhost).",
     )
     parser.add_argument(
         "--api-key",
-        default=os.getenv("ORGMEMORY_API_KEY", ""),
-        help="API key (default: ORGMEMORY_API_KEY).",
+        default=env_setting("API_KEY"),
+        help="API key (default: MEMORYWORKS_API_KEY, then ORGMEMORY_API_KEY).",
     )
     _json_flag(parser)
     subparsers = parser.add_subparsers(dest="command", required=True)

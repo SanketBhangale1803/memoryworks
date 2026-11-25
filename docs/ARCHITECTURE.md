@@ -138,7 +138,7 @@ Principals come from one of three places, all resolved to a workspace, user,
 and role (`owner`, `admin`, `member`):
 
 - a signed session cookie (browser, and therefore the in-browser agent tools);
-- an `om_live_…` API key (SDK, CLI, stdio MCP);
+- an `om_live_…` API key (SDK, CLI, the local stdio MCP bridge; the hosted HTTP MCP server is OAuth-only);
 - an MCP OAuth access token, issued by the backend's own authorization server
   (`/oauth/*`, dynamic client registration optional) and introspected by the
   MCP server.
@@ -637,7 +637,7 @@ fallbacks.
 ### Python SDK and CLI
 
 `python_sdk/` provides `MemoryWorks` and `AsyncMemoryWorks` typed clients and the
-`orgmemory` CLI, reading `ORGMEMORY_API_URL` and `ORGMEMORY_API_KEY`. The import
+`orgmemory` CLI, reading `MEMORYWORKS_API_URL` and `MEMORYWORKS_API_KEY` (falling back to `ORGMEMORY_*`). The import
 path stays `orgmemory`, and the pre-rename `OrgMemory` names remain as aliases.
 
 ### Desktop bridge

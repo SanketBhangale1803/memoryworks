@@ -217,3 +217,19 @@ def test_pre_rename_client_names_still_import():
     assert OrgMemory is MemoryWorks
     assert AsyncOrgMemory is AsyncMemoryWorks
     assert OrgMemoryAPIError is MemoryWorksAPIError
+
+
+def test_memoryworks_env_names_win_and_orgmemory_names_still_work(monkeypatch):
+    from orgmemory.client import _api_key, _base_url
+
+    monkeypatch.delenv("MEMORYWORKS_API_KEY", raising=False)
+    monkeypatch.delenv("MEMORYWORKS_API_URL", raising=False)
+    monkeypatch.setenv("ORGMEMORY_API_KEY", "om_live_old")
+    monkeypatch.setenv("ORGMEMORY_API_URL", "https://old.example/")
+    assert _api_key(None) == "om_live_old"
+    assert _base_url(None) == "https://old.example"
+
+    monkeypatch.setenv("MEMORYWORKS_API_KEY", "om_live_new")
+    monkeypatch.setenv("MEMORYWORKS_API_URL", "https://memoryworks.app")
+    assert _api_key(None) == "om_live_new"
+    assert _base_url(None) == "https://memoryworks.app"

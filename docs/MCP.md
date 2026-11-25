@@ -1,6 +1,46 @@
 # MemoryWorks MCP server
 
-`mcp_server/server.py` exposes the real MemoryWorks HTTP API over FastMCP — stdio for a local bridge, or streamable HTTP with OAuth where the server is deployed (the Docker `mcp` profile, or the `mcp.` subdomain in `deploy/server/`). The Vercel deployment at memoryworks.app does not run the MCP server yet, so connect to it over stdio with an API key. It does not contain canned answers: questions return authorized memory, evidence, a retrieval trace, and the persisted HCAG context envelope.
+`mcp_server/server.py` exposes the real MemoryWorks HTTP API over FastMCP: streamable HTTP with OAuth where the server is deployed (hosted at `https://mcp.memoryworks.app/mcp`, the Docker `mcp` profile, or the `mcp.` subdomain in `deploy/server/`), or stdio for a local bridge. It does not contain canned answers: questions return authorized memory, evidence, a retrieval trace, and the persisted HCAG context envelope.
+
+## Connect your agent (hosted)
+
+| | |
+|---|---|
+| MCP server URL | `https://mcp.memoryworks.app/mcp` |
+| Transport | Streamable HTTP |
+| Authentication | OAuth 2.1 with PKCE and dynamic client registration. Sign in with your MemoryWorks account and approve the connector. **API keys are not accepted by the hosted server.** |
+| Scopes | `read` (answers, briefings, search), `write` (record outcomes, request connector actions; those requests still wait for human approval) |
+
+**Claude Code**
+
+```bash
+claude mcp add --transport http memoryworks https://mcp.memoryworks.app/mcp
+```
+
+Then run `/mcp` in Claude Code and choose **Authenticate**; a browser window opens to sign in and approve.
+
+**Claude (claude.ai / Claude Desktop)** — Settings → Connectors → Add custom connector, paste `https://mcp.memoryworks.app/mcp`, then Connect and approve.
+
+**ChatGPT** — Settings → Apps & Connectors. If **Create** is not shown, turn on Developer mode under Advanced settings. Choose **Create**, name it MemoryWorks, paste `https://mcp.memoryworks.app/mcp` as the MCP server URL, choose **OAuth** authentication, and create it. ChatGPT then opens MemoryWorks to sign in and approve.
+
+**Tools on the hosted server**
+
+| Tool | Scope | Purpose |
+|---|---|---|
+| `get_orgmemory_briefing` | `read` | Cited verdict, constraints, and precedents before consequential work |
+| `record_orgmemory_outcome` | `write` | Record what happened after a briefing |
+| `orgmemory_ask` | `read` | Answer with current company memory and evidence |
+| `orgmemory_search_memories` | `read` | Search source-backed atomic memories |
+| `orgmemory_get_company_profile` / `orgmemory_get_project_profile` / `orgmemory_get_service_profile` | `read` | Profiles assembled from current memory |
+| `orgmemory_get_memory_graph` | `read` | Memory graph counts and relationships |
+| `orgmemory_list_memory_conflicts` / `orgmemory_list_memory_updates` | `read` | Contradictions and newer-than relationships |
+| `orgmemory_list_source_revisions` / `orgmemory_list_change_sets` | `read` | Source history and memory commits |
+| `orgmemory_list_skills` | `read` | Company skills and whether they are stale |
+| `orgmemory_list_work` / `orgmemory_get_work` | `read` | Memory Work packages |
+| `orgmemory_request_connector_action` | `write` | Ask to write to a connected tool; always waits for approval |
+| `orgmemory_list_connector_action_requests` | `read` | Those requests and their status |
+
+A connector that was authorized with `read` only must be reconnected to get `write`.
 
 ## Run
 
@@ -12,6 +52,8 @@ python mcp_server/server.py --health
 Use `MEMORYWORKS_API_URL` and `MEMORYWORKS_API_KEY` (and `MEMORYWORKS_MCP_*` for
 the HTTP transport). The older `ORGMEMORY_*` and `RUNBOOK_*` names still work and
 emit a deprecation warning. The default backend URL is `http://localhost:8000`.
+`MEMORYWORKS_API_KEY` (an `om_live_…` workspace key) is used **only by the local
+stdio bridge**; the HTTP transport accepts OAuth tokens and never falls back to it.
 
 The easiest setup is in the app: **Sources → AI tools** generates the exact
 configuration for Claude Code, Cursor, VS Code, Claude, and ChatGPT against
@@ -30,6 +72,9 @@ authorization from MemoryWorks. Treat `no_memory` as missing organizational cont
 not permission to proceed.
 
 ## Company-memory tools
+
+The full catalog below is what a self-hosted server can expose; the hosted
+server's list is in [Connect your agent](#connect-your-agent-hosted).
 
 | Tool | Purpose |
 |---|---|
@@ -58,7 +103,7 @@ call them by name, so renaming them would break existing setups.
 
 ## Local stdio configuration (Cursor example)
 
-Create a workspace-scoped API key in **Sources → API keys**, then configure:
+For a self-hosted backend, or a local bridge you run yourself. Create a workspace-scoped API key in **Sources → API keys**, then configure:
 
 ```json
 {
