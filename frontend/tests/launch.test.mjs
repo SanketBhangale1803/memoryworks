@@ -55,3 +55,17 @@ test("OAuth endpoints on the main domain reach the API", () => {
   assert.equal(rewrites[oauth].destination, "https://api.memoryworks.app/oauth/:path*");
   assert.ok(oauth < catchAll, "the /oauth rewrite must come before the frontend catch-all");
 });
+
+test("editor snippets connect over OAuth, never with an API key", () => {
+  // The HTTP MCP server only accepts OAuth access tokens (see
+  // /api/oauth/introspect), so a snippet carrying a workspace key always 401s.
+  const ide = read("../components/IdeAccess.tsx");
+  const clients = ide.slice(ide.indexOf("const CLIENTS"), ide.indexOf("export default"));
+  assert.doesNotMatch(clients, /Bearer|Authorization:|headers|api[_ ]?key|om_live|rbk_/i);
+  assert.doesNotMatch(ide, /\/api\/keys"/, "the connect panel must not issue keys for MCP");
+  for (const label of ["Claude Code", "Cursor", "VS Code", "Claude", "ChatGPT"]) {
+    assert.match(clients, new RegExp(`label: "${label}"`));
+  }
+  assert.match(clients, /claude mcp add --transport http memoryworks \$\{url\}`/);
+  assert.match(clients, /choose Authenticate/);
+});
