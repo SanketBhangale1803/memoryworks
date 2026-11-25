@@ -133,6 +133,8 @@ html.lenis { scroll-behavior: auto; }
 .mw-marquee ul { display: flex; gap: 14px; margin: 0; padding: 0 14px 0 0; list-style: none; }
 .mw-marquee li { padding: 11px 20px; border: 1px solid var(--s-line); border-radius: 999px; background: rgba(255,255,255,.025); color: var(--s-ink-2); font-size: 15px; font-weight: 550; white-space: nowrap; transition: color .2s, border-color .2s; }
 .mw-marquee li:hover { color: var(--s-ink); border-color: var(--s-line-2); }
+.mw-marquee li.soon { border-style: dashed; color: var(--s-ink-3, var(--s-ink-2)); }
+.mw-marquee li small { font-size: 12px; font-weight: 500; opacity: .75; }
 @keyframes mw-marquee { to { transform: translateX(-50%); } }
 
 /* ---- sections */
