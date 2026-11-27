@@ -595,10 +595,10 @@ npm --prefix frontend test
 
 | Suite | Result |
 |---|---|
-| Backend (`pytest backend`) | 503 passed, 1 skipped (deliberate live-LLM contract test) |
-| Frontend (`node:test`) | 35 passed |
+| Backend (`pytest backend`) | 592 passed, 1 skipped (deliberate live-LLM contract test) |
+| Frontend (`node:test`) | 43 passed |
 | Python SDK | 9 passed |
-| MCP server (`pytest mcp_server/tests`) | 7 passed |
+| MCP server (`pytest mcp_server/tests`) | 17 passed |
 | `ruff` / `black` / `tsc` | clean |
 | `next build` | succeeds |
 
