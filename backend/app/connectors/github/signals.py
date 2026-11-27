@@ -100,6 +100,68 @@ def normalize_terminal(
     return ()
 
 
+def normalize_webhook(event_type: str, payload: dict) -> tuple[SyncRecord, ...]:
+    """Normalize terminal observations from a verified GitHub delivery."""
+    repository = payload.get("repository") or {}
+    try:
+        repo_id, slug, _ = _validate_repository(repository)
+    except ValueError:
+        return ()
+
+    if event_type == "pull_request" and payload.get("action") == "closed":
+        pr = payload.get("pull_request") or {}
+        number = pr.get("number")
+        closed_at = pr.get("closed_at")
+        if not isinstance(number, int) or number <= 0 or not _parse_dt(closed_at):
+            return ()
+        merged = pr.get("merged") is True
+        state = "success" if merged else "failure"
+        return (
+            _build_record(
+                target=f"pr:{number}",
+                producer="pull_request",
+                provider_id=str(number),
+                attempt=1,
+                state=state,
+                observed_at=closed_at,
+                generation_at=closed_at,
+                generation_id=number,
+                observation_key=_hash([repo_id, "pull_request", number, closed_at, state]),
+                repository=slug,
+                repo_id=repo_id,
+                pr_number=number,
+                source="github",
+                kind="pull_request",
+                subject=slug.casefold(),
+                lane={"producer": "pull_request", "target": f"pr:{number}"},
+                severity="info" if merged else "warning",
+                evidence_url=f"https://github.com/{slug}/pull/{number}",
+                details={
+                    "producer": "pull_request",
+                    "head_sha": (pr.get("head") or {}).get("sha") or "",
+                },
+            ),
+        )
+
+    if event_type == "deployment_status":
+        return normalize_terminal("deployment", payload, repository=repository, target="default")
+
+    producers = {"workflow_run": "workflow", "check_run": "check"}
+    if event_type not in producers or payload.get("action") != "completed":
+        return ()
+    obj = payload.get(event_type) or {}
+    pull_requests = obj.get("pull_requests") or []
+    numbers = {
+        pr["number"]
+        for pr in pull_requests
+        if isinstance(pr, dict) and isinstance(pr.get("number"), int) and pr["number"] > 0
+    }
+    if len(numbers) > 1:
+        return ()
+    target = f"pr:{next(iter(numbers))}" if numbers else "default"
+    return normalize_terminal(producers[event_type], obj, repository=repository, target=target)
+
+
 def _normalize_workflow(
     payload: dict, repository: dict, repo_id: int, slug: str, canonical_slug: str, target: str
 ) -> tuple[SyncRecord, ...]:

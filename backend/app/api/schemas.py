@@ -176,6 +176,9 @@ class BriefingRequest(BaseModel):
     # the outcome corpus can tell a briefing served to a GitHub pull request from
     # one served inside the MemoryWorks workspace.
     surface: str = Field("webmcp", max_length=64)
+    # GitHub outcomes use the project repository and full commit SHA.
+    github_sha: str = Field("", pattern=r"^(?:[a-fA-F0-9]{40})?$")
+    github_pr_number: int | None = Field(None, gt=0, le=2**63 - 1)
 
 
 class BriefingOutcomeRequest(BaseModel):
@@ -187,6 +190,7 @@ class BriefingOutcomeRequest(BaseModel):
     target: str = Field("", max_length=200)
     surface: str = Field("webmcp", max_length=64)
     reason: str = Field("", max_length=2_000)
+    idempotency_key: str = Field("", max_length=128)
     detail: dict[str, Any] = Field(default_factory=dict)
 
 

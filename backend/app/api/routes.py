@@ -64,6 +64,7 @@ from app.company_context import CompanyContextService
 from app.connectors.application import MemoryWorksSyncApplier
 from app.connectors.base import WebhookRequest
 from app.connectors.github import GitHubConnector
+from app.connectors.github.signals import normalize_webhook
 from app.connectors.runtime import ConnectorRuntime
 from app.connectors.slack import SlackConnector
 from app.connectors.status import record_auth_outcome
@@ -120,6 +121,8 @@ from app.outcomes import (
     record_outcome,
 )
 from app.outcomes import stats as outcome_stats
+from app.outcomes.github import record_github_outcome
+from app.outcomes.ledger import record_action_outcome
 from app.reliability import ChangeImpactService, OperationalAssertionService
 from app.retrieval import RetrievalService
 from app.retrieval.memory_search import rank as rank_memories
@@ -1106,13 +1109,24 @@ def repair_project_memory(
         fail(exc)
 
 
+def _github_webhook_projects(repository: str) -> list[dict]:
+    if not repository:
+        return []
+    return [
+        project
+        for project in rows(
+            """SELECT p.*,wp.workspace_id FROM projects p
+            LEFT JOIN workspace_projects wp ON wp.project_id=p.id"""
+        )
+        if (GitHubConnector.slug(str(project.get("repository") or "")) or "").casefold()
+        == repository.casefold()
+    ]
+
+
 def _github_webhook_project(repository: str) -> dict:
-    for project in rows(
-        """SELECT p.*,wp.workspace_id FROM projects p
-        LEFT JOIN workspace_projects wp ON wp.project_id=p.id"""
-    ):
-        if GitHubConnector.slug(str(project.get("repository") or "")) == repository:
-            return project
+    projects = _github_webhook_projects(repository)
+    if projects:
+        return projects[0]
     raise HTTPException(404, "No MemoryWorks project is connected to this GitHub repository")
 
 
@@ -2284,6 +2298,11 @@ def create_briefing(
     # instrumentation behind it fails. It records every memory the agent was
     # shown, in display order, so an outcome can be attributed to the context
     # that preceded it rather than only to the wording of the task.
+    repository = ""
+    if request.github_sha and request.project_id:
+        project = row("SELECT repository FROM projects WHERE id=?", (request.project_id,)) or {}
+        source = str(project.get("repository") or "")
+        repository = (GitHubConnector.slug(source) or source).casefold()
     briefing_id = record_context(
         project_id=request.project_id,
         query=f"[briefing] {request.task}",
@@ -2299,6 +2318,9 @@ def create_briefing(
         workspace_id=principal.get("active_workspace_id", ""),
         principal_id=str(principal.get("id") or ""),
         surface=request.surface or "webmcp",
+        github_repository=repository,
+        github_sha=request.github_sha.lower(),
+        github_pr_number=request.github_pr_number,
     )
     audit.record(
         "briefing.served",
@@ -2325,23 +2347,18 @@ def record_briefing_outcome(
     principal = _authorize_workspace(authorization)
     workspace_id = principal["active_workspace_id"]
     try:
-        action = record_action(
+        action, outcome = record_action_outcome(
             context_event_id=request.briefing_id,
             action_type=request.action,
+            outcome=request.outcome,
             workspace_id=workspace_id,
             actor=str(principal.get("display_name") or principal["id"]),
             surface=request.surface,
             target=request.target,
-            detail=request.detail,
-        )
-        outcome = record_outcome(
-            context_event_id=request.briefing_id,
-            outcome=request.outcome,
-            workspace_id=workspace_id,
-            action_event_id=action["id"],
             signal="agent",
             reason=request.reason,
             detail=request.detail,
+            idempotency_key=request.idempotency_key,
         )
     except LookupError:
         raise HTTPException(404, "Unknown briefing") from None
@@ -4583,6 +4600,31 @@ def _github_inventory_job(payload: dict[str, Any]) -> None:
 
 @background_jobs.handler("github.webhook")
 def _github_webhook_job(payload: dict[str, Any]) -> None:
+    event = change_intelligence.get(payload["event_id"])
+    if not event:
+        return
+    event_type = event["event_type"].removeprefix("github_")
+    records = normalize_webhook(event_type, payload["payload"])
+    if records:
+        # The legacy endpoint has no workspace in its URL. A repository
+        # linked more than once cannot identify an authoritative destination.
+        projects = _github_webhook_projects(event["repository"])
+        if (
+            len(projects) == 1
+            and projects[0]["id"] == event["project_id"]
+            and projects[0].get("workspace_id") == payload["workspace_id"]
+        ):
+            for record in records:
+                record_github_outcome(
+                    record,
+                    workspace_id=payload["workspace_id"],
+                    project_id=event["project_id"],
+                )
+        else:
+            logger.info("Skipped GitHub outcome match because the project binding was ambiguous")
+    if event_type in {"workflow_run", "check_run", "deployment_status"}:
+        change_intelligence.complete_observation(event["id"])
+        return
     _process_github_webhook_event(payload["event_id"], payload["payload"], payload["workspace_id"])
 
 

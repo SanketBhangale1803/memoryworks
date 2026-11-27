@@ -7,6 +7,7 @@ from app.graph.base import GraphStore
 from app.ingestion.safety import sanitize_for_index
 from app.ingestion.service import SUPPORTED_SOURCE_TYPES, IngestionService
 from app.memory import CompanyMemoryService
+from app.outcomes.github import record_github_outcome
 
 from .base import SyncOperation, SyncRecord
 
@@ -51,8 +52,7 @@ class MemoryWorksSyncApplier:
         self.memory = CompanyMemoryService(graph)
 
     def __call__(self, record: SyncRecord, context: dict[str, Any]) -> dict[str, Any] | None:
-        # Signal records bypass memory and ledger ingestion entirely. Their
-        # storage transaction owns project-aware idempotency.
+        # Signals have their own storage and outcome attribution path.
         if record.resource_type == "signal":
             return self._apply_signal(record, context)
         project_id = str(context.get("project_id") or record.metadata.get("project_id") or "")
@@ -188,6 +188,7 @@ class MemoryWorksSyncApplier:
             details={str(k): v for k, v in details.items()},
             ttl_seconds=int(meta.get("ttl_seconds") or 86400),
         )
+        record_github_outcome(record, workspace_id=workspace_id, project_id=project_id)
         return {**observed, "status": "signal_recorded"}
 
 
