@@ -33,7 +33,7 @@ Save the returned briefing ID, source/memory references, verdict, approval reaso
 | `no_memory` | Record the gap. Continue independent local engineering using repository evidence; hold operational actions whose prerequisites remain unknown. |
 | Missing service, stale evidence, retrieval error | Resolve the scope/freshness/error or clearly retain an unresolved prerequisite. Do not treat partial evidence as an enforced pass. |
 
-Never call an absent approval endpoint. Inspect the live approvals/work surfaces to use an implemented flow. Commit-SHA-bound preflight approvals and GitHub required checks are roadmap items until verified in code and the configured repository.
+Never call an absent approval endpoint. Inspect the live approvals/work surfaces to use an implemented flow. Commit-SHA-bound preflight approvals remain a roadmap item. A GitHub briefing check exists (`deploy/github-action`, `orgmemory github-check`), but it serves advice only: a passing or required check is not an approval, and it is enforced only where a repository has installed it and made it required.
 
 ## Outcome contract and uncertain writes
 

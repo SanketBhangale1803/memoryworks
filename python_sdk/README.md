@@ -66,4 +66,30 @@ orgmemory graph prj_platform
 orgmemory swarm swarm_01J...
 ```
 
+### Briefings from scripts and hooks
+
+`brief` and `outcome` wrap `get_briefing` and `record_briefing_outcome`, so a
+script or hook never has to hand-roll the HTTP calls.
+
+```bash
+orgmemory brief "raise the payments worker limit" --service payments-service
+# verdict: requires_approval
+# briefing_id: ctx_...
+
+orgmemory outcome ctx_... config_changed --outcome succeeded \
+  --reason "Load test passed in staging." --detail '{"verification_scope": "staging"}'
+```
+
+A briefing is advice, not authorization: `requires_approval` is not an
+approval and `no_memory` is not permission. `--outcome` takes only `succeeded`,
+`failed`, `partial`, `abandoned`, or `unknown`. Add `--json` for the full
+response.
+
+Two more commands run briefings automatically:
+
+- `orgmemory hook claude-code` / `orgmemory hook cursor` — editor pre-tool hooks.
+  See [`deploy/agent-hooks`](../deploy/agent-hooks/README.md).
+- `orgmemory github-check` — briefs a pull request and posts a Check and PR comment.
+  See [`deploy/github-action`](../deploy/github-action/README.md).
+
 Run `orgmemory --help` or `orgmemory <command> --help` for all options.
