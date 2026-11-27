@@ -190,7 +190,8 @@ test("public routes stay separate from the workspace", () => {
   assert.match(shell, /const isLanding = pathname === "\/"/);
   assert.match(shell, /pathname\.startsWith\("\/docs\/"\)/);
   assert.match(shell, /const isChat = pathname === "\/workspace"/);
-  assert.match(shell, /router\.replace\("\/workspace"\)/);
+  // A signed-in visitor on /login continues to `next`, or the workspace.
+  assert.match(shell, /window\.location\.replace\(\s*safeNextPath\(/);
   assert.doesNotMatch(shell, /webmcp|WEBMCP/i);
 });
 
@@ -232,8 +233,8 @@ test("browser API calls use the secure session cookie instead of local storage t
 test("sign-in uses real OAuth; only the public-demo guest path uses demo-login", () => {
   const login = read("../app/login/page.tsx");
   const vercel = read("../../vercel.json");
-  assert.match(login, /providers\?\.google \? `\$\{API\}\/api\/auth\/google\/start`/);
-  assert.match(login, /providers\?\.github \? `\$\{API\}\/api\/auth\/github\/start`/);
+  assert.match(login, /providers\?\.google \? `\$\{API\}\/api\/auth\/google\/start\$\{nextQuery\(next\)\}`/);
+  assert.match(login, /providers\?\.github \? `\$\{API\}\/api\/auth\/github\/start\$\{nextQuery\(next\)\}`/);
   assert.doesNotMatch(login, /enterDemo\("google"\)/);
   assert.doesNotMatch(login, /enterDemo\("github"\)/);
   assert.match(login, /enterDemo\("guest"\)/);

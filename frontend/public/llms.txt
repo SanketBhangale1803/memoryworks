@@ -1,0 +1,21 @@
+# MemoryWorks
+
+> MemoryWorks is the memory layer for engineering organizations. It turns company sources (GitHub, Slack, uploaded documents, web pages) into scoped, source-backed memory: decisions, policies, incidents, owners, and dependencies. It briefs people and AI agents with cited context before they change something, and records what happened afterwards.
+
+Every company answer carries its evidence or abstains. Consequential actions (memory changes, plans, connector writes) wait for a person to approve them.
+
+## Connect an agent
+
+- MCP server (streamable HTTP, OAuth sign-in): https://mcp.memoryworks.app/mcp
+- Claude Code: `claude mcp add --transport http memoryworks https://mcp.memoryworks.app/mcp`
+- Main tools: `get_orgmemory_briefing` (cited briefing before a change), `record_orgmemory_outcome` (what happened), `orgmemory_ask`, `orgmemory_search_memories`
+
+## Docs
+
+- [Documentation](https://memoryworks.app/docs): connect your agent, quickstart, authentication, API, Python SDK, CLI, MCP
+- [Connect your agent](https://memoryworks.app/docs#connect)
+
+## Product
+
+- [Home](https://memoryworks.app/)
+- [Sign in](https://memoryworks.app/login)

@@ -5,6 +5,7 @@ import Link from "next/link";
 import GitHubIcon from "@/components/icons/GitHubIcon";
 import BrandLogo from "@/components/BrandLogo";
 import { API, api, errorMessage } from "@/lib/api";
+import { nextQuery, safeNextPath } from "@/lib/safeNext";
 
 type Providers = {
   github: boolean;
@@ -26,11 +27,15 @@ export default function Login() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  // Where to go after sign-in, e.g. back to a connector's authorization step.
+  const [next, setNext] = useState("/workspace");
 
   useEffect(() => {
     api<Providers>("/api/auth/providers").then(setProviders).catch((exc) => setError(errorMessage(exc)));
-    const oauthError = new URLSearchParams(window.location.search).get("error");
+    const params = new URLSearchParams(window.location.search);
+    const oauthError = params.get("error");
     if (oauthError) setError(oauthError);
+    setNext(safeNextPath(params.get("next")));
   }, []);
 
   async function enterDemo(identity: "google" | "github" | "guest" | "email") {
@@ -45,7 +50,7 @@ export default function Login() {
           display_name: name,
         }),
       });
-      window.location.assign("/workspace");
+      window.location.assign(next);
     } catch (exc) {
       setError(errorMessage(exc));
       setBusy(false);
@@ -85,7 +90,7 @@ export default function Login() {
         method: "POST",
         body: JSON.stringify({ email, code }),
       });
-      window.location.assign("/workspace");
+      window.location.assign(next);
     } catch (exc) {
       setError(errorMessage(exc));
       setBusy(false);
@@ -103,7 +108,7 @@ export default function Login() {
           display_name: displayName,
         }),
       });
-      window.location.assign("/workspace");
+      window.location.assign(next);
     } catch (exc) {
       setError(errorMessage(exc));
       setBusy(false);
@@ -147,7 +152,7 @@ export default function Login() {
               <div className="oauth-stack">
                 <a
                   className={`login-oauth ${!providers?.google ? "disabled" : ""}`}
-                  href={providers?.google ? `${API}/api/auth/google/start` : undefined}
+                  href={providers?.google ? `${API}/api/auth/google/start${nextQuery(next)}` : undefined}
                   aria-disabled={!providers?.google}
                 >
                   <span className="provider-g">G</span>
@@ -156,7 +161,7 @@ export default function Login() {
                 </a>
                 <a
                   className={`login-oauth ${!providers?.github ? "disabled" : ""}`}
-                  href={providers?.github ? `${API}/api/auth/github/start` : undefined}
+                  href={providers?.github ? `${API}/api/auth/github/start${nextQuery(next)}` : undefined}
                   aria-disabled={!providers?.github}
                 >
                   <span><GitHubIcon size={18} /></span>
@@ -178,6 +183,10 @@ export default function Login() {
               )}
           </div>
 
+          {/* Email codes need SMTP on the deployment; without it the form could
+              only ever be disabled, so it is not shown at all. */}
+          {(providers?.email || providers?.development) && (
+          <>
           <div className="login-divider"><span>or use work email</span></div>
 
           {emailStage === "request" ? (
@@ -192,7 +201,7 @@ export default function Login() {
                   onChange={(event) => setEmail(event.target.value)}
                   placeholder="you@company.com"
                 />
-                <button disabled={busy || !email.trim() || providers?.email === false} onClick={requestCode}>
+                <button disabled={busy || !email.trim()} onClick={requestCode}>
                   {busy ? "Sending…" : "Email me a code"}
                 </button>
               </div>
@@ -221,6 +230,8 @@ export default function Login() {
               </div>
               {developmentCode && <small id="development-code-note">Local code: {developmentCode}</small>}
             </div>
+          )}
+          </>
           )}
 
           {providers && (!providers.github || !providers.google) && (

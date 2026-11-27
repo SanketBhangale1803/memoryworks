@@ -59,7 +59,7 @@ from app.auth.app_auth import (
     workspace_members,
 )
 from app.auth.mcp_oauth import principal_from_mcp_token, register_mcp_client
-from app.auth.security import frontend_redirect, oauth_redirect_uri
+from app.auth.security import frontend_redirect, oauth_redirect_uri, safe_next_path
 from app.company_context import CompanyContextService
 from app.connectors.application import MemoryWorksSyncApplier
 from app.connectors.base import WebhookRequest
@@ -4255,10 +4255,13 @@ def create_mcp_oauth_client(
 
 
 @router.get("/auth/github/start")
-def github_auth_start(request: Request):
+def github_auth_start(request: Request, next: str = ""):
     try:
         flow = OAuthStateStore().create(
-            "github", intent="login", use_pkce=settings.github_oauth_use_pkce
+            "github",
+            intent="login",
+            use_pkce=settings.github_oauth_use_pkce,
+            next_path=next,
         )
         # Sign-in asks for repository access in the same consent screen, so a
         # person who signs in with GitHub never meets a second "Connect GitHub"
@@ -4277,9 +4280,9 @@ def github_auth_start(request: Request):
 
 
 @router.get("/auth/google/start")
-def google_auth_start(request: Request):
+def google_auth_start(request: Request, next: str = ""):
     try:
-        flow = OAuthStateStore().create("google", intent="login", use_pkce=True)
+        flow = OAuthStateStore().create("google", intent="login", use_pkce=True, next_path=next)
         return RedirectResponse(
             google_oauth_url(
                 flow,
@@ -4311,7 +4314,9 @@ def google_auth_callback(code: str, state: str, request: Request):
             f"{identity['email'].split('@')[-1]}'s workspace",
         )
         _seed_public_demo_for(session)
-        response = RedirectResponse(frontend_redirect(request, "/workspace"))
+        response = RedirectResponse(
+            frontend_redirect(request, safe_next_path(flow.get("next_path")))
+        )
         _set_session_cookie(response, session["token"])
         return response
     except Exception as exc:
@@ -4370,7 +4375,9 @@ def github_auth_callback(
             )
             _seed_public_demo_for(session)
             _connect_github_from_sign_in(session, identity)
-            response = RedirectResponse(frontend_redirect(request, "/workspace"))
+            response = RedirectResponse(
+                frontend_redirect(request, safe_next_path(flow.get("next_path")))
+            )
             _set_session_cookie(response, session["token"])
             return response
         # The connector runtime performs the OAuth exchange and persists the
