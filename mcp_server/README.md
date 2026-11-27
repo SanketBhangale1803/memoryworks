@@ -12,9 +12,11 @@ python mcp_server/server.py --health      # check the backend
 
 Settings: `MEMORYWORKS_API_URL`, `MEMORYWORKS_API_KEY`, and `MEMORYWORKS_MCP_*`.
 The older `ORGMEMORY_*` and `RUNBOOK_*` names still work with a deprecation
-warning. The Vercel deployment at memoryworks.app does not run this server yet;
-use stdio with an API key against it, or deploy the server (Docker `mcp` profile
-or `deploy/server/`) for HTTP with OAuth.
+warning. memoryworks.app hosts this server at `https://mcp.memoryworks.app/mcp`
+(streamable HTTP, OAuth only). The HTTP transport validates every bearer at the
+backend's `/api/oauth/introspect` and never accepts or falls back to an API key;
+`MEMORYWORKS_API_KEY` is used only by stdio. Self-host HTTP with the Docker `mcp`
+profile or `deploy/server/`.
 
 In the app, **Sources → AI tools** generates the configuration for each client.
 Tool reference and examples: [`docs/MCP.md`](../docs/MCP.md).

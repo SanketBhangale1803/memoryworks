@@ -31,3 +31,34 @@ def test_unauthenticated_mcp_request_points_at_the_metadata():
     response = client.post("/mcp", json={})
     assert response.status_code == 401
     assert "oauth-protected-resource/mcp" in response.headers.get("www-authenticate", "")
+
+
+def test_http_transport_rejects_a_workspace_api_key(monkeypatch):
+    # An API key is not an OAuth token: introspection reports it inactive, and
+    # the HTTP transport must not fall back to MEMORYWORKS_API_KEY either.
+    seen: list[str] = []
+
+    class Inactive:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"active": False}
+
+    async def fake_post(self, url, headers=None, **kwargs):
+        seen.append(url)
+        return Inactive()
+
+    monkeypatch.setattr(server.httpx.AsyncClient, "post", fake_post)
+    monkeypatch.setattr(server, "API_KEY", "rbk_configured_for_stdio")
+    client = TestClient(server.mcp.streamable_http_app())
+    response = client.post(
+        "/mcp",
+        json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+        headers={
+            "Authorization": "Bearer rbk_workspace_key",
+            "Accept": "application/json, text/event-stream",
+        },
+    )
+    assert response.status_code == 401
+    assert seen == [f"{server.API_URL}/api/oauth/introspect"]

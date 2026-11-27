@@ -9,150 +9,93 @@ import { api, reportApiFailure } from "@/lib/api";
  * An agent working inside Cursor, VS Code, or Claude Code reaches the same
  * memory as the chat, over MCP. Every snippet below is generated from this deployment's
  * own runtime settings — a self-hosted install shows its own URLs, not
- * localhost copied out of a README. */
+ * localhost copied out of a README.
+ *
+ * The HTTP MCP server authenticates with OAuth only: it validates each bearer
+ * at /api/oauth/introspect, which accepts MCP access tokens and nothing else,
+ * and it never falls back to a workspace API key. So no snippet here carries a
+ * key — the client discovers the authorization server from the URL and opens a
+ * MemoryWorks sign-in. Keys are for the REST API, the SDK/CLI, and the local
+ * stdio bridge. */
 
 type Runtime = { mcp_http_url?: string; mcp_available?: boolean; mcp_oauth_issuer?: string; api_url?: string };
-type ApiKey = { id: string; name: string; key_prefix: string; created_at: string };
-
-const KEY_PLACEHOLDER = "YOUR_MEMORYWORKS_API_KEY";
 
 type Client = {
   id: string;
   label: string;
   file: string;
   note: string;
-  snippet: (url: string, key: string) => string;
+  snippet: (url: string) => string;
 };
 
 const CLIENTS: Client[] = [
   {
+    id: "claude-code",
+    label: "Claude Code",
+    file: "Run once in your terminal",
+    note: "Then run /mcp in Claude Code and choose Authenticate; a browser window opens to sign in and approve. Add --scope user to use it in every project.",
+    snippet: (url) => `claude mcp add --transport http memoryworks ${url}`,
+  },
+  {
     id: "cursor",
     label: "Cursor",
     file: "~/.cursor/mcp.json  (or .cursor/mcp.json in the repo)",
-    note: "Reload the MCP servers list in Cursor settings after saving.",
-    snippet: (url, key) =>
-      JSON.stringify(
-        {
-          mcpServers: {
-            memoryworks: {
-              url,
-              headers: { Authorization: `Bearer ${key}` },
-            },
-          },
-        },
-        null,
-        2,
-      ),
+    note: "Save, then choose Connect next to memoryworks in Cursor's MCP settings to sign in and approve.",
+    snippet: (url) => JSON.stringify({ mcpServers: { memoryworks: { url } } }, null, 2),
   },
   {
     id: "vscode",
     label: "VS Code",
     file: ".vscode/mcp.json",
-    note: "VS Code prompts for the key on first use and stores it in its own secret store.",
+    note: "Start the server from the file or the MCP view; VS Code asks you to sign in and stores the token itself.",
     snippet: (url) =>
-      JSON.stringify(
-        {
-          inputs: [
-            {
-              id: "memoryworks-key",
-              type: "promptString",
-              description: "MemoryWorks API key",
-              password: true,
-            },
-          ],
-          servers: {
-            memoryworks: {
-              type: "http",
-              url,
-              headers: { Authorization: "Bearer ${input:memoryworks-key}" },
-            },
-          },
-        },
-        null,
-        2,
-      ),
+      JSON.stringify({ servers: { memoryworks: { type: "http", url } } }, null, 2),
   },
   {
-    id: "claude-code",
-    label: "Claude Code",
-    file: "Run once in your terminal",
-    note: "Adds the server for this project. Use --scope user to add it everywhere.",
-    snippet: (url, key) =>
-      `claude mcp add --transport http memoryworks ${url} \\\n  --header "Authorization: Bearer ${key}"`,
+    id: "claude",
+    label: "Claude",
+    file: "Settings → Connectors → Add custom connector",
+    note: "Works in claude.ai and Claude Desktop. Paste the URL, choose Connect, and approve.",
+    snippet: (url) => url,
   },
   {
-    id: "claude-desktop",
-    label: "Claude Desktop",
-    file: "claude_desktop_config.json",
-    note: "Restart Claude Desktop after saving.",
-    snippet: (url, key) =>
-      JSON.stringify(
-        {
-          mcpServers: {
-            memoryworks: {
-              command: "npx",
-              args: ["-y", "mcp-remote", url, "--header", `Authorization: Bearer ${key}`],
-            },
-          },
-        },
-        null,
-        2,
-      ),
+    id: "chatgpt",
+    label: "ChatGPT",
+    file: "Settings → Apps & Connectors → Create",
+    note: "If Create is missing, turn on Developer mode under Advanced settings. Choose OAuth authentication; ChatGPT opens MemoryWorks to sign in and approve.",
+    snippet: (url) => `Name            MemoryWorks\nMCP server URL  ${url}\nAuthentication  OAuth`,
   },
   {
     id: "other",
     label: "Any MCP client",
     file: "Streamable HTTP endpoint",
-    note: "OAuth is also supported; the issuer is shown below for clients that discover it.",
-    snippet: (url, key) =>
-      `Transport   streamable-http\nURL         ${url}\nAuth        Authorization: Bearer ${key}`,
+    note: "Clients discover the authorization server from the URL (RFC 9728) and register themselves. Use the form below only if yours cannot.",
+    snippet: (url) =>
+      `Transport   streamable-http\nURL         ${url}\nAuth        OAuth 2.1 (PKCE, dynamic client registration)`,
   },
 ];
 
 export default function IdeAccess() {
   const [runtime, setRuntime] = useState<Runtime>({});
-  const [keys, setKeys] = useState<ApiKey[]>([]);
   const [client, setClient] = useState(CLIENTS[0].id);
-  const [issued, setIssued] = useState("");
-  const [creating, setCreating] = useState(false);
-  const [copied, setCopied] = useState("");
+  const [copied, setCopied] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
     api<Runtime>("/api/settings/runtime")
       .then(setRuntime)
       .catch((exc) => reportApiFailure(exc, setError));
-    api<ApiKey[]>("/api/keys")
-      .then(setKeys)
-      .catch((exc) => reportApiFailure(exc, setError));
   }, []);
 
   const url = runtime.mcp_http_url || "http://localhost:8001/mcp";
   const active = useMemo(() => CLIENTS.find((item) => item.id === client)!, [client]);
-  const snippet = active.snippet(url, issued || KEY_PLACEHOLDER);
+  const snippet = active.snippet(url);
 
-  async function issueKey() {
-    setCreating(true);
-    setError("");
-    try {
-      const created = await api<{ api_key: string }>("/api/keys", {
-        method: "POST",
-        body: JSON.stringify({ name: `${active.label} — editor access` }),
-      });
-      setIssued(created.api_key);
-      setKeys(await api<ApiKey[]>("/api/keys").catch(() => keys));
-    } catch (cause) {
-      reportApiFailure(cause, setError, "Could not issue a key.");
-    } finally {
-      setCreating(false);
-    }
-  }
-
-  async function copy(text: string, label: string) {
+  async function copy(text: string) {
     try {
       await navigator.clipboard.writeText(text);
-      setCopied(label);
-      setTimeout(() => setCopied(""), 1600);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
     } catch {
       setError("Clipboard is unavailable. Select the text and copy it manually.");
     }
@@ -178,7 +121,8 @@ export default function IdeAccess() {
       {runtime.mcp_available === false && (
         <div className="notice" role="status">
           Hosted MCP isn&apos;t running on this deployment yet, so editors can&apos;t connect to{" "}
-          <code>{url}</code>. Keys issued here already work with the API.
+          <code>{url}</code>. The REST API and the local stdio bridge still work with a{" "}
+          <Link href="/keys">workspace API key</Link>.
         </div>
       )}
 
@@ -199,8 +143,8 @@ export default function IdeAccess() {
       <div className="ide-panel">
         <div className="ide-panel-head">
           <code>{active.file}</code>
-          <button className="text-button" onClick={() => copy(snippet, "snippet")}>
-            {copied === "snippet" ? "Copied" : "Copy"}
+          <button className="text-button" onClick={() => copy(snippet)}>
+            {copied ? "Copied" : "Copy"}
           </button>
         </div>
         <pre className="ide-snippet">{snippet}</pre>
@@ -209,28 +153,16 @@ export default function IdeAccess() {
 
       <div className="ide-key">
         <div>
-          <strong>{issued ? "Your new key — copy it now" : "Workspace API key"}</strong>
+          <strong>No key to paste</strong>
           <p className="subtle">
-            {issued
-              ? "This is the only time the full key is shown. It is already filled into the snippet above."
-              : keys.length
-                ? `${keys.length} key${keys.length === 1 ? "" : "s"} issued. Existing keys cannot be read back, so issue a new one for a new editor.`
-                : "No keys issued yet. An editor needs one to authenticate."}
+            Your editor signs in to MemoryWorks over OAuth the first time it connects, and you approve
+            read or read-and-write access. Workspace API keys are for the REST API, the Python SDK and
+            CLI, and the local stdio bridge — the MCP endpoint does not accept them.
           </p>
-          {issued && <code className="ide-secret">{issued}</code>}
         </div>
         <div className="ide-key-actions">
-          {issued ? (
-            <button className="button secondary" onClick={() => copy(issued, "key")}>
-              {copied === "key" ? "Copied" : "Copy key"}
-            </button>
-          ) : (
-            <button className="button" onClick={issueKey} disabled={creating}>
-              {creating ? "Issuing…" : "Issue a key"}
-            </button>
-          )}
           <Link className="text-button" href="/keys">
-            Manage keys
+            API keys
           </Link>
         </div>
       </div>

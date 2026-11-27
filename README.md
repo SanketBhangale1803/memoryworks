@@ -555,13 +555,14 @@ Secrets are encrypted at rest, source access is workspace-scoped, and API keys a
 
 ## Production deployment
 
-Production runs at **https://memoryworks.app** as a Vercel Services project (`orgmemory`): Next.js serves the web app and a FastAPI container serves same-origin `/api/*`, so session cookies stay first-party.
+Production runs at **https://memoryworks.app** split across two hosts. Vercel serves only the Next.js web app (`vercel.json` has a single `frontend` service). `vercel.json` forwards `/api/*`, `/.well-known/*`, and `/oauth/*` to `https://api.memoryworks.app`, so the browser stays on one origin and session cookies stay first-party. The API, the background worker, the hosted MCP server, ArcadeDB, and Caddy run on one VPS from [`deploy/server/`](deploy/server/README.md) (`compose.api-only.yml`), with persistent volumes and nightly backups.
 
-- A push to `main` creates the production deployment; other branches create preview deployments (behind Vercel login).
-- **Storage on Vercel is not durable.** The backend container keeps SQLite under `/tmp/orgmemory/` and uses the in-memory graph, and Vercel containers are stateless, so workspace data can reset when a new container starts. For durable data, run the single-VM deployment in [`deploy/server/`](deploy/server/README.md) (Caddy, ArcadeDB, persistent volumes).
-- Production needs the values in `.env.production.example`, plus a sensitive `JWT_SECRET` and a model key. Environment changes take effect on the next deployment.
+- A push to `main` builds and deploys the **web app** on Vercel; other branches create preview deployments (behind Vercel login). The **API and MCP server do not deploy from Vercel**: they are updated on the server with `git pull`, `deploy/server/up.sh`, and `deploy/server/verify.sh`. A change that touches both (for example a new forwarded route) needs both deployed.
+- Storage is durable: SQLite and ArcadeDB live on server volumes, not in a Vercel container.
+- The server needs the values in `.env.production.example`, plus a sensitive `JWT_SECRET`, `INTEGRATION_ENCRYPTION_KEY`, and a model key. Environment changes take effect on the next `up.sh`.
 - The URL settings — `FRONTEND_URL`, `PUBLIC_BASE_URL`, `APP_BASE_URL`, `API_URL`, `MCP_OAUTH_ISSUER_URL`, `NEXT_PUBLIC_SITE_URL` — are `https://memoryworks.app`.
-- The MCP server does not run on Vercel. memoryworks.app's hosted MCP server runs on the API server at `https://mcp.memoryworks.app/mcp` (OAuth only); self-hosting HTTP MCP needs the Docker `mcp` profile or the single-VM deployment.
+- The hosted MCP server is `https://mcp.memoryworks.app/mcp` (OAuth only). Self-hosting HTTP MCP needs the Docker `mcp` profile or the single-VM deployment.
+- Vercel's external rewrite cuts off long requests, so long-running work started from the web app (repository imports, for example) runs as a background job that the page polls.
 
 ### The domain
 
@@ -594,10 +595,10 @@ npm --prefix frontend test
 
 | Suite | Result |
 |---|---|
-| Backend (`pytest backend`) | 335 passed, 1 skipped (deliberate live-LLM contract test) |
-| Frontend (`node:test`) | 30 passed |
-| Python SDK | 8 passed |
-| MCP server | 4 passed |
+| Backend (`pytest backend`) | 592 passed, 1 skipped (deliberate live-LLM contract test) |
+| Frontend (`node:test`) | 43 passed |
+| Python SDK | 9 passed |
+| MCP server (`pytest mcp_server/tests`) | 17 passed |
 | `ruff` / `black` / `tsc` | clean |
 | `next build` | succeeds |
 
@@ -647,7 +648,7 @@ Service matching is against `scope.service`, the subject, and the body. If the e
 - Extraction is deliberately conservative and primarily deterministic. Models may synthesize answers but cannot promote unsupported memory.
 - GitHub, Slack, uploads (PDF/DOCX/XLSX/PPTX/ODT/RTF/HTML/EML), websites, Notion, Google Drive, Microsoft Teams, custom REST API sources, API, Python, CLI, and MCP are live. Gmail, Microsoft 365 (SharePoint/OneDrive), Outlook, and Atlassian remain adapter work.
 - Chat history is stored in the browser (per workspace), not on the server, so it does not follow you to another device yet.
-- The Vercel deployment at memoryworks.app has no durable storage yet and does not host the MCP server (see [Production deployment](#production-deployment)).
+- memoryworks.app runs its API and MCP server on a single VPS (see [Production deployment](#production-deployment)); the path past one server is in [`docs/SCALING.md`](docs/SCALING.md).
 - Conflict matching relies on normalized subjects; entity-assisted and model-assisted reconciliation would improve it.
 - Profiles are assembled on read from current memories rather than materialized incrementally.
 - Team grants are project- and source-scoped. Field-level classification and external identity-group sync are not implemented.

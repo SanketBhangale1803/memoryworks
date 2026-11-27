@@ -9,6 +9,7 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 from fastapi.testclient import TestClient
 
+from app.auth.api_keys import create_api_key
 from app.auth.app_auth import create_dev_session
 from app.auth.mcp_oauth import oauth_resource_metadata, oauth_server_metadata
 from app.auth.security import safe_next_path
@@ -198,3 +199,24 @@ def test_sign_in_start_carries_next_in_the_signed_state(graph):
     assert store.consume("google", flow["state"])["next_path"] == "/connectors"
     hostile = store.create("google", intent="login", next_path="https://evil.example")
     assert store.consume("google", hostile["state"])["next_path"] == ""
+
+
+def test_introspection_rejects_workspace_api_keys(graph):
+    """The hosted MCP endpoint is OAuth-only: an API key is never an active token."""
+    _, session = _signed_in_client("consent-key@example.com")
+    key = create_api_key("editor", session["user"]["active_workspace_id"], session["user"]["id"])[
+        "api_key"
+    ]
+    client = TestClient(app)
+
+    def introspect(bearer: str):
+        return client.post("/api/oauth/introspect", headers={"Authorization": f"Bearer {bearer}"})
+
+    # A real key or session passes the auth boundary but is not an MCP token.
+    for bearer in (key, session["token"]):
+        response = introspect(bearer)
+        assert response.status_code == 200
+        assert response.json() == {"active": False}
+    # Anything else is refused at the boundary, which the MCP verifier also
+    # treats as inactive.
+    assert introspect("not-a-token").status_code == 401
