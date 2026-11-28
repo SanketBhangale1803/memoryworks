@@ -476,6 +476,8 @@ CREATE TABLE IF NOT EXISTS context_events (
   confidence REAL NOT NULL DEFAULT 0, trust_score REAL NOT NULL DEFAULT 0,
   context_envelope_id TEXT NOT NULL DEFAULT '',
   handoff_offered INTEGER NOT NULL DEFAULT 0, handoff_files_json TEXT NOT NULL DEFAULT '[]',
+  github_repository TEXT NOT NULL DEFAULT '',
+  github_sha TEXT NOT NULL DEFAULT '', github_pr_number INTEGER,
   created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS action_events (
@@ -484,6 +486,7 @@ CREATE TABLE IF NOT EXISTS action_events (
   action_type TEXT NOT NULL, actor TEXT NOT NULL DEFAULT '',
   surface TEXT NOT NULL DEFAULT '', target TEXT NOT NULL DEFAULT '',
   detail_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL,
+  idempotency_key TEXT NOT NULL DEFAULT '',
   FOREIGN KEY(context_event_id) REFERENCES context_events(id) ON DELETE CASCADE
 );
 CREATE TABLE IF NOT EXISTS outcome_events (
@@ -492,6 +495,7 @@ CREATE TABLE IF NOT EXISTS outcome_events (
   outcome TEXT NOT NULL, signal TEXT NOT NULL DEFAULT 'human',
   reason TEXT NOT NULL DEFAULT '', detail_json TEXT NOT NULL DEFAULT '{}',
   observed_at TEXT NOT NULL, created_at TEXT NOT NULL,
+  idempotency_key TEXT NOT NULL DEFAULT '',
   FOREIGN KEY(context_event_id) REFERENCES context_events(id) ON DELETE CASCADE,
   FOREIGN KEY(action_event_id) REFERENCES action_events(id) ON DELETE SET NULL
 );
@@ -695,6 +699,7 @@ def init_db() -> None:
             with closing(sqlite3.connect(db_path, timeout=30.0)) as conn, conn:
                 conn.execute("PRAGMA busy_timeout=30000")
                 conn.executescript(SCHEMA)
+                conn.execute("BEGIN IMMEDIATE")
                 _migrate_columns(conn)
             _initialized_paths.add(resolved)
             return
@@ -707,6 +712,36 @@ def init_db() -> None:
 
 
 def _migrate_columns(conn: sqlite3.Connection) -> None:
+    for table, additions in (
+        (
+            "context_events",
+            {
+                "github_repository": "TEXT NOT NULL DEFAULT ''",
+                "github_sha": "TEXT NOT NULL DEFAULT ''",
+                "github_pr_number": "INTEGER",
+            },
+        ),
+        ("action_events", {"idempotency_key": "TEXT NOT NULL DEFAULT ''"}),
+        ("outcome_events", {"idempotency_key": "TEXT NOT NULL DEFAULT ''"}),
+    ):
+        columns = {record[1] for record in conn.execute(f"PRAGMA table_info({table})")}
+        for name, definition in additions.items():
+            if name not in columns:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
+    conn.execute(
+        """CREATE UNIQUE INDEX IF NOT EXISTS idx_outcome_idempotency
+        ON outcome_events(workspace_id, context_event_id, signal, idempotency_key)
+        WHERE idempotency_key != ''"""
+    )
+    conn.execute(
+        """CREATE INDEX IF NOT EXISTS idx_context_github_sha
+        ON context_events(workspace_id, project_id, github_sha, github_repository) WHERE github_sha != ''"""
+    )
+    conn.execute(
+        """CREATE INDEX IF NOT EXISTS idx_outcome_signal_key
+        ON outcome_events(workspace_id, project_id, signal, idempotency_key)
+        WHERE idempotency_key != ''"""
+    )
     session_columns = {
         record[1] for record in conn.execute("PRAGMA table_info(sessions)").fetchall()
     }

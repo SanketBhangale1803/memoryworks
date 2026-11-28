@@ -241,3 +241,76 @@ def test_an_unknown_outcome_value_is_rejected(graph):
 
     with pytest.raises(ValueError):
         record_outcome(context_event_id=context_id, outcome="mostly_fine", workspace_id=WORKSPACE)
+
+
+def test_outcome_columns_migrate_an_existing_ledger(graph):
+    import sqlite3
+    from concurrent.futures import ThreadPoolExecutor
+    from contextlib import closing
+
+    from app.core.config import settings
+    from app.core.database import SCHEMA, connect
+    from app.outcomes.ledger import record_action_outcome
+
+    old_schema = SCHEMA.replace(
+        "  github_repository TEXT NOT NULL DEFAULT '',\n"
+        "  github_sha TEXT NOT NULL DEFAULT '', github_pr_number INTEGER,\n",
+        "",
+    )
+    # Strip only the new ledger columns. Other tables already had keys.
+    table_start = old_schema.index("CREATE TABLE IF NOT EXISTS action_events")
+    table_end = old_schema.index("CREATE TABLE IF NOT EXISTS learned_skills")
+    old_schema = (
+        old_schema[:table_start]
+        + old_schema[table_start:table_end].replace(
+            "  idempotency_key TEXT NOT NULL DEFAULT '',\n", ""
+        )
+        + old_schema[table_end:]
+    )
+    with closing(sqlite3.connect(settings.sqlite_path)) as conn, conn:
+        conn.executescript(old_schema)
+        conn.execute(
+            "INSERT INTO context_events (id,workspace_id,project_id,query,created_at) VALUES (?,?,?,?,?)",
+            ("ctx_legacy", "ws_legacy", "", "Existing context", "2026-01-01T00:00:00+00:00"),
+        )
+        conn.execute(
+            "INSERT INTO action_events (id,context_event_id,action_type,created_at) VALUES (?,?,?,?)",
+            ("act_legacy", "ctx_legacy", "accepted", "2026-01-01T00:00:00+00:00"),
+        )
+        conn.execute(
+            """INSERT INTO outcome_events (id,context_event_id,action_event_id,outcome,observed_at,created_at)
+            VALUES (?,?,?,?,?,?)""",
+            (
+                "out_legacy",
+                "ctx_legacy",
+                "act_legacy",
+                "failed",
+                "2026-01-01T00:00:00+00:00",
+                "2026-01-01T00:00:00+00:00",
+            ),
+        )
+
+    report = dict(
+        context_event_id="ctx_legacy",
+        workspace_id="ws_legacy",
+        action_type="edit_applied",
+        outcome="succeeded",
+        signal="agent",
+        idempotency_key="retry-safe",
+    )
+    # Initialize the old database first, then race callers on the same key.
+    with connect() as conn:
+        assert tuple(
+            conn.execute(
+                "SELECT github_repository,github_sha,github_pr_number FROM context_events"
+            ).fetchone()
+        ) == ("", "", None)
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        receipts = list(executor.map(lambda _: record_action_outcome(**report), range(4)))
+    assert all(receipt == receipts[0] for receipt in receipts)
+    with connect() as conn:
+        for table in ("action_events", "outcome_events"):
+            assert [
+                row["idempotency_key"]
+                for row in conn.execute(f"SELECT idempotency_key FROM {table} ORDER BY created_at")
+            ] == ["", "retry-safe"]

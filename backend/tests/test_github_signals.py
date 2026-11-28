@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from app.connectors.github.signals import normalize_terminal
+from app.connectors.github.signals import normalize_terminal, normalize_webhook
 
 FIXTURE = json.loads(Path(__file__).parent.joinpath("fixtures/github_signals.json").read_text())
 REPO = FIXTURE["repository"]
@@ -356,3 +356,24 @@ def test_signal_metadata_has_no_secrets_or_untrusted_urls(monkeypatch):
         normalize_terminal("workflow", wf, repository={"id": "bad"}, target="default")
     # Missing ids/timestamps emit no record.
     assert normalize_terminal("workflow", {"id": 1}, repository=REPO, target="default") == ()
+
+
+@pytest.mark.parametrize(("merged", "state"), [(True, "success"), (False, "failure")])
+def test_closed_pull_request_outcome_signal(merged, state):
+    payload = {
+        "repository": REPO,
+        "action": "closed",
+        "pull_request": {
+            "number": 42,
+            "merged": merged,
+            "head": {"sha": "a" * 40},
+            "closed_at": "2026-10-08T10:00:00Z",
+        },
+    }
+    (record,) = normalize_webhook("pull_request", payload)
+    assert record.metadata["state"] == state
+    assert record.metadata["pr_number"] == 42
+    assert record.metadata["details"]["head_sha"] == "a" * 40
+    assert record.source_url == "https://github.com/acme/api/pull/42"
+    assert normalize_webhook("pull_request", payload) == (record,)
+    assert normalize_webhook("pull_request", {**payload, "action": "opened"}) == ()

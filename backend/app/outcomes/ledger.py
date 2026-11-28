@@ -22,6 +22,8 @@ from __future__ import annotations
 
 import json
 import re
+import sqlite3
+from contextlib import nullcontext
 from typing import Any
 
 from app.core.database import connect, new_id, rows, utcnow
@@ -54,6 +56,12 @@ POSITIVE_ACTIONS = {
 NEGATIVE_ACTIONS = {"rejected", "dismissed", "ignored"}
 
 _SLUG_RE = re.compile(r"[^a-z0-9_]+")
+# GitHub can deliver events out of order. Keep insertion order for existing
+# writers and use the provider's timestamp for deduplicated GitHub observations.
+_OUTCOME_ORDER = """ORDER BY
+    CASE WHEN idempotency_key != '' AND signal IN ('ci', 'github')
+         THEN julianday(observed_at) ELSE julianday(created_at) END,
+    created_at, rowid"""
 
 
 def record_context(
@@ -64,6 +72,9 @@ def record_context(
     workspace_id: str = "",
     principal_id: str = "",
     surface: str = "api",
+    github_repository: str = "",
+    github_sha: str = "",
+    github_pr_number: int | None = None,
 ) -> str:
     """Log the context served for one answer. Returns its id, or "" if not logged.
 
@@ -92,7 +103,8 @@ def record_context(
                 "selected_lens, candidate_count, judged, candidates_json,"
                 "evidence_ids_json, evidence_count, source_ids_json, confidence,"
                 "trust_score, context_envelope_id, handoff_offered, handoff_files_json,"
-                "created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "github_repository, github_sha, github_pr_number, created_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     event_id,
                     workspace_id,
@@ -133,6 +145,9 @@ def record_context(
                     str(envelope.get("id") or ""),
                     1 if handoff else 0,
                     json.dumps(handoff.get("files") or []),
+                    github_repository,
+                    github_sha,
+                    github_pr_number,
                     now,
                 ),
             )
@@ -153,16 +168,19 @@ def record_action(
     surface: str = "",
     target: str = "",
     detail: dict[str, Any] | None = None,
+    idempotency_key: str = "",
+    _conn: sqlite3.Connection | None = None,
 ) -> dict[str, Any]:
     """Log what was done with a served context. Raises if the context is unknown."""
     context = _context_row(context_event_id, workspace_id)
     action_id = new_id("act")
     now = utcnow()
-    with connect() as conn:
+    with connect() if _conn is None else nullcontext(_conn) as conn:
         conn.execute(
             "INSERT INTO action_events ("
             "id, context_event_id, workspace_id, project_id, action_type, actor,"
-            "surface, target, detail_json, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            "surface, target, detail_json, created_at, idempotency_key) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
             (
                 action_id,
                 context_event_id,
@@ -174,6 +192,7 @@ def record_action(
                 target,
                 json.dumps(detail or {}),
                 now,
+                idempotency_key,
             ),
         )
     return {
@@ -195,6 +214,8 @@ def record_outcome(
     reason: str = "",
     detail: dict[str, Any] | None = None,
     observed_at: str = "",
+    idempotency_key: str = "",
+    _conn: sqlite3.Connection | None = None,
 ) -> dict[str, Any]:
     """Log what happened after the action. Raises if the context is unknown."""
     context = _context_row(context_event_id, workspace_id)
@@ -203,12 +224,12 @@ def record_outcome(
         raise ValueError(f"outcome must be one of {', '.join(OUTCOMES)}")
     outcome_id = new_id("out")
     now = utcnow()
-    with connect() as conn:
+    with connect() if _conn is None else nullcontext(_conn) as conn:
         conn.execute(
             "INSERT INTO outcome_events ("
             "id, context_event_id, action_event_id, workspace_id, project_id, outcome,"
-            "signal, reason, detail_json, observed_at, created_at)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            "signal, reason, detail_json, observed_at, created_at, idempotency_key)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 outcome_id,
                 context_event_id,
@@ -221,6 +242,7 @@ def record_outcome(
                 json.dumps(detail or {}),
                 observed_at or now,
                 now,
+                idempotency_key,
             ),
         )
     return {
@@ -230,6 +252,79 @@ def record_outcome(
         "reward": REWARDS[normalized],
         "created_at": now,
     }
+
+
+def record_action_outcome(
+    *,
+    context_event_id: str,
+    workspace_id: str,
+    action_type: str,
+    outcome: str,
+    signal: str,
+    actor: str = "",
+    surface: str = "",
+    target: str = "",
+    reason: str = "",
+    detail: dict[str, Any] | None = None,
+    observed_at: str = "",
+    idempotency_key: str = "",
+    _conn: sqlite3.Connection | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Write both legs atomically or reconstruct their original receipt."""
+    context = _context_row(context_event_id, workspace_id)
+    workspace_id = workspace_id or context["workspace_id"]
+    with connect() if _conn is None else nullcontext(_conn) as conn:
+        if _conn is None:
+            conn.execute("BEGIN IMMEDIATE")
+        if idempotency_key:
+            receipt = conn.execute(
+                """SELECT a.id AS action_id, a.action_type, a.created_at AS action_created,
+                          o.id AS outcome_id, o.outcome, o.created_at AS outcome_created
+                   FROM outcome_events o JOIN action_events a ON a.id=o.action_event_id
+                   WHERE o.workspace_id=? AND o.context_event_id=? AND o.signal=?
+                   AND o.idempotency_key=? AND o.idempotency_key != ''""",
+                (workspace_id, context_event_id, signal, idempotency_key),
+            ).fetchone()
+            if receipt:
+                return (
+                    {
+                        "id": receipt["action_id"],
+                        "context_event_id": context_event_id,
+                        "action_type": receipt["action_type"],
+                        "created_at": receipt["action_created"],
+                    },
+                    {
+                        "id": receipt["outcome_id"],
+                        "context_event_id": context_event_id,
+                        "outcome": receipt["outcome"],
+                        "reward": REWARDS[receipt["outcome"]],
+                        "created_at": receipt["outcome_created"],
+                    },
+                )
+        action = record_action(
+            context_event_id=context_event_id,
+            action_type=action_type,
+            workspace_id=workspace_id,
+            actor=actor,
+            surface=surface,
+            target=target,
+            detail=detail,
+            idempotency_key=idempotency_key,
+            _conn=conn,
+        )
+        observation = record_outcome(
+            context_event_id=context_event_id,
+            outcome=outcome,
+            workspace_id=workspace_id,
+            action_event_id=action["id"],
+            signal=signal,
+            reason=reason,
+            detail=detail,
+            observed_at=observed_at,
+            idempotency_key=idempotency_key,
+            _conn=conn,
+        )
+        return action, observation
 
 
 def stats(workspace_id: str, project_id: str = "") -> dict[str, Any]:
@@ -262,13 +357,15 @@ def stats(workspace_id: str, project_id: str = "") -> dict[str, Any]:
         item for item in rows("SELECT * FROM action_events") if item["context_event_id"] in ids
     ]
     outcomes = [
-        item for item in rows("SELECT * FROM outcome_events") if item["context_event_id"] in ids
+        item
+        for item in rows(f"SELECT * FROM outcome_events {_OUTCOME_ORDER}")
+        if item["context_event_id"] in ids
     ]
 
     # Last outcome per context wins: an outcome can be revised (CI passes, then
     # the change is reverted) and the most recent observation is the true label.
     latest: dict[str, dict[str, Any]] = {}
-    for item in sorted(outcomes, key=lambda record: record["created_at"]):
+    for item in outcomes:
         latest[item["context_event_id"]] = item
 
     judged = [item for item in latest.values() if item["outcome"] != "unknown"]
@@ -328,7 +425,7 @@ def export_training_records(
             actions_by_context.setdefault(item["context_event_id"], []).append(item)
 
     outcomes_by_context: dict[str, list[dict[str, Any]]] = {}
-    for item in rows("SELECT * FROM outcome_events ORDER BY created_at"):
+    for item in rows(f"SELECT * FROM outcome_events {_OUTCOME_ORDER}"):
         if item["context_event_id"] in ids:
             outcomes_by_context.setdefault(item["context_event_id"], []).append(item)
 

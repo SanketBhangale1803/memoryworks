@@ -553,6 +553,10 @@ class ChangeIntelligenceService:
                 (error[:2000], utcnow(), event_id),
             )
 
+    def complete_observation(self, event_id: str) -> None:
+        """Finish a webhook observation that carries no source diff."""
+        self._complete(event_id, {})
+
     def fail(self, event_id: str, error: str) -> None:
         """Record an asynchronous processing failure without exposing storage internals."""
         self._fail(event_id, error)
