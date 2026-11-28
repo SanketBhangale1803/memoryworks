@@ -4,7 +4,7 @@ import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import IdeAccess from "@/components/IdeAccess";
 import Page from "@/components/Page";
-import { API, api } from "@/lib/api";
+import { API, api, reportApiFailure } from "@/lib/api";
 
 /* AI tools & IDEs: every way an agent reaches this workspace.
  *
@@ -27,22 +27,24 @@ export default function AiTools() {
   const [name, setName] = useState("Claude / ChatGPT");
   const [redirectUri, setRedirectUri] = useState("");
   const [write, setWrite] = useState(false);
-  const [registration, setRegistration] = useState<any>();
+  const [registration, setRegistration] = useState<Record<string, unknown>>();
+  const [registering, setRegistering] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     api<{ mcp_http_url?: string }>("/api/settings/runtime")
       .then((runtime) => runtime.mcp_http_url && setMcpUrl(runtime.mcp_http_url))
-      .catch(() => undefined);
+      .catch((exc) => reportApiFailure(exc, setError));
   }, []);
 
   async function register(event: FormEvent) {
     event.preventDefault();
     setError("");
+    setRegistering(true);
     try {
       setRegistration(
-        await api("/api/mcp/oauth/clients", {
+        await api<Record<string, unknown>>("/api/mcp/oauth/clients", {
           method: "POST",
           body: JSON.stringify({
             name,
@@ -51,8 +53,10 @@ export default function AiTools() {
           }),
         }),
       );
-    } catch (exc: any) {
-      setError(exc.message);
+    } catch (exc) {
+      reportApiFailure(exc, setError);
+    } finally {
+      setRegistering(false);
     }
   }
 
@@ -154,7 +158,7 @@ export default function AiTools() {
             <input type="checkbox" checked={write} onChange={(event) => setWrite(event.target.checked)} />{" "}
             Allow approval-request tools (write scope)
           </label>
-          <button className="button">Register OAuth client</button>
+          <button className="button" disabled={registering}>{registering ? "Registering…" : "Register OAuth client"}</button>
         </form>
         {registration && <pre className="trace">{JSON.stringify(registration, null, 2)}</pre>}
       </details>

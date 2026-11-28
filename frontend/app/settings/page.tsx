@@ -2,41 +2,49 @@
 
 import { useEffect, useState } from "react";
 import Page from "@/components/Page";
-import { api } from "@/lib/api";
+import { api, reportApiFailure } from "@/lib/api";
+import type { AuthUser, Project, RuntimeSettings, Team } from "@/lib/types";
 
 export default function Settings() {
-  const [settings, setSettings] = useState<any>();
-  const [me, setMe] = useState<any>();
-  const [teams, setTeams] = useState<any[]>([]);
-  const [projects, setProjects] = useState<any[]>([]);
+  const [settings, setSettings] = useState<RuntimeSettings>();
+  const [me, setMe] = useState<AuthUser>();
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [repairProject, setRepairProject] = useState("");
   const [repairing, setRepairing] = useState(false);
   const [repairMessage, setRepairMessage] = useState("");
   const [teamName, setTeamName] = useState("");
+  const [creatingTeam, setCreatingTeam] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    api("/api/settings/runtime").then(setSettings).catch((exc) => setError(exc.message));
-    api<any[]>("/api/projects").then(items => {
+    api<RuntimeSettings>("/api/settings/runtime").then(setSettings).catch((exc) => reportApiFailure(exc, setError));
+    api<Project[]>("/api/projects").then(items => {
       setProjects(items);
       if (items[0]) setRepairProject(items[0].id);
-    }).catch((exc) => setError(exc.message));
-    api<any>("/api/auth/me").then(user => {
+    }).catch((exc) => reportApiFailure(exc, setError));
+    api<AuthUser>("/api/auth/me").then(user => {
       setMe(user);
-      return api<any[]>(`/api/workspaces/${user.active_workspace_id}/teams`);
-    }).then(setTeams).catch((exc) => setError(exc.message));
+      return api<Team[]>(`/api/workspaces/${user.active_workspace_id}/teams`);
+    }).then(setTeams).catch((exc) => reportApiFailure(exc, setError));
   }, []);
 
   async function createTeam() {
-    if (!teamName.trim() || !me) return;
+    if (!teamName.trim() || !me?.active_workspace_id) return;
+    setCreatingTeam(true);
+    setError("");
     try {
       await api(`/api/workspaces/${me.active_workspace_id}/teams`, {
         method: "POST",
         body: JSON.stringify({name: teamName}),
       });
       setTeamName("");
-      setTeams(await api(`/api/workspaces/${me.active_workspace_id}/teams`));
-    } catch (exc: any) { setError(exc.message); }
+      setTeams(await api<Team[]>(`/api/workspaces/${me.active_workspace_id}/teams`));
+    } catch (exc) {
+      reportApiFailure(exc, setError);
+    } finally {
+      setCreatingTeam(false);
+    }
   }
 
   async function repairMemory() {
@@ -45,13 +53,13 @@ export default function Settings() {
     setError("");
     setRepairMessage("");
     try {
-      const result: any = await api(`/api/projects/${repairProject}/memory/repair`, {
+      const result = await api<{ cleanup?: { retained_sources?: number }; current_memories?: number }>(`/api/projects/${repairProject}/memory/repair`, {
         method: "POST",
         body: JSON.stringify({repository_only: false, clear_work_history: false}),
       });
       setRepairMessage(`Memory rebuilt from ${result.cleanup?.retained_sources || 0} current sources. ${result.current_memories || 0} atomic memories passed the current extraction rules.`);
-    } catch (exc: any) {
-      setError(exc.message);
+    } catch (exc) {
+      reportApiFailure(exc, setError);
     } finally {
       setRepairing(false);
     }
@@ -86,7 +94,7 @@ export default function Settings() {
           <h2>Teams and memory scope</h2>
           <p className="subtle">Restrict projects and sources so agents only receive context their team is allowed to use.</p>
           {teams.map(team => <div className="row between" key={team.id}><span>{team.name}</span><strong>{team.member_count} members · {team.project_count} projects</strong></div>)}
-          <div className="row"><input aria-label="Team name" value={teamName} onChange={event => setTeamName(event.target.value)} placeholder="Platform"/><button className="button secondary" onClick={createTeam} disabled={!teamName.trim()}>Create team</button></div>
+          <div className="row"><input aria-label="Team name" value={teamName} onChange={event => setTeamName(event.target.value)} placeholder="Platform"/><button className="button secondary" onClick={createTeam} disabled={creatingTeam || !teamName.trim()}>{creatingTeam ? "Creating…" : "Create team"}</button></div>
         </section>
         <section className="card card-pad stack">
           <h2>Application auth</h2>

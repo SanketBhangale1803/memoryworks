@@ -2,33 +2,42 @@
 
 import { useEffect, useState } from "react";
 import Page from "@/components/Page";
-import { api, formatDate } from "@/lib/api";
+import { api, formatDate, reportApiFailure } from "@/lib/api";
+import type { ApiKey, CreatedApiKey } from "@/lib/types";
 
 export default function Keys() {
-  const [keys, setKeys] = useState<any[]>();
+  const [keys, setKeys] = useState<ApiKey[]>();
+  const [loaded, setLoaded] = useState(false);
   const [name, setName] = useState("");
-  const [created, setCreated] = useState<any>();
+  const [created, setCreated] = useState<CreatedApiKey>();
+  const [creating, setCreating] = useState(false);
+  const [revoking, setRevoking] = useState("");
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
 
   async function load() {
     try {
-      setKeys(await api("/api/keys"));
-    } catch (requestError: any) {
-      setError(requestError.message);
+      setKeys(await api<ApiKey[]>("/api/keys"));
+    } catch (requestError) {
+      reportApiFailure(requestError, setError);
+    } finally {
+      setLoaded(true);
     }
   }
   useEffect(() => { load(); }, []);
 
   async function create() {
     setError("");
+    setCreating(true);
     try {
-      const result: any = await api("/api/keys", {method:"POST", body:JSON.stringify({name})});
+      const result = await api<CreatedApiKey>("/api/keys", {method:"POST", body:JSON.stringify({name})});
       setCreated(result);
       setName("");
-      load();
-    } catch (requestError: any) {
-      setError(requestError.message);
+      await load();
+    } catch (requestError) {
+      reportApiFailure(requestError, setError);
+    } finally {
+      setCreating(false);
     }
   }
 
@@ -44,11 +53,14 @@ export default function Keys() {
 
   async function revoke(id: string) {
     setError("");
+    setRevoking(id);
     try {
       await api(`/api/keys/${id}`, {method:"DELETE"});
-      load();
-    } catch (requestError: any) {
-      setError(requestError.message);
+      await load();
+    } catch (requestError) {
+      reportApiFailure(requestError, setError);
+    } finally {
+      setRevoking("");
     }
   }
 
@@ -56,7 +68,7 @@ export default function Keys() {
     <section className="card card-pad stack">
       <div className="row">
         <input value={name} onChange={event=>setName(event.target.value)} placeholder="Key name, e.g. Claude Desktop MCP"/>
-        <button className="button" disabled={!name.trim()} onClick={create}>Create key</button>
+        <button className="button" disabled={creating || !name.trim()} onClick={create}>{creating ? "Creating…" : "Create key"}</button>
       </div>
       {created && <div className="notice key-reveal">
         <strong>Copy this key now — it will not be shown again.</strong>
@@ -69,8 +81,8 @@ export default function Keys() {
     {error && <div className="notice error" style={{marginTop:16}}>{error}</div>}
     <section className="card" style={{marginTop:16}}>
       <div className="section-head"><h2>Keys</h2><span className="badge">{keys?.length ?? 0}</span></div>
-      {!keys && <div className="empty">Loading…</div>}
-      {keys && !keys.length && <div className="empty">No API keys yet. Create one to use MemoryWorks from an editor, the SDK, or the CLI.</div>}
+      {!keys && !loaded && <div className="empty">Loading…</div>}
+      {keys && !keys.length && !error && <div className="empty">No API keys yet. Create one to use MemoryWorks from an editor, the SDK, or the CLI.</div>}
       {keys && keys.length > 0 && <table className="table">
         <thead><tr><th>Name</th><th>Prefix</th><th>Created</th><th>Last used</th><th>Status</th><th></th></tr></thead>
         <tbody>{keys.map(key => <tr key={key.id}>
@@ -79,7 +91,7 @@ export default function Keys() {
           <td>{formatDate(key.created_at)}</td>
           <td>{formatDate(key.last_used_at)}</td>
           <td><span className={`badge ${key.status === "active" ? "success" : "danger"}`}>{key.status}</span></td>
-          <td>{key.status === "active" && <button className="button danger" onClick={()=>revoke(key.id)}>Revoke</button>}</td>
+          <td>{key.status === "active" && <button className="button danger" disabled={revoking === key.id} onClick={()=>revoke(key.id)}>{revoking === key.id ? "Revoking…" : "Revoke"}</button>}</td>
         </tr>)}</tbody>
       </table>}
     </section>

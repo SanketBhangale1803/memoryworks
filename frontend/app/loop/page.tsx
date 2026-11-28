@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { api, formatDate } from "@/lib/api";
+import { api, formatDate, reportApiFailure } from "@/lib/api";
 
 /* The outcome loop, made visible.
  *
@@ -72,6 +72,7 @@ export default function OutcomeLoop() {
   const [stats, setStats] = useState<Stats>();
   const [records, setRecords] = useState<Record_[]>([]);
   const [skills, setSkills] = useState<Skill[]>([]);
+  const [skillsLoaded, setSkillsLoaded] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -82,7 +83,10 @@ export default function OutcomeLoop() {
       // Unlabelled rows are included on purpose: an open loop is the honest
       // picture, and hiding it would make the corpus look healthier than it is.
       api<{ records: Record_[] }>("/api/outcomes/export?labelled_only=false&limit=40"),
-      api<{ skills: Skill[] }>("/api/skills/learned").catch(() => ({ skills: [] })),
+      api<{ skills: Skill[] }>("/api/skills/learned").catch((exc) => {
+        if (live) reportApiFailure(exc, setError);
+        return { skills: [] };
+      }),
     ])
       .then(([nextStats, nextExport, nextSkills]) => {
         if (!live) return;
@@ -90,8 +94,12 @@ export default function OutcomeLoop() {
         setRecords(nextExport.records || []);
         setSkills(nextSkills.skills || []);
       })
-      .catch((exc: any) => live && setError(exc.message))
-      .finally(() => live && setLoading(false));
+      .catch((exc) => live && reportApiFailure(exc, setError))
+      .finally(() => {
+        if (!live) return;
+        setLoading(false);
+        setSkillsLoaded(true);
+      });
     return () => {
       live = false;
     };
@@ -236,7 +244,9 @@ export default function OutcomeLoop() {
               </li>
             ))}
           </ul>
-        ) : (
+        ) : !skillsLoaded ? (
+          <p className="loop-quiet">Reading learned skills…</p>
+        ) : error ? null : (
           <p className="loop-quiet">
             Skills are distilled only from runs that verifiably worked, so this stays empty until
             outcomes are recorded. That is the intended order — precedent has to be earned before

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from contextlib import nullcontext
+from sqlite3 import Connection
 from typing import Any
 
 from app.core.database import connect, new_id, row, rows, utcnow
@@ -52,11 +54,16 @@ class ScopeService:
         return {"team_id": team_id, "user_id": user_id, "role": role}
 
     def assign_project(
-        self, project_id: str, team_id: str, access_level: str = "read"
+        self,
+        project_id: str,
+        team_id: str,
+        access_level: str = "read",
+        *,
+        connection: Connection | None = None,
     ) -> dict[str, Any]:
         if access_level not in {"read", "write", "owner"}:
             raise ValueError("Unsupported project access level")
-        with connect() as conn:
+        with nullcontext(connection) if connection is not None else connect() as conn:
             conn.execute(
                 """INSERT INTO project_teams(project_id,team_id,access_level,created_at)
                 VALUES (?,?,?,?) ON CONFLICT(project_id,team_id) DO UPDATE SET

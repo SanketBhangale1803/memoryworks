@@ -19,9 +19,12 @@ import threading
 import time
 from collections.abc import Callable
 from typing import Any
+from uuid import uuid4
+
+import httpx
 
 from app.core.config import settings
-from app.llm import llm_budget
+from app.llm import llm_budget, raise_if_cancelled
 from app.llm.providers import configured_model, generate_grounded_json
 
 MAX_STEPS = 8
@@ -120,8 +123,15 @@ class WebMCPAgentRunner:
     def run(self, **kwargs: Any) -> dict:
         """Run one Agent session (see :meth:`_run`) under its own model budget:
         at most one call per step plus a few retries, and a wall-clock limit."""
-        with llm_budget(settings.org_agent_llm_budget_seconds, settings.org_agent_max_llm_calls):
-            return self._run(**kwargs)
+        with llm_budget(
+            settings.org_agent_llm_budget_seconds, settings.org_agent_max_llm_calls
+        ) as budget:
+            result = self._run(**kwargs)
+        # what the run cost, and which models actually served it
+        result["usage"] = dict(budget.usage)
+        result["models"] = sorted(budget.models)
+        result["model_calls"] = budget.calls
+        return result
 
     def _run(
         self,
@@ -160,15 +170,25 @@ class WebMCPAgentRunner:
         steps: list[dict] = []
         transcript = ""
         proposal = None
-        llm = self._llm or self._provider_call(model)
         mode = "model" if (self._llm or configured_model(model)) else "guided"
+        llm = self._llm or (
+            self._provider_call(model)
+            if mode == "model"
+            else self._guided(question, spaces, default_project)
+        )
 
-        for step_index in range(1, max_steps + 1):
-            prompt = self._prompt(question, spaces, transcript, max_steps)
+        for step_index in range(1, max_steps + 2):
+            raise_if_cancelled()
+            # max_steps tool calls, then one turn that may only answer: a run
+            # that spent every turn on tools used to end without an answer.
+            remaining = max_steps - len(steps)
+            prompt = self._prompt(question, spaces, transcript, max_steps, remaining)
             started = time.monotonic()
             try:
                 decision = llm(prompt)
-            except RuntimeError:
+                if not decision:
+                    raise RuntimeError("The configured model did not return a usable decision.")
+            except (RuntimeError, httpx.HTTPError):
                 # The show must go on: if the model is unreachable mid-session,
                 # fall back to the guided policy for the rest of the session.
                 # Tools, observations, and the proposal boundary stay completely
@@ -182,6 +202,7 @@ class WebMCPAgentRunner:
                     raise
             if not decision:
                 raise RuntimeError("The configured model did not return a usable decision.")
+            raise_if_cancelled()
             thought = str(decision.get("thought") or "")
             if decision.get("answer"):
                 answer = str(decision["answer"])
@@ -213,6 +234,8 @@ class WebMCPAgentRunner:
                     "mode": mode,
                     "elapsed_ms": int((time.monotonic() - started) * 1000),
                 }
+            if remaining <= 0:
+                break  # it was asked to answer and called a tool instead
             tool_name = str(decision.get("tool") or "")
             arguments = decision.get("arguments") or {}
             if not isinstance(arguments, dict):
@@ -239,33 +262,53 @@ class WebMCPAgentRunner:
                     "arguments": arguments,
                     "summary": summary,
                     "thought": thought,
-                    "observation": observation[:600],
+                    # what the model saw (already capped at MAX_OBSERVATION_CHARS)
+                    "observation": observation,
                     "duration_ms": int((time.monotonic() - started) * 1000),
                 }
             )
             if on_step:
                 on_step(steps[-1])
             if tool_name == "propose_orgmemory_changes" and "waiting for a person" in summary:
-                # The write path's contract is to stop at a person. Once a plan
-                # is filed, the session's work is done whether or not the model
-                # spends its next turn saying so — answer now, grounded in the
-                # observations, instead of risking the step budget.
-                findings = [
-                    step["summary"]
-                    for step in steps[:-1]
-                    if step["tool"] != "propose_orgmemory_changes" and step.get("summary")
-                ]
-                basis = " Basis: " + " ".join(findings[-2:]).rstrip(".") + "." if findings else ""
-                memory_ids = list(
-                    dict.fromkeys(
-                        match.group(0) for match in re.finditer(r"mem_[a-z0-9]+", transcript)
+                # Filing is the last tool call. Give the model one answer-only
+                # turn with the complete transcript, including the filed plan.
+                final_prompt = self._prompt(question, spaces, transcript, max_steps, 0)
+                final_prompt += (
+                    "\nThe plan has already been filed. Explain the proposed plan and its "
+                    "supporting evidence, and say it is waiting for human approval. "
+                    "Return only the final answer JSON with propose set to null."
+                )
+                try:
+                    final_decision = llm(final_prompt)
+                except Exception:
+                    # A model failure cannot undo the already-filed proposal.
+                    final_decision = None
+                raise_if_cancelled()
+                final_decision = final_decision if isinstance(final_decision, dict) else {}
+                answer = final_decision.get("answer")
+                if isinstance(answer, str) and answer.strip():
+                    final_ids = final_decision.get("memory_ids")
+                    memory_ids = (
+                        [str(item) for item in final_ids] if isinstance(final_ids, list) else []
                     )
-                )[:6]
-                return {
-                    "answer": (
+                    thought = str(final_decision.get("thought") or "")
+                else:
+                    findings = [
+                        step["summary"]
+                        for step in steps[:-1]
+                        if step["tool"] != "propose_orgmemory_changes" and step.get("summary")
+                    ]
+                    basis = (
+                        " Basis: " + " ".join(findings[-2:]).rstrip(".") + "." if findings else ""
+                    )
+                    memory_ids = list(dict.fromkeys(re.findall(r"mem_[a-z0-9]+", transcript)))[:6]
+                    answer = (
                         f"{summary}{basis} The proposed changes are shown below — approving "
                         "or declining them is a person's call, not the agent's."
-                    ),
+                    )
+                    thought = ""
+                return {
+                    "answer": answer,
                     "memory_ids": memory_ids,
                     "steps": steps,
                     "proposal": structured if isinstance(structured, dict) else None,
@@ -295,13 +338,19 @@ class WebMCPAgentRunner:
                 f"approval and nothing was changed. The last attempt failed: {proposal_errors[-1]}"
                 + (" What I found before that: " + " ".join(summaries[-3:]) if summaries else "")
             )
-        else:
+        elif summaries:
             answer = (
-                "I could not ground a complete answer within the tool budget. "
-                + ("What the tools did find: " + " ".join(summaries[-2:]))
-                if summaries
-                else "I could not ground an answer within the tool budget. The observations above show exactly what was searched."
+                "I ran out of steps before I could write an answer. What each step found:\n"
+                + (
+                    "\n".join(
+                        f"- {step['tool']}: {step['summary']}"
+                        for step in steps
+                        if step.get("summary") and not str(step["summary"]).startswith("Tool error")
+                    )
+                )
             )
+        else:
+            answer = "I could not ground an answer within the tool budget. The observations above show exactly what was searched."
         return {
             "answer": answer,
             "memory_ids": [],
@@ -323,19 +372,20 @@ class WebMCPAgentRunner:
         """
 
         def decide(prompt: str) -> dict[str, Any]:
-            called = set(re.findall(r"TOOL CALL \d+: (\w+)", prompt))
+            transcript = prompt.rsplit("\n\nBUDGET:", 1)[0].rsplit("\nCONVERSATION SO FAR:", 1)[-1]
+            called = set(re.findall(r"^TOOL CALL \d+: (\w+)", transcript, re.M))
+            observations = "\n".join(re.findall(r"^OBSERVATION \d+: (.+)", transcript, re.M))
             # Observations are truncated mid-JSON sometimes, so value charset is
             # bounded and obviously-corrupt matches are discarded.
             services = [
                 service
-                for service in re.findall(r'"service":\s*"([^"\n{}]{1,60})"', prompt)
+                for service in re.findall(r'"service":\s*"([^"\n{}]{1,60})"', observations)
                 if service and "…" not in service and "truncated" not in service
             ]
             service = services[0] if services else ""
-            memory_ids = list(dict.fromkeys(re.findall(r'"id":\s*"(mem_[a-z0-9]+)"', prompt)))
-            steps_taken = len(re.findall(r"TOOL CALL \d+:", prompt))
+            memory_ids = list(dict.fromkeys(re.findall(r'"id":\s*"(mem_[a-z0-9]+)"', observations)))
 
-            if not steps_taken:
+            if not called:
                 return {
                     "thought": "Guided: search company memory for the question terms.",
                     "tool": "search_orgmemory",
@@ -370,10 +420,14 @@ class WebMCPAgentRunner:
                     },
                 }
             incident_subjects = list(
-                dict.fromkeys(re.findall(r'"type":\s*"incident",\s*"subject":\s*"([^"]+)"', prompt))
+                dict.fromkeys(
+                    re.findall(r'"type":\s*"incident",\s*"subject":\s*"([^"]+)"', observations)
+                )
             )
             decision_subjects = list(
-                dict.fromkeys(re.findall(r'"type":\s*"decision",\s*"subject":\s*"([^"]+)"', prompt))
+                dict.fromkeys(
+                    re.findall(r'"type":\s*"decision",\s*"subject":\s*"([^"]+)"', observations)
+                )
             )
             incident_count = len(incident_subjects)
             answer_parts = []
@@ -389,10 +443,11 @@ class WebMCPAgentRunner:
                 answer_parts.append(
                     f"Relevant decisions on record: {'; '.join(decision_subjects[:2])}."
                 )
-            answer_parts.append(
-                "The service context above lists the remembered facts, owners, dependencies, decisions, and first-response procedures — start from the procedure on record before improvising."
-            )
-            answer = " ".join(answer_parts)
+            if not answer_parts and memory_ids:
+                subjects = list(dict.fromkeys(re.findall(r'"subject":\s*"([^"]+)"', observations)))
+                if subjects:
+                    answer_parts.append(f"Company memory returned: {', '.join(subjects[:3])}.")
+            answer = " ".join(answer_parts) or "I did not find enough company memory to answer."
 
             propose = None
             if incident_count and re.search(
@@ -417,7 +472,28 @@ class WebMCPAgentRunner:
 
         return decide
 
-    def _prompt(self, question: str, spaces: list[dict], transcript: str, max_steps: int) -> str:
+    def _prompt(
+        self,
+        question: str,
+        spaces: list[dict],
+        transcript: str,
+        max_steps: int,
+        remaining: int | None = None,
+    ) -> str:
+        remaining = max_steps if remaining is None else remaining
+        if remaining <= 0:
+            budget = (
+                "You have NO tool calls left. Reply now with the final answer JSON, built "
+                "only from the observations above. Answer every part of the question you "
+                "can, and say plainly which parts the observations do not cover."
+            )
+        elif remaining == 1:
+            budget = (
+                "This is your LAST tool call. If the question asks for a plan or change, "
+                "call propose_orgmemory_changes now; otherwise answer now if you can."
+            )
+        else:
+            budget = f"You have {remaining} of {max_steps} tool calls left. Leave room to answer."
         tools = "\n".join(
             f"- {tool['name']}({', '.join(tool['arguments'])}): {tool['description']}"
             for tool in self._catalog()
@@ -433,13 +509,17 @@ TOOLS:
 
 CONVERSATION SO FAR:{transcript or " (nothing yet)"}
 
+BUDGET: {budget}
+
 Decide the single next step. Reply with ONLY one JSON object:
 - To call a tool: {{"thought": "one sentence", "tool": "<name>", "arguments": {{...}}}}
 - To finish: {{"thought": "one sentence", "answer": "grounded answer citing what you found", "memory_ids": ["mem_..."], "propose": null}}
-- Finish with a proposal ONLY if your observations VERIFIED a finding worth remembering: {{"answer": "...", "memory_ids": [...], "propose": {{"kind": "incident", "subject": "...", "content": "what happened, verified cause, resolution", "service": "...", "reason": "why this is verified"}}}}
+- To also save an incident your observations verified as a memory: {{"answer": "...", "memory_ids": [...], "propose": {{"kind": "incident", "subject": "...", "content": "what happened, verified cause, resolution", "service": "...", "reason": "why this is verified"}}}}
 
 Rules:
 - Ground every claim in the observations. Name the memory_ids you used.
+- If the question asks for a plan, tasks, a fix, next steps or changes, the run must file them: call propose_orgmemory_changes with create_task operations before you answer. A plan written only in the answer text is not filed. If memory records no problems, plan the work that would find or fix them (an investigation, a cleanup) and say why. Give each task an owner from the observations, or "unassigned".
+- If the question does not ask for a plan or changes, do not propose any.
 - You have at most {max_steps} tool calls total. Start with the most specific tool.
 - To reconcile a conflict found by find_orgmemory_conflicts, call propose_orgmemory_changes with that conflict's id as conflict_id. Never retype a resolution's operations yourself.
 - If you must pass explicit operations, each op is exactly one of create_task, update_task, add_memory. Nothing else is valid. Every create_task and add_memory needs space_id: the project_id of the space it belongs to, from AUTHORIZED SPACES.
@@ -616,7 +696,9 @@ class AgentSessionStore:
         self._lock = threading.Lock()
 
     def create(self, question: str, model_id: str, workspace_id: str = "") -> str:
-        run_id = f"agtsess_{int(time.time() * 1000):x}"
+        # Random, not the clock: two runs started in the same millisecond got
+        # the same id and their steps merged into one session.
+        run_id = f"agtsess_{uuid4().hex[:20]}"
         with self._lock:
             self._runs[run_id] = {
                 "id": run_id,

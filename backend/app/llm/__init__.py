@@ -1,4 +1,12 @@
-from .limits import LLMUnavailable, carry_budget, current_budget, llm_budget
+from .limits import (
+    AnswerCancelled,
+    LLMUnavailable,
+    cancellable,
+    carry_budget,
+    current_budget,
+    llm_budget,
+    raise_if_cancelled,
+)
 from .providers import (
     configured_model,
     generate_grounded_json,
@@ -8,6 +16,9 @@ from .providers import (
 )
 
 __all__ = [
+    "AnswerCancelled",
+    "cancellable",
+    "raise_if_cancelled",
     "LLMUnavailable",
     "carry_budget",
     "current_budget",

@@ -19,13 +19,18 @@ import re
 from collections import Counter
 from datetime import UTC, datetime
 from math import log
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+import numpy as np
 
 from app.core.config import settings
 from app.retrieval.intents import ownership_scope
 from app.retrieval.semantic import get_reranker, get_semantic_provider
 
 from .base import GraphEvidence
+
+if TYPE_CHECKING:
+    from .project_index import PreparedChunks
 
 TOKEN_RE = re.compile(r"[a-zA-Z][a-zA-Z0-9_.-]{2,}")
 STOP = {
@@ -459,21 +464,32 @@ def query_intent(query: str) -> str:
 def rank_records(
     records: list[dict[str, Any]], query: str, service_name: str | None, limit: int
 ) -> list[GraphEvidence]:
+    """Rank raw chunk records (prepared on the spot; see rank_prepared)."""
+    from .project_index import PreparedChunks
+
+    return rank_prepared(PreparedChunks.build(records, _tokens), query, service_name, limit)
+
+
+def rank_prepared(
+    prepared: PreparedChunks, query: str, service_name: str | None, limit: int
+) -> list[GraphEvidence]:
+    """Rank a project's prepared chunks (app.graph.project_index) for one query."""
     intent = query_intent(query)
+    rows: list[int] = list(range(len(prepared)))
     if intent == "slack_messages":
         # Enforce the evidence class before top-k selection. Filtering after
         # ranking lets connector implementation files consume the candidate
         # budget and can silently omit real messages from a busy repository.
-        records = [
-            record for record in records if record.get("source_type") in {"slack", "slack_export"}
+        rows = [
+            i for i in rows if prepared.records[i].get("source_type") in {"slack", "slack_export"}
         ]
     elif intent in {"commit_history", "recent_changes"}:
         # Temporal repository questions must never be answered by a random code
         # sentence that happens to contain words such as "change" or "error".
-        records = [
-            record
-            for record in records
-            if record.get("source_type") in {"github_commit", "repository_metadata"}
+        rows = [
+            i
+            for i in rows
+            if prepared.records[i].get("source_type") in {"github_commit", "repository_metadata"}
         ]
     query_terms = Counter(_tokens(query))
     semantic_provider = get_semantic_provider()
@@ -481,14 +497,23 @@ def rank_records(
     concept_terms = CONCEPT_TERMS.get(intent, set())
     technical_anchors = set(re.findall(r"\b[A-Z][A-Z0-9]+(?:_[A-Z0-9]+)+\b", query))
     overview = intent == "overview"
-    document_terms = [
-        Counter(_tokens(f"{record.get('source_title', '')} {record.get('text', '')}"))
-        for record in records
-    ]
-    document_frequency = Counter(term for terms in document_terms for term in set(terms))
-    total_documents = max(1, len(records))
+    # Document frequency over the rows being ranked, as before: the prepared
+    # figure covers the whole project, so a filtered intent counts its own.
+    document_frequency = (
+        prepared.document_frequency
+        if len(rows) == len(prepared)
+        else Counter(term for i in rows for term in prepared.terms[i])
+    )
+    total_documents = max(1, len(rows))
+    # Every chunk's similarity in one product; _cosine was a dot product of
+    # normalised vectors that is 0 when the widths differ.
+    similarity = np.zeros(len(prepared), dtype=np.float32)
+    if query_vector and prepared.vectors.shape[1] == len(query_vector):
+        similarity = prepared.vectors @ np.asarray(query_vector, dtype=np.float32)
     ranked: list[GraphEvidence] = []
-    for record, haystack_terms in zip(records, document_terms, strict=True):
+    for i in rows:
+        record = prepared.records[i]
+        haystack_terms = prepared.terms[i]
         matched = [term for term in query_terms if term in haystack_terms]
         lexical = sum(
             (1 + min(haystack_terms[term], 4))
@@ -499,7 +524,7 @@ def rank_records(
         )
         concept_matches = sorted(concept_terms.intersection(haystack_terms))
         concept_score = min(12.0, len(concept_matches) * 2.4)
-        services = _json_value(record.get("service_names"), [])
+        services = prepared.services[i]
         service_boost = (
             10
             if service_name and service_name.lower() in {str(value).lower() for value in services}
@@ -518,7 +543,7 @@ def rank_records(
                 in {"github_issue", "pull_request", "slack", "incident", "log"}
                 else 0
             )
-        metadata = _json_value(record.get("metadata_json"), {})
+        metadata = dict(prepared.metadata[i])
         overview_score = 0
         if overview and not lexical and not service_boost:
             title = str(record.get("source_title", "")).lower()
@@ -581,15 +606,13 @@ def rank_records(
             + overview_score
             + canonical_boost
         )
-        indexed_terms = set(_json_value(record.get("search_terms"), []))
+        indexed_terms = prepared.search_terms[i]
         compressed_overlap = len(set(query_terms).intersection(indexed_terms)) / max(
             1, len(set(query_terms))
         )
-        stored_vector = [float(value) for value in _json_value(record.get("embedding"), [])]
-        embedding_model = str(record.get("embedding_model") or "")
         dense = (
-            max(0.0, _cosine(query_vector, stored_vector))
-            if embedding_model == semantic_provider.model_name
+            max(0.0, float(similarity[i]))
+            if prepared.vector_ok[i] and prepared.models[i] == semantic_provider.model_name
             else 0.0
         )
         memory = metadata.get("memory") or {}

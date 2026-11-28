@@ -12,6 +12,10 @@ import { useSyncExternalStore } from "react";
 
 export type ThreadMode = "ask" | "agent";
 
+/* A turn is rendered by the chat, which owns its full shape. The store only
+   needs to know it is a JSON object it can keep and patch. */
+export type StoredTurn = Record<string, unknown>;
+
 export type ChatThread = {
   id: string;
   title: string;
@@ -19,7 +23,7 @@ export type ChatThread = {
   projectId: string;
   scope: "workspace" | "project";
   mode: ThreadMode;
-  turns: any[];
+  turns: StoredTurn[];
   updatedAt: number;
 };
 
@@ -71,7 +75,7 @@ function migrateLegacy(): ChatThread[] {
         projectId: key.slice(LEGACY_PREFIX.length),
         scope: "workspace",
         mode: "ask",
-        turns: turns.map((turn: any) => ({ mode: "ask", ...turn })),
+        turns: turns.map((turn: Record<string, unknown>) => ({ mode: "ask", ...turn })),
         updatedAt: Date.now() - index,
       });
     } catch {

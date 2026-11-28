@@ -15,6 +15,7 @@ const chat = readFileSync(
 const types = readFileSync(new URL("../types/webmcp.d.ts", import.meta.url), "utf8");
 const tools = readFileSync(new URL("../hooks/useWorkspaceTools.ts", import.meta.url), "utf8");
 const agentTurn = readFileSync(new URL("../components/AgentTurn.tsx", import.meta.url), "utf8");
+const askTrace = readFileSync(new URL("../components/AskTrace.tsx", import.meta.url), "utf8");
 const approvals = readFileSync(new URL("../app/approvals/page.tsx", import.meta.url), "utf8");
 const orgTools = readFileSync(new URL("../lib/orgTools.ts", import.meta.url), "utf8");
 const catalog = readFileSync(new URL("../lib/webmcpCatalog.ts", import.meta.url), "utf8");
@@ -36,8 +37,8 @@ function dataModule(source) {
 const orgToolsUrl = dataModule(
   orgTools
     .replace(
-      /^import \{ api, API \} from "@\/lib\/api";$/m,
-      "const api = async () => ({ spaces: [], plans: [], results: [] }); const API = '';",
+      /^import \{ api, API, AnswerStopped, cancelStream \} from "@\/lib\/api";$/m,
+      "const api = async () => ({ spaces: [], plans: [], results: [] }); const API = ''; class AnswerStopped extends Error {} const cancelStream = () => undefined;",
     )
     .replace(
       /import \{[^}]*\} from "@\/lib\/demoMemory";/m,
@@ -122,11 +123,23 @@ test("WebMCP activity is sourced from real tool execution and persisted as a bou
 test("Agent mode shows the steps the agent really took", () => {
   // Steps come from the streamed session, not a script, and durations are the
   // server's measurements — never invented on the page.
-  assert.match(chat, /orgApi\.askStream\(question, spaceIds\(\)/);
+  assert.match(chat, /orgApi\.askStream\(\s*question,\s*spaceIds\(\)/);
   assert.match(agentTurn, /ms: step\.duration_ms \|\| 0/);
   assert.doesNotMatch(agentTurn, /Math\.random|setInterval/);
   // A proposed change stops at a person, in the conversation that made it.
   assert.match(agentTurn, /plan\.status === "pending_approval"/);
+});
+
+test("Stop ends the answer on the server, not just in the page", () => {
+  // Send becomes Stop while an answer or Agent run is in flight.
+  assert.match(chat, /aria-label="Stop"/);
+  assert.match(chat, /inFlight\.abort\(\)/);
+  // Closing the connection is not enough (an Agent run outlives it on purpose),
+  // so both stream clients tell the server to stop.
+  assert.match(askTrace, /\/api\/ask\/stream\/\$\{encodeURIComponent\(answerId\)\}\/cancel/);
+  assert.match(orgTools, /\/api\/org\/ask\/\$\{encodeURIComponent\(state\.session\.id\)\}\/cancel/);
+  // A stopped Agent run is not resumed by polling.
+  assert.match(orgTools, /session\.status === "cancelled"\) throw new AnswerStopped\(\)/);
 });
 
 test("organizational operations are registered as real tools, with writes gated", () => {

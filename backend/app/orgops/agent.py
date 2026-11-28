@@ -40,10 +40,11 @@ ORG_AGENT_TOOLS: list[dict[str, Any]] = [
     {
         "name": "search_orgmemory_records",
         "description": (
-            "Search company memory by free text and optional type (decision, incident, "
-            "policy, dependency, ownership, fact, open_question). Use for a specific topic."
+            "Search company memory by free text, type (decision, incident, policy, "
+            "dependency, ownership, fact, open_question), or both. For all records of "
+            "a given type, pass memory_type and omit query."
         ),
-        "arguments": ["query", "memory_type (optional)", "limit (optional)"],
+        "arguments": ["query (optional)", "memory_type (optional)", "limit (optional)"],
     },
     {
         "name": "get_orgmemory_readiness",
@@ -133,12 +134,14 @@ ORG_AGENT_TOOLS: list[dict[str, Any]] = [
         "description": (
             "Submit changes for human approval. Applies NOTHING. To reconcile a "
             "conflict, pass its conflict_id — the recorded resolution is copied "
-            "by reference, never retyped. Otherwise pass explicit operations, each "
-            "exactly one of: create_task {space_id, title, description, owner, "
-            "priority}, update_task {task_id, status, owner, priority, reason}, "
-            "add_memory {space_id, type, title, content}. space_id is the project_id "
-            "of the space the change belongs to, from AUTHORIZED SPACES. Never "
-            "update_task_status or close_memory."
+            "by reference, never retyped. Otherwise pass operations: a list of "
+            'objects, each with an "op" field, e.g. {"summary": "...", "operations": '
+            '[{"op": "create_task", "space_id": "prj_...", "title": "...", '
+            '"description": "...", "owner": "...", "priority": "high"}]}. op is one of '
+            "create_task (space_id, title, description, owner, priority), update_task "
+            "(task_id, status, owner, priority, reason), add_memory (space_id, type, "
+            "title, content). space_id is the project_id of the space the change "
+            "belongs to, from AUTHORIZED SPACES. Never update_task_status or close_memory."
         ),
         "arguments": ["summary", "operations (or conflict_id)"],
     },
@@ -161,6 +164,7 @@ def _int(value: Any, fallback: int) -> int:
 
 
 _SPACED_OPS = {"create_task", "add_memory"}
+_OPERATION_KINDS = {"create_task", "update_task", "add_memory"}
 
 
 def _place_operations(operations: list, spaces: list[dict], default_space: str) -> list[dict]:
@@ -190,6 +194,12 @@ def _place_operations(operations: list, spaces: list[dict], default_space: str) 
         if not isinstance(operation, dict):
             raise ValueError("each operation must be an object")
         operation = dict(operation)
+        # {"create_task": {...}} is how models most often write an operation
+        # (every plan GLM proposed was refused for it); it means one thing.
+        if "op" not in operation and len(operation) == 1:
+            ((kind, fields),) = operation.items()
+            if kind in _OPERATION_KINDS and isinstance(fields, dict):
+                operation = {"op": kind, **fields}
         if str(operation.get("op") or "") in _SPACED_OPS:
             given = _text(operation.get("space_id"))
             if given and given not in by_id:
@@ -249,12 +259,13 @@ def build_org_executor(
 
         if name == "search_orgmemory_records":
             query = _text(arguments.get("query"))
-            if not query:
-                raise ValueError("query is required")
+            memory_type = _text(arguments.get("memory_type")) or _text(arguments.get("type"))
+            if not query and not memory_type:
+                raise ValueError("Provide a query, a memory type, or both")
             data = search_records(
                 principal,
                 query,
-                _text(arguments.get("memory_type")),
+                memory_type,
                 _int(arguments.get("limit"), 10),
             )
             return f"{data['count']} matching memories.", data

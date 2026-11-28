@@ -3,7 +3,13 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Page from "@/components/Page";
-import { API, api, formatDate } from "@/lib/api";
+import { API, api, formatDate, reportApiFailure } from "@/lib/api";
+import type {
+  Connector,
+  ConnectorAccount,
+  ConnectorCatalogEntry,
+  ConnectorCoverage,
+} from "@/lib/types";
 
 /* Sources: every system MemoryWorks can learn from, in one grid.
  *
@@ -46,8 +52,8 @@ type Card = {
   category: string;
   reads: string[];
   status: "connected" | "expired" | "connect" | "setup_needed" | "import" | "agent" | "soon";
-  account?: { display_name: string; updated_at: string };
-  connector?: any;
+  account?: ConnectorAccount;
+  connector?: Connector;
 };
 
 function monogram(name: string) {
@@ -62,13 +68,13 @@ function monogram(name: string) {
 
 /* A grant the provider stopped accepting is not "ready to connect" — the person
    connected it once and needs to know why it stopped working. */
-function connectorStatus(connector: any): Card["status"] {
+function connectorStatus(connector: Connector): Card["status"] {
   if (connector.connected) return "connected";
-  if (connector.accounts?.some((item: any) => item.status === "expired")) return "expired";
+  if (connector.accounts?.some((item) => item.status === "expired")) return "expired";
   return connector.available ? "connect" : "setup_needed";
 }
 
-function toCards(connectors: any[], catalog: any[]): Card[] {
+function toCards(connectors: Connector[], catalog: ConnectorCatalogEntry[]): Card[] {
   const byProvider = new Map(connectors.map((item) => [item.provider, item]));
   const cards: Card[] = catalog.map((entry) => {
     const connector = byProvider.get(entry.provider);
@@ -79,7 +85,7 @@ function toCards(connectors: any[], catalog: any[]): Card[] {
       reads: entry.memory || [],
     };
     if (connector) {
-      const account = connector.accounts?.find((item: any) => item.status === "connected");
+      const account = connector.accounts?.find((item) => item.status === "connected");
       return { ...base, status: connectorStatus(connector), account, connector };
     }
     if (entry.provider in IMPORT_SOURCE) return { ...base, status: "import" };
@@ -89,12 +95,12 @@ function toCards(connectors: any[], catalog: any[]): Card[] {
   // A connector the catalog does not list (a custom MCP package) still gets a card.
   for (const connector of connectors) {
     if (cards.some((card) => card.provider === connector.provider)) continue;
-    const account = connector.accounts?.find((item: any) => item.status === "connected");
+    const account = connector.accounts?.find((item) => item.status === "connected");
     cards.push({
       provider: connector.provider,
       label: connector.manifest?.name || connector.provider,
       category: "Custom MCP servers",
-      reads: (connector.manifest?.resources || []).map((item: any) => item.label),
+      reads: (connector.manifest?.resources || []).map((item) => item.label || ""),
       status: connectorStatus(connector),
       account,
       connector,
@@ -113,9 +119,9 @@ function toCards(connectors: any[], catalog: any[]): Card[] {
 }
 
 export default function Sources() {
-  const [connectors, setConnectors] = useState<any[]>([]);
-  const [catalog, setCatalog] = useState<any[]>([]);
-  const [coverage, setCoverage] = useState<any>();
+  const [connectors, setConnectors] = useState<Connector[]>([]);
+  const [catalog, setCatalog] = useState<ConnectorCatalogEntry[]>([]);
+  const [coverage, setCoverage] = useState<ConnectorCoverage>();
   const [loaded, setLoaded] = useState(false);
   const [justConnected, setJustConnected] = useState("");
   const [message, setMessage] = useState("");
@@ -123,6 +129,7 @@ export default function Sources() {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("All");
   const [registering, setRegistering] = useState(false);
+  const [busyId, setBusyId] = useState("");
   const [custom, setCustom] = useState({
     name: "",
     serverUrl: "",
@@ -136,18 +143,17 @@ export default function Sources() {
 
   const load = () =>
     Promise.all([
-      api<any[]>("/api/connectors"),
-      api<any[]>("/api/connectors/catalog"),
-      api("/api/connectors/coverage").catch(() => undefined),
+      api<Connector[]>("/api/connectors"),
+      api<ConnectorCatalogEntry[]>("/api/connectors/catalog"),
+      api<ConnectorCoverage>("/api/connectors/coverage").catch(() => undefined),
     ]).then(([nextConnectors, nextCatalog, nextCoverage]) => {
       setConnectors(nextConnectors);
       setCatalog(nextCatalog);
       setCoverage(nextCoverage);
-      setLoaded(true);
-    });
+    }).finally(() => setLoaded(true));
 
   useEffect(() => {
-    load().catch((exc) => setError(exc.message));
+    load().catch((exc) => reportApiFailure(exc, setError));
     const params = new URLSearchParams(window.location.search);
     if (params.get("connected")) setJustConnected(params.get("connected")!);
     if (params.get("error")) setError(params.get("error")!);
@@ -174,26 +180,32 @@ export default function Sources() {
 
   async function disconnect(card: Card) {
     if (!window.confirm(`Disconnect ${card.label} for your delegated account?`)) return;
+    setBusyId(card.provider);
     try {
       await api(`/api/connectors/${encodeURIComponent(card.provider)}`, { method: "DELETE" });
       setMessage(`${card.label} disconnected.`);
       setJustConnected("");
       await load();
-    } catch (exc: any) {
-      setError(exc.message);
+    } catch (exc) {
+      reportApiFailure(exc, setError);
+    } finally {
+      setBusyId("");
     }
   }
 
   async function revokeRegistration(provider: string) {
     if (!window.confirm("Revoke this custom MCP registration for the whole workspace?")) return;
+    setBusyId(provider);
     try {
       await api(`/api/connectors/custom/registrations/${encodeURIComponent(provider)}`, {
         method: "DELETE",
       });
       setMessage("Custom MCP registration revoked.");
       await load();
-    } catch (exc: any) {
-      setError(exc.message);
+    } catch (exc) {
+      reportApiFailure(exc, setError);
+    } finally {
+      setBusyId("");
     }
   }
 
@@ -222,8 +234,8 @@ export default function Sources() {
       setMessage("Custom MCP server pinned. Connect it to authorize your own account.");
       setCustom((value) => ({ ...value, name: "", serverUrl: "", clientId: "" }));
       await load();
-    } catch (exc: any) {
-      setError(exc.message);
+    } catch (exc) {
+      reportApiFailure(exc, setError);
     } finally {
       setRegistering(false);
     }
@@ -275,7 +287,7 @@ export default function Sources() {
         </div>
       </div>
 
-      {loaded && !visible.length && (
+      {loaded && !error && !visible.length && (
         <p className="subtle source-empty">
           Nothing matches that. <Link href="/ingest?source=paste">Paste it in directly →</Link>
         </p>
@@ -286,6 +298,7 @@ export default function Sources() {
           <SourceCard
             key={card.provider}
             card={card}
+            busy={busyId === card.provider}
             onDisconnect={() => disconnect(card)}
             onRevoke={() => revokeRegistration(card.provider)}
           />
@@ -304,21 +317,21 @@ export default function Sources() {
         </p>
       </section>
 
-      {coverage?.sources?.length > 0 && (
+      {(coverage?.sources?.length ?? 0) > 0 && (
         <details className="source-more">
           <summary>What MemoryWorks can search from each source</summary>
           <div className="coverage-grid">
-            {coverage.sources.map((source: any) => (
+            {(coverage?.sources ?? []).map((source) => (
               <article key={source.provider}>
                 <div className="row between">
                   <strong>{source.provider}</strong>
                   <span>{source.connected ? "Connected" : "Not connected"}</span>
                 </div>
                 <dl>
-                  {Object.entries(source.indexed).map(([name, value]: any) => (
+                  {Object.entries(source.indexed ?? {}).map(([name, value]) => (
                     <div key={name}>
                       <dt>{name.replace(/_/g, " ")}</dt>
-                      <dd>{value}</dd>
+                      <dd>{String(value)}</dd>
                     </div>
                   ))}
                 </dl>
@@ -381,17 +394,19 @@ export default function Sources() {
 
 function SourceCard({
   card,
+  busy,
   onDisconnect,
   onRevoke,
 }: {
   card: Card;
+  busy: boolean;
   onDisconnect: () => void;
   onRevoke: () => void;
 }) {
   const provider = encodeURIComponent(card.provider);
   const tools = card.connector?.manifest?.tools || [];
-  const reads = tools.filter((tool: any) => tool.kind === "read").length;
-  const writes = tools.filter((tool: any) => tool.kind === "write").length;
+  const reads = tools.filter((tool) => tool.kind === "read").length;
+  const writes = tools.filter((tool) => tool.kind === "write").length;
   const state: Record<Card["status"], string> = {
     connected: "Connected",
     expired: "Access expired",
@@ -444,7 +459,7 @@ function SourceCard({
             <a className="text-button" href={`${API}/api/connectors/${provider}/auth/start`}>
               Reconnect
             </a>
-            <button className="text-button danger-text" onClick={onDisconnect}>
+            <button className="text-button danger-text" disabled={busy} onClick={onDisconnect}>
               Disconnect
             </button>
           </>
@@ -477,7 +492,7 @@ function SourceCard({
         )}
         {card.status === "soon" && <span className="subtle">Not available yet</span>}
         {card.provider.startsWith("custom.") && (
-          <button className="text-button danger-text" onClick={onRevoke}>
+          <button className="text-button danger-text" disabled={busy} onClick={onRevoke}>
             Revoke package
           </button>
         )}

@@ -1,3 +1,5 @@
+import pytest
+
 from app.audit import AuditService
 from app.core.database import rows
 from app.hcag_adapter import HCAGAdapter
@@ -6,6 +8,7 @@ from app.ingestion.extractors import extract_services
 from app.ingestion.maintenance import reset_project_derived_memory
 from app.memory.brain import CompanyBrainService
 from app.memory.company import CompanyMemoryService
+from app.memory.extraction import extract_atomic_memories
 
 
 def test_ingestion_creates_source_backed_atomic_memory(graph):
@@ -23,6 +26,80 @@ def test_ingestion_creates_source_backed_atomic_memory(graph):
     assert units[0]["type"] == "decision"
     assert units[0]["source_ids"] == ["slack:42"]
     assert any(edge["relationship"] == "MEMORY_DERIVED_FROM_SOURCE" for edge in graph.edges)
+
+
+@pytest.mark.parametrize(
+    ("kind", "content"),
+    [
+        ("decision", "We decided to use Postgres instead of MongoDB for the billing service."),
+        ("decision", "Decision: all new services must expose a /healthz endpoint."),
+        ("decision", "Decision: use GET /healthz for service readiness checks."),
+        ("ownership", "The on-call rotation for checkout-api is owned by the payments team."),
+        ("policy", "Policy: production deploys are frozen on Fridays after 2pm."),
+        ("policy", "Company Policy: workers must use short-lived credentials."),
+        ("policy", "Do not deploy checkout-api on Fridays after 2pm."),
+        ("policy", "Never store card numbers in application logs."),
+        ("policy", "Always call the idempotency endpoint before retrying a payment."),
+        ("policy", "Don't log PII."),
+        ("policy", "Don’t send billing exports to personal email addresses."),
+        ("policy", "Only release managers may approve production deploys."),
+        ("policy", "Do not call GET /healthz from outside the cluster."),
+        ("fact", "We use Kafka for event streaming between the order and inventory services."),
+        ("fact", "The billing workers store audit events in Postgres."),
+        (
+            "incident",
+            "Incident 2026-11-03: webhook retries caused a retry storm and took down "
+            "checkout-api for 40 minutes.",
+        ),
+    ],
+)
+def test_ingestion_promotes_clear_pasted_statements(graph, kind, content):
+    ingestion = IngestionService(graph, HCAGAdapter(graph), AuditService())
+    project_id = ingestion.create_project("Pasted knowledge")
+
+    result = ingestion.ingest_item(
+        project_id, "doc", "Pasted knowledge", content, source_id="doc:pasted-knowledge"
+    )
+
+    assert result["memory_units_created"] == 1
+    (unit,) = CompanyMemoryService(graph).list(project_id)
+    assert unit["type"] == kind
+    assert unit["content"] == content
+    assert unit["source_ids"] == ["doc:pasted-knowledge"]
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "Decision: TBD.",
+        "Decision: We should do something about this soon.",
+        "Some stuff is happening over there.",
+        "What tools do we use for event streaming?",
+        "Should we expose GET /healthz for all new services?",
+        "Policy: Should checkout retries always use backoff?",
+        "Do we deploy on Fridays?",
+        "Should we retry?",
+        "Do not deploy checkout-api on Fridays?",
+        "Don't we deploy checkout-api every Friday",
+        "Do not deploy checkout-api on Fridays, maybe.",
+        "Don't know whether to deploy checkout-api on Fridays.",
+        "Never thought we would deploy on Fridays.",
+        "Always wanted to deploy checkout-api on Fridays.",
+        "In my opinion we should never store card numbers in application logs.",
+        "Hello, always call the idempotency endpoint before retries.",
+        "Only then may we deploy checkout-api.",
+        "Hello, the claim that Kafka is our event streaming tool needs a review.",
+        "Good morning, hope everyone is having a good day.",
+        "I think we should use Kafka for event streaming.",
+        "We should switch to Kafka for event streaming.",
+        "Kafka is the best event streaming tool.",
+        "The order service uses Kafka, maybe.",
+        "Decision: const defaultEngine = 'postgres';",
+        "Owner: Priya Shah.",
+    ],
+)
+def test_prose_extraction_rejects_unsupported_statements(content):
+    assert extract_atomic_memories("Pasted knowledge", content, "doc", {}) == []
 
 
 def test_repository_code_does_not_promote_ui_and_error_fragments_to_policy(graph):
@@ -212,8 +289,6 @@ def test_incident_reports_are_promoted_to_memory(graph):
 
 
 def test_inflected_failure_words_still_read_as_incidents():
-    from app.memory.extraction import extract_atomic_memories
-
     for sentence in (
         "fraud-engine timeouts spike whenever payments-service raises its concurrency.",
         "The checkout worker crashed twice during the Friday deploy window.",

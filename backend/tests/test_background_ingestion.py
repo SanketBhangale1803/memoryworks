@@ -64,6 +64,51 @@ def test_background_ingestion_returns_at_once_and_records_the_full_result(graph,
     assert "memory_units_created" in job["result"]
 
 
+def test_repository_ingestion_reuses_projects_only_within_the_workspace(graph, tmp_path):
+    client, _, _ = _client_and_token("isolated-repo@example.com")
+    first_login = client.post("/api/auth/dev-login", json={"email": "isolated-repo@example.com"})
+    first_headers = {"Authorization": f"Bearer {first_login.json()['token']}"}
+    body = {
+        "repo_url_or_path": str(_repository(tmp_path)),
+        "project_name": "Orders",
+        "background": True,
+    }
+
+    def ingest(headers):
+        started = client.post("/api/ingest/github", json=body, headers=headers)
+        assert started.status_code == 200
+        job_id = started.json()["job_id"]
+        job = client.get(f"/api/ingest/jobs/{job_id}", headers=headers).json()
+        assert job["status"] == "succeeded", job.get("error")
+        return job["project_id"]
+
+    first = ingest(first_headers)
+    assert ingest(first_headers) == first
+
+    second_login = client.post("/api/auth/dev-login", json={"email": "other-repo@example.com"})
+    second_headers = {"Authorization": f"Bearer {second_login.json()['token']}"}
+    workspace = client.post("/api/workspaces", json={"name": "Other Repo"}, headers=second_headers)
+    assert workspace.status_code == 200
+    second_login = client.post("/api/auth/dev-login", json={"email": "other-repo@example.com"})
+    assert second_login.json()["user"]["active_workspace_id"] == workspace.json()["id"]
+    assert (
+        second_login.json()["user"]["active_workspace_id"]
+        != first_login.json()["user"]["active_workspace_id"]
+    )
+    second_headers = {"Authorization": f"Bearer {second_login.json()['token']}"}
+    second = ingest(second_headers)
+
+    assert second != first
+    assert (
+        client.get(f"/api/memory/units?project_id={first}", headers=second_headers).status_code
+        == 403
+    )
+    assert (
+        client.get(f"/api/memory/units?project_id={second}", headers=first_headers).status_code
+        == 403
+    )
+
+
 def test_a_second_request_joins_the_running_ingestion(graph, tmp_path):
     client, token, workspace_id = _client_and_token("join@example.com")
     headers = {"Authorization": f"Bearer {token}"}
@@ -178,3 +223,51 @@ def test_persistent_conflicts_eventually_fail(monkeypatch):
 
     with pytest.raises(arcade_client.ArcadeDBError, match="ConcurrentModification"):
         arcade_client.ArcadeClient().command("select 1")
+
+
+def test_a_github_push_refreshes_every_workspace_copy_of_the_repository(graph, monkeypatch):
+    import hashlib
+    import hmac
+    import json
+
+    from app.api import routes
+
+    client, token, _ = _client_and_token("webhook@example.com")
+    first_workspace = create_workspace("Webhook A", f"Bearer {token}")["id"]
+    second_workspace = create_workspace("Webhook B", f"Bearer {token}")["id"]
+    assert first_workspace != second_workspace
+    repository = "https://github.com/acme/orders"
+    first = routes.ingestion.create_project("Orders", repository, workspace_id=first_workspace)
+    second = routes.ingestion.create_project("Orders", repository, workspace_id=second_workspace)
+    assert first != second
+
+    queued: list[dict] = []
+    monkeypatch.setattr(settings, "github_webhook_secret", "test-secret")
+    monkeypatch.setattr(
+        routes.background_jobs,
+        "enqueue",
+        lambda kind, payload, **_: queued.append({"kind": kind, **payload}),
+    )
+    body = json.dumps(
+        {"repository": {"full_name": "acme/orders"}, "after": "abc123", "ref": "refs/heads/main"}
+    ).encode()
+    signature = "sha256=" + hmac.new(b"test-secret", body, hashlib.sha256).hexdigest()
+    headers = {
+        "X-Hub-Signature-256": signature,
+        "X-GitHub-Delivery": "delivery-1",
+        "X-GitHub-Event": "push",
+        "Content-Type": "application/json",
+    }
+
+    response = client.post("/api/webhooks/github", content=body, headers=headers)
+    assert response.status_code == 202, response.text
+    assert response.json()["projects_refreshed"] == 2
+    events = {routes.change_intelligence.get(job["event_id"])["project_id"]: job for job in queued}
+    assert set(events) == {first, second}
+    assert events[first]["workspace_id"] == first_workspace
+    assert events[second]["workspace_id"] == second_workspace
+
+    replay = client.post("/api/webhooks/github", content=body, headers=headers)
+    assert replay.json()["replayed"] is True
+    assert replay.json()["projects_refreshed"] == 0
+    assert len(queued) == 2

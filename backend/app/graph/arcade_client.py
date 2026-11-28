@@ -13,6 +13,10 @@ class ArcadeDBError(RuntimeError):
     pass
 
 
+class ArcadeDBUnavailable(ArcadeDBError):
+    """The graph database could not be contacted."""
+
+
 class ArcadeClient:
     def __init__(self, config: Settings = settings):
         self.config = config
@@ -39,11 +43,14 @@ class ArcadeClient:
             }
 
     def ensure_database(self) -> None:
-        response = httpx.get(
-            f"{self.config.arcadedb_url}/api/v1/exists/{self.config.arcadedb_database}",
-            auth=self.auth,
-            timeout=10,
-        )
+        try:
+            response = httpx.get(
+                f"{self.config.arcadedb_url}/api/v1/exists/{self.config.arcadedb_database}",
+                auth=self.auth,
+                timeout=10,
+            )
+        except (httpx.NetworkError, httpx.TimeoutException) as exc:
+            raise ArcadeDBUnavailable from exc
         if response.status_code == 200 and response.json().get("result") is True:
             return
         self._request(
@@ -78,9 +85,12 @@ class ArcadeClient:
 
     def _request(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
         for attempt in range(self.CONFLICT_RETRIES + 1):
-            response = httpx.post(
-                f"{self.config.arcadedb_url}{path}", json=payload, auth=self.auth, timeout=30
-            )
+            try:
+                response = httpx.post(
+                    f"{self.config.arcadedb_url}{path}", json=payload, auth=self.auth, timeout=30
+                )
+            except (httpx.NetworkError, httpx.TimeoutException) as exc:
+                raise ArcadeDBUnavailable from exc
             if (
                 response.status_code == 503
                 and "ConcurrentModificationException" in response.text

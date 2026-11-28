@@ -239,10 +239,6 @@ const mcpConfig = `# Local stdio bridge against your own backend (API key):
   }
 }`;
 
-const testSuite = `make test   # backend pytest · frontend node:test · SDK pytest
-make lint   # ruff · black · tsc
-make ci     # test + lint + next build`;
-
 const coreCurl = `curl -X POST "https://your-host/api/ask" \\
   -H "Authorization: Bearer $MEMORYWORKS_API_KEY" \\
   -H "Content-Type: application/json" \\

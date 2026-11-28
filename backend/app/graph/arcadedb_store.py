@@ -10,8 +10,9 @@ from typing import Any
 
 from .arcade_client import ArcadeClient
 from .base import GraphEvidence, GraphStore
-from .graph_ranker import rank_records
+from .graph_ranker import _tokens, rank_prepared, rank_records
 from .migrations import schema_commands
+from .project_index import PreparedChunks, project_indexes
 from .schema import EDGE_TYPES, PROJECT_SCOPED_VERTEX_TYPES, VERTEX_TYPES
 from .traversal import evidence_from_hits, find_traversal_hits
 
@@ -313,17 +314,47 @@ class ArcadeDBGraphStore(GraphStore):
             language="sqlscript",
         )
 
+    # Chunk pages: small enough to bound one response, and paging gets past
+    # ArcadeDB's 20,000-row cap on a single query.
+    CHUNK_PAGE = 2000
+    CHUNK_FIELDS = (
+        "id,text,source_type,source_title,source_url,service_names,metadata_json,"
+        "search_terms,embedding,embedding_model,embedding_version,content_hash,"
+        "context_window,domain,subdomain"
+    )
+
+    def _load_chunks(self, project_id: str) -> list[dict[str, Any]]:
+        records: list[dict[str, Any]] = []
+        while True:
+            page = self.client.query(
+                f"SELECT {self.CHUNK_FIELDS} FROM KnowledgeChunk WHERE project_id=:project_id "
+                "ORDER BY @rid SKIP :skip LIMIT :limit",
+                {"project_id": project_id, "skip": len(records), "limit": self.CHUNK_PAGE},
+            )
+            records.extend(page)
+            if len(page) < self.CHUNK_PAGE:
+                return records
+
+    def _prepared(self, project_id: str) -> PreparedChunks:
+        """The project's chunks, loaded once per change and shared (app.graph.project_index)."""
+        return project_indexes.get(project_id, lambda: self._load_chunks(project_id), _tokens)
+
     def retrieve_context(
         self, project_id: str, query: str, service_name: str | None = None, limit: int = 12
     ) -> list[GraphEvidence]:
-        records = self.client.query(
-            "SELECT id,text,source_type,source_title,source_url,service_names,metadata_json,"
-            "search_terms,embedding,embedding_model,embedding_version,content_hash,"
-            "context_window,domain,subdomain "
-            "FROM KnowledgeChunk WHERE project_id=:project_id",
-            {"project_id": project_id},
+        return rank_prepared(self._prepared(project_id), query, service_name, limit)
+
+    def warm_indexes(self) -> int:
+        """Prepare every project's index ahead of the first question; largest last
+        so the small ones are ready soonest. Returns how many were prepared."""
+        from app.core.database import rows
+
+        projects = rows(
+            "SELECT project_id, COUNT(*) AS n FROM knowledge_items GROUP BY project_id ORDER BY n"
         )
-        return rank_records(records, query, service_name, limit)
+        for project in projects:
+            self._prepared(project["project_id"])
+        return len(projects)
 
     def traverse_context(
         self,
@@ -333,11 +364,20 @@ class ArcadeDBGraphStore(GraphStore):
         max_hops: int = 3,
         limit: int = 12,
     ) -> list[GraphEvidence]:
-        nodes = self.list_nodes(project_id, limit=100_000)
-        for vertex_type in ("Language", "Dependency"):
-            records = self.client.query(f"SELECT FROM {vertex_type} LIMIT 10000")
-            nodes.extend({"node_type": vertex_type, **dict(record)} for record in records)
-        edges = self.list_edges(project_id, limit=100_000)
+        prepared = self._prepared(project_id)
+        with prepared.graph_lock:
+            if prepared.graph is None:
+                # Chunk nodes come from the prepared index, without embeddings;
+                # everything else is read once per change of the project.
+                nodes = self.list_nodes(project_id, limit=100_000, exclude={"KnowledgeChunk"})
+                nodes.extend(
+                    {"node_type": "KnowledgeChunk", **record} for record in prepared.records
+                )
+                for vertex_type in ("Language", "Dependency"):
+                    records = self.client.query(f"SELECT FROM {vertex_type} LIMIT 10000")
+                    nodes.extend({"node_type": vertex_type, **dict(record)} for record in records)
+                prepared.graph = (nodes, self.list_edges(project_id, limit=100_000))
+        nodes, edges = prepared.graph
         hits = find_traversal_hits(
             nodes,
             edges,
@@ -425,9 +465,15 @@ class ArcadeDBGraphStore(GraphStore):
         }
 
     def list_nodes(
-        self, project_id: str, node_type: str | None = None, limit: int = 200
+        self,
+        project_id: str,
+        node_type: str | None = None,
+        limit: int = 200,
+        exclude: set[str] | None = None,
     ) -> list[dict[str, Any]]:
         types = [node_type] if node_type else PROJECT_SCOPED_VERTEX_TYPES
+        if exclude:
+            types = [vertex_type for vertex_type in types if vertex_type not in exclude]
         output: list[dict[str, Any]] = []
         for vertex_type in types:
             if vertex_type not in VERTEX_TYPES:

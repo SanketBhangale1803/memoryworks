@@ -56,6 +56,7 @@ MCP_PUBLIC_URL = _env(
 ).rstrip("/")
 # The setting is the server's origin; /mcp is appended below.
 MCP_PUBLIC_URL = MCP_PUBLIC_URL.removesuffix("/mcp")
+MCP_RESOURCE = MCP_PUBLIC_URL + "/mcp"
 OAUTH_ISSUER = _env(
     "MEMORYWORKS_MCP_OAUTH_ISSUER_URL",
     "ORGMEMORY_MCP_OAUTH_ISSUER_URL",
@@ -79,7 +80,12 @@ class BackendTokenVerifier(TokenVerifier):
             data = response.json()
         except (httpx.HTTPError, ValueError):
             return None
-        if not data.get("active") or not data.get("sub"):
+        if (
+            not isinstance(data, dict)
+            or not data.get("active")
+            or not data.get("sub")
+            or data.get("aud") != MCP_RESOURCE
+        ):
             return None
         return AccessToken(
             token=token,
@@ -87,7 +93,7 @@ class BackendTokenVerifier(TokenVerifier):
             subject=str(data["sub"]),
             scopes=str(data.get("scope") or "").split(),
             expires_at=data.get("exp"),
-            resource=str(data.get("aud") or MCP_PUBLIC_URL + "/mcp"),
+            resource=MCP_RESOURCE,
             claims={"workspace_id": data.get("workspace_id")},
         )
 
@@ -95,7 +101,6 @@ class BackendTokenVerifier(TokenVerifier):
 # Every scope a hosted token can carry. A session needs only ``read`` to
 # connect; ``write`` tools (outcomes, proposals, imports) check for it per call.
 SCOPES_SUPPORTED = ["read", "write"]
-MCP_RESOURCE = MCP_PUBLIC_URL + "/mcp"
 
 
 def protected_resource_metadata() -> dict[str, Any]:
@@ -150,6 +155,9 @@ mcp = MemoryWorksMCP(
     auth=AuthSettings(
         issuer_url=AnyHttpUrl(OAUTH_ISSUER),
         resource_server_url=AnyHttpUrl(MCP_RESOURCE),
+        # Backend introspection validates the JWT audience; the verifier above
+        # also checks that it matches this server's configured resource.
+        validate_token_resource=False,
         required_scopes=["read"],
     ),
     host=MCP_HOST,
