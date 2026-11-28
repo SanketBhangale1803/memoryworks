@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "orgmemory hook claude-code",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}

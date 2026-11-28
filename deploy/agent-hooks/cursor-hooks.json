@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [
+      {
+        "command": "orgmemory hook cursor",
+        "timeout": 15,
+        "matcher": "git (push|merge|rebase|reset --hard)|gh pr merge|kubectl (apply|delete|scale|rollout|patch)|helm (install|upgrade|uninstall|rollback)|terraform (apply|destroy)|(npm|pnpm|yarn) publish|alembic (upgrade|downgrade)|prisma migrate|rm -rf|deploy|rollback|migrate|failover|backfill"
+      }
+    ]
+  }
+}

@@ -1,0 +1,32 @@
+# Copy to .github/workflows/memoryworks-briefing.yml in the repository you want briefed.
+# Store a MemoryWorks workspace API key as the MEMORYWORKS_API_KEY secret.
+name: MemoryWorks briefing
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+
+permissions:
+  contents: read
+  checks: write          # post the "MemoryWorks briefing" check run
+  pull-requests: write   # create/update the one sticky comment
+
+concurrency:
+  group: memoryworks-briefing-${{ github.event.pull_request.number }}
+  # Do not cancel mid-run: a briefing served without its check would leave an orphan ledger row.
+  cancel-in-progress: false
+
+jobs:
+  memoryworks:
+    # Pull requests from forks get no secrets and a read-only token, so the
+    # check cannot be served for them; skip instead of failing noisily.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      # Pin to a reviewed commit SHA of the MemoryWorks repository in production.
+      - uses: SanketBhangale1803/memoryworks/deploy/github-action@main
+        with:
+          api-key: ${{ secrets.MEMORYWORKS_API_KEY }}
+          service: ""            # e.g. payments-service
+          project-id: ""         # optional
+          approval-conclusion: action_required
