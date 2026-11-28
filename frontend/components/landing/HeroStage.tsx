@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { BrandMark } from "@/components/BrandLogo";
 import type { HeroScene } from "@/lib/landing/heroScene";
+import { KIND_COLOR, KIND_LABEL, SCENARIOS, VERDICT_LABEL } from "@/lib/landing/scenarios";
 
-/* The hero's 3D logo. The flat white mark is painted first, with the page, so
-   nothing waits on WebGL; three.js loads once the browser is idle and the
-   scene fades in over the mark. If WebGL is unavailable the mark simply stays. */
+/* The hero's memory timeline (lib/landing/heroScene.ts). A still briefing in
+   plain HTML is painted first, with the page, so nothing waits on WebGL;
+   three.js loads once the browser is idle and the fonts are in, and the scene
+   fades in over it. If WebGL is unavailable the still briefing simply stays. */
+const FIRST = SCENARIOS[0];
 export default function HeroStage() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -22,13 +24,14 @@ export default function HeroStage() {
     const lowPower = window.matchMedia("(max-width: 760px)").matches || (navigator.hardwareConcurrency ?? 8) <= 4;
 
     const load = () => {
-      import("@/lib/landing/heroScene")
-        .then(({ mountHeroScene }) => {
+      // card text is drawn to canvas in the page font, so wait for it
+      Promise.all([import("@/lib/landing/heroScene"), document.fonts?.ready])
+        .then(([{ mountHeroScene }]) => {
           if (cancelled) return;
           scene = mountHeroScene(canvas, { anchor: stage, reducedMotion, lowPower, onReady: () => setReady(true) });
           onScroll();
         })
-        .catch(() => undefined); // no WebGL: the flat mark stays
+        .catch(() => undefined); // no WebGL: the still briefing stays
     };
     const idle = typeof window.requestIdleCallback === "function"
       ? window.requestIdleCallback(load, { timeout: 1200 })
@@ -55,13 +58,27 @@ export default function HeroStage() {
   }, []);
 
   // The canvas spans the whole hero (it is positioned against the section);
-  // the stage is the column the logo is centred in.
+  // the stage is the column the briefing forms in.
   return (
     <>
-      <canvas ref={canvasRef} className={`mw-hero-canvas ${ready ? "is-ready" : ""}`} aria-label="The MemoryWorks mark in 3D. Drag to spin it; tap a bar to flip it." />
+      <canvas
+        ref={canvasRef}
+        className={`mw-hero-canvas ${ready ? "is-ready" : ""}`}
+        aria-label="A year of company memory receding in time. An agent proposes a change, the memories that apply light up and come forward into a briefing, and a verdict appears. Drag to look across the timeline; click for the next change."
+      />
       <div ref={stageRef} className={`mw-stage ${ready ? "is-ready" : ""}`}>
-        <div className="mw-stage-poster" aria-hidden="true"><BrandMark /></div>
-        <p className="mw-stage-hint" aria-hidden="true"><kbd>Drag</kbd> to spin · <kbd>Tap</kbd> a bar</p>
+        <div className="mw-stage-poster" aria-hidden="true">
+          <div className="mw-poster-agent"><span>An agent is about to</span><b>› {FIRST.task}</b></div>
+          {FIRST.memories.map((memory) => (
+            <div className="mw-poster-card" key={memory.title} style={{ ["--kind" as string]: KIND_COLOR[memory.kind] }}>
+              <span>{KIND_LABEL[memory.kind]}</span>
+              <b>{memory.title}</b>
+              <small>{memory.source}</small>
+            </div>
+          ))}
+          <div className="mw-poster-verdict">{VERDICT_LABEL[FIRST.verdict]}</div>
+        </div>
+        <p className="mw-stage-hint" aria-hidden="true"><kbd>Drag</kbd> through time · <kbd>Hover</kbd> a memory · <kbd>Click</kbd> next change</p>
       </div>
     </>
   );

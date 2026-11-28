@@ -42,8 +42,13 @@ from .conversation import assistant_reply, general_knowledge_answer, is_company_
 from .deliberation import deliberate
 from .handoff import build_handoff
 from .hypotheses import extract_hypotheses
+from .inventory import inventory_reply, is_inventory_question
+from .memory_search import query_terms as memory_query_terms
+from .memory_search import tokens as memory_tokens
 from .reasoner import (
+    DECISION_REASON_RE,
     answer_intent,
+    decision_ownership_excerpt,
     evidence_answer,
     stream_llm_answer,
     validate_grounded_answer,
@@ -174,6 +179,15 @@ class RetrievalService:
         # "Can you import from Drive?" is about MemoryWorks itself, which company
         # memory does not record; it is answered from the product's own sources.
         conversational = assistant_reply(query) or capability_reply(query)
+        if not conversational and is_inventory_question(query):
+            # "Which repos are connected?" is answered by the workspace's own
+            # records, not by searching every chunk for the words.
+            step("Reading this workspace's repositories and connections")
+            conversational = inventory_reply(
+                query,
+                sorted({project_id, *(workspace_project_ids or [])}),
+                str((principal or {}).get("active_workspace_id") or ""),
+            )
         if conversational:
             return self._unsourced_result(
                 project_id,
@@ -373,6 +387,14 @@ class RetrievalService:
             )
             evidence = activation.evidence
             self._attach_activation(route, activation)
+            if answer_shape == "entity_ownership" and intent == "memory":
+                # Only cite and report ownership from evidence admitted by the
+                # compiler's authorization, deduplication and budget checks.
+                grounded = evidence_answer(query, evidence)
+                supporting_ids = set(grounded.get("supporting_chunk_ids") or [])
+                selected_memories = [
+                    memory for memory in selected_memories if memory["id"] in supporting_ids
+                ]
         step("Checking the answer against its sources")
         grounded = validate_grounded_answer(query, grounded, evidence)
         # Company memory holding nothing is only a refusal when the question was
@@ -1115,7 +1137,8 @@ class RetrievalService:
         This gate is intentionally lexical and type-aware. A weak semantic hit
         may not displace a directly matching current policy or decision.
         """
-        if answer_intent(query) in {
+        intent = answer_intent(query)
+        if intent in {
             "agent_briefing",
             "api_contract",
             "commit_history",
@@ -1126,7 +1149,8 @@ class RetrievalService:
         }:
             return None
         lowered = " ".join(query.casefold().replace("-", " ").split())
-        memory_question = any(
+        asks_owner = intent == "entity_ownership"
+        memory_question = asks_owner or any(
             marker in lowered
             for marker in (
                 "current",
@@ -1145,6 +1169,14 @@ class RetrievalService:
             )
         )
         if not memory_question or not memories:
+            return None
+        ownership_terms = (
+            set(memory_query_terms(lowered.replace("@orgmemory", "").replace("@runbook", "")))
+            - memory_tokens("changed current maintainer own owner ownership responsible")
+            if asks_owner
+            else set()
+        )
+        if asks_owner and not ownership_terms:
             return None
         stop = {
             "what",
@@ -1191,7 +1223,18 @@ class RetrievalService:
                 .replace("-", " ")
                 .split()
             )
-            overlap = sum(term in searchable for term in query_terms)
+            if asks_owner:
+                # The owner is attached to the decision itself, even if its
+                # rationale names a different system or incident.
+                if memory["type"] == "decision":
+                    searchable = DECISION_REASON_RE.split(memory["content"], maxsplit=1)[0]
+                elif memory["type"] != "ownership":
+                    continue
+                if not ownership_terms.issubset(memory_tokens(searchable)):
+                    continue
+                overlap = len(ownership_terms)
+            else:
+                overlap = sum(term in searchable for term in query_terms)
             type_bonus = (
                 3
                 if any(marker in lowered for marker in type_markers.get(memory["type"], ()))
@@ -1212,7 +1255,11 @@ class RetrievalService:
                 "config",
                 "convention",
             }
-            if subject_terms and not any(term in searchable for term in subject_terms):
+            if (
+                not asks_owner
+                and subject_terms
+                and not any(term in searchable for term in subject_terms)
+            ):
                 continue
             score = overlap * 2 + type_bonus + float(memory.get("confidence") or 0)
             if score >= 2.75:
@@ -1222,13 +1269,6 @@ class RetrievalService:
         if not selected:
             return None
 
-        selected_ids = {memory["id"] for memory in selected}
-        relationships = [
-            relation
-            for relation in memory_service.relationships(project_id)
-            if relation["from_memory_id"] in selected_ids
-            or relation["to_memory_id"] in selected_ids
-        ]
         source_ids = list(
             dict.fromkeys(
                 source_id for memory in selected for source_id in memory.get("source_ids", [])
@@ -1249,6 +1289,15 @@ class RetrievalService:
                 source = sources.get(source_id)
                 if not source:
                     continue
+                text = source["content"]
+                if asks_owner:
+                    if source["source_type"] == "repository_metadata":
+                        continue
+                    text = memory["content"]
+                    if memory["type"] == "decision":
+                        text = decision_ownership_excerpt(text, source["content"])
+                        if not text:
+                            continue
                 metadata = json.loads(source.get("metadata_json") or "{}")
                 metadata.update(
                     {
@@ -1264,7 +1313,7 @@ class RetrievalService:
                 evidence.append(
                     GraphEvidence(
                         chunk_id=memory["id"],
-                        text=source["content"],
+                        text=text,
                         source_type=source["source_type"],
                         source_title=source["source_title"],
                         source_url=source["source_url"],
@@ -1274,6 +1323,19 @@ class RetrievalService:
                     )
                 )
 
+        if asks_owner:
+            grounded = evidence_answer(query, evidence)
+            if not grounded["sufficient"]:
+                return None
+            return grounded, evidence, selected
+
+        selected_ids = {memory["id"] for memory in selected}
+        relationships = [
+            relation
+            for relation in memory_service.relationships(project_id)
+            if relation["from_memory_id"] in selected_ids
+            or relation["to_memory_id"] in selected_ids
+        ]
         title_by_source = {
             source_id: (sources.get(source_id) or {}).get("source_title", source_id)
             for source_id in source_ids

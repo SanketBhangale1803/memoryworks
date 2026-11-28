@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import json
 import re
+import socket
+import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from typing import Any
 
@@ -11,7 +14,7 @@ import httpx
 
 from app.core.config import settings
 
-from .limits import LLMUnavailable, llm_slot
+from .limits import LLMUnavailable, cancel_event, current_budget, llm_slot, raise_if_cancelled
 
 
 @dataclass(frozen=True)
@@ -148,6 +151,80 @@ def generate_grounded_json(
     return (parsed, provider) if parsed else None
 
 
+@contextmanager
+def _hang_up_on_stop() -> Iterator[dict[str, Any]]:
+    """Request extensions that close the connection the moment Stop is pressed.
+
+    Checking for a stop between chunks is not enough: a call without streaming
+    sends nothing until the model has finished, and an Agent step sat blocked
+    for the whole model call (27 s against a slow model, up to the 90 s cap)
+    after the person had stopped it. httpx reports each socket as it connects,
+    so a watcher can shut it down, which wakes the blocked read at once.
+    """
+    stop = cancel_event()
+    if stop is None:
+        yield {}
+        return
+    sockets: list[socket.socket] = []
+    finished = threading.Event()
+
+    def trace(name: str, info: dict[str, Any]) -> None:
+        # the TCP socket, then (HTTPS) the TLS socket that replaces it
+        if name.endswith((".connect_tcp.complete", ".start_tls.complete")):
+            stream = info.get("return_value")
+            sock = stream.get_extra_info("socket") if stream is not None else None
+            if sock is not None:
+                sockets.append(sock)
+
+    def watch() -> None:
+        while not finished.wait(0.2):
+            if stop.is_set():
+                for sock in list(sockets):
+                    with suppress(OSError):
+                        sock.shutdown(socket.SHUT_RDWR)
+
+    threading.Thread(target=watch, daemon=True, name="llm-hang-up").start()
+    try:
+        yield {"trace": trace}
+    except httpx.TransportError:
+        raise_if_cancelled()  # the hang-up above, not a network fault
+        raise
+    finally:
+        finished.set()
+
+
+@contextmanager
+def _open_stream(method: str, url: str, **kwargs: Any) -> Iterator[httpx.Response]:
+    # A client, because httpx's module-level stream() takes no extensions.
+    with httpx.Client() as client, client.stream(method, url, **kwargs) as response:
+        yield response
+
+
+def _record_usage(reply: Any) -> None:
+    """Add one reply's token usage to the task's budget, whatever the provider."""
+    budget = current_budget()
+    if budget is None or not isinstance(reply, dict):
+        return
+    usage = reply.get("usage") or {}
+    meta = reply.get("usageMetadata") or {}  # Gemini
+    budget.record(
+        str(reply.get("model") or reply.get("modelVersion") or ""),
+        {
+            "input_tokens": usage.get("prompt_tokens")
+            or usage.get("input_tokens")
+            or meta.get("promptTokenCount")
+            or 0,
+            "output_tokens": usage.get("completion_tokens")
+            or usage.get("output_tokens")
+            or meta.get("candidatesTokenCount")
+            or 0,
+            "cache_read_input_tokens": usage.get("cache_read_input_tokens")
+            or (usage.get("prompt_tokens_details") or {}).get("cached_tokens")
+            or 0,
+        },
+    )
+
+
 def _post_json(url: str, headers: dict[str, str], payload: dict[str, Any], seconds: float) -> Any:
     """POST and parse the JSON reply, giving up after ``seconds`` in total.
 
@@ -157,19 +234,26 @@ def _post_json(url: str, headers: dict[str, str], payload: dict[str, Any], secon
     """
     deadline = time.monotonic() + seconds
     body = bytearray()
-    with httpx.stream(
-        "POST",
-        url,
-        headers=headers,
-        json=payload,
-        timeout=httpx.Timeout(min(60.0, max(1.0, seconds)), connect=10),
-    ) as response:
+    with (
+        _hang_up_on_stop() as extensions,
+        _open_stream(
+            "POST",
+            url,
+            headers=headers,
+            json=payload,
+            timeout=httpx.Timeout(min(60.0, max(1.0, seconds)), connect=10),
+            extensions=extensions,
+        ) as response,
+    ):
         for chunk in response.iter_bytes():
             body.extend(chunk)
+            raise_if_cancelled()  # closes the connection: the provider stops too
             if time.monotonic() > deadline:
                 raise LLMUnavailable("The model did not answer in time.")
         response.raise_for_status()
-    return json.loads(bytes(body))
+    reply = json.loads(bytes(body))
+    _record_usage(reply)
+    return reply
 
 
 def _openai_compatible(provider: ModelProvider, prompt: str, seconds: float) -> str:
@@ -256,15 +340,20 @@ def _stream_text(
     payload["stream"] = True
     deadline = time.monotonic() + deadline_seconds
     pieces: list[str] = []
-    with httpx.stream(
-        "POST",
-        f"{provider.base_url}/chat/completions",
-        headers=headers,
-        json=payload,
-        timeout=httpx.Timeout(60, connect=10),
-    ) as response:
+    with (
+        _hang_up_on_stop() as extensions,
+        _open_stream(
+            "POST",
+            f"{provider.base_url}/chat/completions",
+            headers=headers,
+            json=payload,
+            timeout=httpx.Timeout(60, connect=10),
+            extensions=extensions,
+        ) as response,
+    ):
         response.raise_for_status()
         for line in response.iter_lines():
+            raise_if_cancelled()  # closes the stream: the provider stops writing
             if time.monotonic() > deadline:
                 raise TimeoutError("The model did not finish its answer in time.")
             # Server-sent events: "data: {...}" per chunk, ": comment" keep-alives
@@ -280,6 +369,8 @@ def _stream_text(
                 continue
             if chunk.get("error"):
                 raise RuntimeError(str(chunk["error"].get("message") or chunk["error"]))
+            if chunk.get("usage"):
+                _record_usage(chunk)  # the final chunk carries the totals
             choices = chunk.get("choices") or []
             delta = (choices[0].get("delta") or {}) if choices else {}
             thinking = delta.get("reasoning") or delta.get("reasoning_content")

@@ -76,6 +76,12 @@ def record_context(
         evidence = result.get("evidence") or []
         trust = result.get("trust_score") or {}
         envelope = result.get("context_envelope") or {}
+        model = result.get("model") or {}
+        used = model.get("used")
+        # Current replies use a boolean flag and carry the actual provider separately.
+        model_provider = used
+        if isinstance(used, bool):
+            model_provider = model.get("provider") if used else ""
         event_id = new_id("ctx")
         now = utcnow()
         with connect() as conn:
@@ -98,7 +104,7 @@ def record_context(
                     str(result.get("answer_scope") or ""),
                     str(result.get("answer_kind") or ""),
                     1 if result.get("answer_sufficient") else 0,
-                    str((result.get("model") or {}).get("used") or ""),
+                    str(model_provider or ""),
                     str(deliberation.get("selected_lens") or ""),
                     int(deliberation.get("candidate_count") or 0),
                     1 if deliberation.get("judged") else 0,

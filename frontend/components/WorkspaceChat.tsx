@@ -11,9 +11,18 @@ import { IMPORT_HINT, ImportTurn, type ChatImport } from "@/components/ImportTur
 import MarkdownAnswer from "@/components/MarkdownAnswer";
 import { NavToggle } from "@/components/WorkspaceFrame";
 import { useWorkspaceTools } from "@/hooks/useWorkspaceTools";
-import { API, api } from "@/lib/api";
-import { orgApi, type OrgPlan } from "@/lib/orgTools";
+import {
+  AnswerStopped,
+  API,
+  api,
+  errorMessage,
+  isUnauthorized,
+  reportApiFailure,
+  sendToSignIn,
+} from "@/lib/api";
+import { orgApi, type OrgAgentSession, type OrgPlan } from "@/lib/orgTools";
 import { newThreadId, threads, titleFrom, useThreads, type ThreadMode } from "@/lib/threads";
+import type { AuthUser, Connector, EvidencePanelState, IngestJob } from "@/lib/types";
 import type { MemoryWorksUnit } from "@/lib/webmcp";
 
 /* The one window.
@@ -87,6 +96,9 @@ type Turn = {
   /* Set when the message asked to import something and the import ran instead. */
   imported?: ChatImport;
   error?: string;
+  /* Stop was pressed. `partial` is what the answer had written by then. */
+  stopped?: boolean;
+  partial?: string;
 };
 
 /* Terminal states stop the poller. Anything else is still in flight. */
@@ -131,7 +143,7 @@ function threadHistory(turns: Turn[]) {
   return history;
 }
 
-export default function WorkspaceChat({ user }: { user: any }) {
+export default function WorkspaceChat({ user }: { user?: AuthUser }) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [project, setProject] = useState("");
@@ -143,9 +155,11 @@ export default function WorkspaceChat({ user }: { user: any }) {
   const [filter, setFilter] = useState("");
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
+  /* Aborts the answer or Agent run in flight; set only while one is. */
+  const [inFlight, setInFlight] = useState<AbortController | null>(null);
   const [loadError, setLoadError] = useState("");
   const [copied, setCopied] = useState("");
-  const [evidence, setEvidence] = useState<any>(null);
+  const [evidence, setEvidence] = useState<EvidencePanelState | null>(null);
   const [followups, setFollowups] = useState<string[]>([]);
   const [github, setGithub] = useState(false);
   const [importing, setImporting] = useState(0);
@@ -170,7 +184,7 @@ export default function WorkspaceChat({ user }: { user: any }) {
         setProjects(items);
         if (items[0]) setProject((current) => current || items[0].id);
       })
-      .catch((error) => setLoadError(error.message))
+      .catch((error) => reportApiFailure(error, setLoadError))
       .finally(() => setLoaded(true));
     api<{ models: Model[]; default: string }>("/api/models")
       .then((catalog) => {
@@ -184,10 +198,10 @@ export default function WorkspaceChat({ user }: { user: any }) {
         if (preferred) setModel(preferred.id);
       })
       .catch(() => undefined);
-    api<any[]>("/api/connectors")
+    api<Connector[]>("/api/connectors")
       .then((items) => setGithub(items.some((item) => item.provider === "github" && item.connected)))
       .catch(() => undefined);
-    api<any[]>("/api/ingest/jobs")
+    api<IngestJob[]>("/api/ingest/jobs")
       .then((jobs) => setImporting(jobs.filter((job) => job.status === "running" || job.status === "queued").length))
       .catch(() => undefined);
     const pendingQuestion = window.sessionStorage.getItem("memoryworks.pending-question");
@@ -317,6 +331,8 @@ export default function WorkspaceChat({ user }: { user: any }) {
     const key = `${threadId}:${index}`;
     let trace = emptyTrace();
     setLive({ key, trace });
+    const controller = new AbortController();
+    setInFlight(controller);
     try {
       const response = await streamAnswer<Answer>(
         {
@@ -333,6 +349,7 @@ export default function WorkspaceChat({ user }: { user: any }) {
           trace = applyEvent(trace, event);
           setLive({ key, trace });
         },
+        controller.signal,
       );
       patchTurn(threadId, index, {
         answer: response,
@@ -342,16 +359,25 @@ export default function WorkspaceChat({ user }: { user: any }) {
         void suggestNext(question, response.answer, (response.memory_units || []).map((unit) => unit.subject));
       }
       return response;
-    } catch (error: any) {
+    } catch (error) {
       // Keep the steps it got through: where an answer stopped is the first
-      // thing anyone needs to know about why it failed.
+      // thing anyone needs to know about why it failed. An expired session is
+      // not a failure to explain; it goes back to sign-in.
+      const unauthorized = isUnauthorized(error);
+      if (unauthorized) sendToSignIn();
+      const stopped = error instanceof AnswerStopped || controller.signal.aborted;
       patchTurn(threadId, index, {
-        error: error.message,
+        ...(stopped
+          ? { stopped: true, partial: trace.draft }
+          : unauthorized
+            ? {}
+            : { error: errorMessage(error) }),
         trace: trace.steps.length ? { ...trace, draft: "", ms: Date.now() - trace.started } : undefined,
       });
-      throw error;
+      throw stopped ? new AnswerStopped() : new Error(errorMessage(error));
     } finally {
       setLive(null);
+      setInFlight(null);
       setBusy(false);
     }
   }
@@ -364,9 +390,18 @@ export default function WorkspaceChat({ user }: { user: any }) {
     setBusy(true);
     const { threadId, index } = beginTurn(question, "agent", project, scope);
     patchTurn(threadId, index, { agent: { steps: [], done: false } });
+    const controller = new AbortController();
+    setInFlight(controller);
+    let latest: OrgAgentSession | undefined;
     try {
-      const session = await orgApi.askStream(question, spaceIds(), (partial) =>
-        patchTurn(threadId, index, { agent: { steps: stepsFrom(partial), session: partial, done: false } }),
+      const session = await orgApi.askStream(
+        question,
+        spaceIds(),
+        (partial) => {
+          latest = partial;
+          patchTurn(threadId, index, { agent: { steps: stepsFrom(partial), session: partial, done: false } });
+        },
+        controller.signal,
       );
       patchTurn(threadId, index, {
         agent: {
@@ -377,12 +412,27 @@ export default function WorkspaceChat({ user }: { user: any }) {
         },
       });
       void suggestNext(question, session.answer, session.steps.map((step) => step.summary));
-    } catch (error: any) {
+    } catch (error) {
+      if (error instanceof AnswerStopped || controller.signal.aborted) {
+        // Keep the steps it took; the run is marked stopped, not failed.
+        const session: OrgAgentSession | undefined = latest ? { ...latest, status: "cancelled" } : undefined;
+        patchTurn(threadId, index, {
+          agent: { steps: session ? stepsFrom(session) : [], session, done: true },
+          stopped: true,
+        });
+        return;
+      }
+      if (isUnauthorized(error)) {
+        sendToSignIn();
+        patchTurn(threadId, index, { agent: { steps: [], done: true } });
+        return;
+      }
       patchTurn(threadId, index, {
         agent: { steps: [], done: true },
-        error: error?.message || "The agent could not finish.",
+        error: errorMessage(error) || "The agent could not finish.",
       });
     } finally {
+      setInFlight(null);
       setBusy(false);
     }
   }
@@ -405,7 +455,8 @@ export default function WorkspaceChat({ user }: { user: any }) {
       const { threadId, index } = beginTurn(question, mode, project, scope);
       patchTurn(threadId, index, { imported: reply });
       return true;
-    } catch {
+    } catch (error) {
+      if (isUnauthorized(error)) sendToSignIn();
       return false;
     } finally {
       setBusy(false);
@@ -432,12 +483,15 @@ export default function WorkspaceChat({ user }: { user: any }) {
       const decided = approve ? await orgApi.approvePlan(plan.id) : await orgApi.rejectPlan(plan.id);
       threads.update(threadId, (current) => ({
         ...current,
-        turns: current.turns.map((turn: Turn, position) =>
-          position === index && turn.agent ? { ...turn, agent: { ...turn.agent, plan: decided } } : turn,
-        ),
+        turns: current.turns.map((turn, position) => {
+          if (position !== index) return turn;
+          const prior = turn.agent as AgentState | undefined;
+          return prior ? { ...turn, agent: { ...prior, plan: decided } } : turn;
+        }),
       }));
-    } catch (error: any) {
-      patchTurn(threadId, index, { error: error.message });
+    } catch (error) {
+      if (isUnauthorized(error)) sendToSignIn();
+      else patchTurn(threadId, index, { error: errorMessage(error) });
     }
   }
 
@@ -445,8 +499,13 @@ export default function WorkspaceChat({ user }: { user: any }) {
     setEvidence({ loading: true });
     try {
       setEvidence(await orgApi.provenance(memoryId));
-    } catch (error: any) {
-      setEvidence({ error: error?.message || "That memory is no longer available." });
+    } catch (error) {
+      if (isUnauthorized(error)) {
+        sendToSignIn();
+        setEvidence(null);
+        return;
+      }
+      setEvidence({ error: errorMessage(error) || "That memory is no longer available." });
     }
   }
 
@@ -470,7 +529,7 @@ export default function WorkspaceChat({ user }: { user: any }) {
     ask: async (question, projectId, requestedScope) => {
       setProject(projectId);
       setScope(requestedScope);
-      return (await askMemory(question, projectId, "webmcp", requestedScope)) as any;
+      return askMemory(question, projectId, "webmcp", requestedScope);
     },
   });
 
@@ -577,7 +636,11 @@ export default function WorkspaceChat({ user }: { user: any }) {
                     const streaming = live?.key === `${active?.id}:${index}` ? live.trace : undefined;
                     const shown = streaming || turn.trace;
                     return shown ? (
-                      <AskTrace trace={shown} running={Boolean(streaming)} stalled={Boolean(turn.error)} />
+                      <AskTrace
+                        trace={shown}
+                        running={Boolean(streaming)}
+                        stalled={Boolean(turn.error || turn.stopped)}
+                      />
                     ) : null;
                   })()}
 
@@ -586,6 +649,13 @@ export default function WorkspaceChat({ user }: { user: any }) {
                 )}
 
                 {turn.error && <div className="ws-alert">{turn.error}</div>}
+
+                {turn.stopped && turn.partial && <LiveDraft text={turn.partial} writing={false} />}
+                {turn.stopped && (
+                  <p className="ws-stopped" role="status">
+                    {turn.partial ? "Stopped before the answer was checked against its sources." : "Stopped."}
+                  </p>
+                )}
 
                 {turn.answer && (
                   <AnswerBlock
@@ -603,6 +673,7 @@ export default function WorkspaceChat({ user }: { user: any }) {
                 {turn.mode === "ask" &&
                   !turn.answer &&
                   !turn.error &&
+                  !turn.stopped &&
                   busy &&
                   index === turns.length - 1 &&
                   !live?.trace.steps.length && (
@@ -637,7 +708,10 @@ export default function WorkspaceChat({ user }: { user: any }) {
               placeholder={placeholder}
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) {
+                if (event.key === "Escape" && inFlight) {
+                  event.preventDefault();
+                  inFlight.abort();
+                } else if (event.key === "Enter" && !event.shiftKey) {
                   event.preventDefault();
                   send();
                 }
@@ -788,15 +862,27 @@ export default function WorkspaceChat({ user }: { user: any }) {
                 </div>
               )}
 
-              <button
-                type="button"
-                className="ws-send"
-                onClick={() => send()}
-                disabled={busy || noSources || !draft.trim()}
-                aria-label="Send"
-              >
-                ↑
-              </button>
+              {inFlight ? (
+                <button
+                  type="button"
+                  className="ws-send ws-stop"
+                  onClick={() => inFlight.abort()}
+                  aria-label="Stop"
+                  title="Stop (Esc)"
+                >
+                  <span aria-hidden="true" />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="ws-send"
+                  onClick={() => send()}
+                  disabled={busy || noSources || !draft.trim()}
+                  aria-label="Send"
+                >
+                  ↑
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -929,8 +1015,10 @@ function AnswerBlock({
       try {
         const next = await api<Run>(`/api/execute/${run.id}`);
         if (live) setRun(next);
-      } catch {
-        /* a transient poll failure should not kill the run display */
+      } catch (error) {
+        /* A transient poll failure should not kill the run display, but an
+           expired session still belongs at sign-in. */
+        if (isUnauthorized(error)) sendToSignIn();
       }
     }, 3000);
     return () => {
@@ -948,8 +1036,9 @@ function AnswerBlock({
           body: JSON.stringify({ project_id: project, handoff: answer.handoff, context_event_id: answer.context_event_id }),
         }),
       );
-    } catch (error: any) {
-      setRunError(error.message);
+    } catch (error) {
+      if (isUnauthorized(error)) sendToSignIn();
+      else setRunError(errorMessage(error));
     }
   }
 

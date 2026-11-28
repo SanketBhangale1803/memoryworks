@@ -190,7 +190,7 @@ def test_openai_compatible_and_gemini_requests_use_current_provider_contracts(gr
             )
         return Response({"choices": [{"message": {"content": '{"answer":"compatible"}'}}]})
 
-    monkeypatch.setattr("app.llm.providers.httpx.stream", stream)
+    monkeypatch.setattr("app.llm.providers._open_stream", stream)
     monkeypatch.setattr(settings, "kimi_api_key", "kimi-secret")
     monkeypatch.setattr(settings, "openrouter_api_key", "openrouter-secret")
     monkeypatch.setattr(settings, "google_api_key", "google-secret")

@@ -603,6 +603,11 @@ CREATE TABLE IF NOT EXISTS org_action_plans (
   results_json TEXT NOT NULL DEFAULT '[]', status TEXT NOT NULL DEFAULT 'pending_approval',
   created_at TEXT NOT NULL, resolved_at TEXT, resolved_by TEXT NOT NULL DEFAULT ''
 );
+CREATE TABLE IF NOT EXISTS org_agent_sessions (
+  id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL,
+  session_json TEXT NOT NULL,
+  FOREIGN KEY(workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
+);
 CREATE INDEX IF NOT EXISTS idx_memory_work_project ON memory_work(project_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_memory_work_steps ON memory_work_steps(work_id, position);
 CREATE INDEX IF NOT EXISTS idx_memory_work_events ON memory_work_events(work_id, created_at);

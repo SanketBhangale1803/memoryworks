@@ -74,6 +74,9 @@ class Settings(BaseSettings):
     execution_dir: Path = ROOT / "data" / "executions"
 
     graph_backend: str = "arcadedb"
+    # Chunks held prepared in memory for ranking (app/graph/project_index.py),
+    # ~15 KB each: 40,000 is about 600 MB.
+    graph_index_max_chunks: int = 40_000
     arcadedb_host: str = "localhost"
     arcadedb_port: int = 2480
     arcadedb_user: str = "root"
@@ -262,12 +265,16 @@ class Settings(BaseSettings):
     mcp_public_url: str = Field(
         default="http://localhost:8001",
         validation_alias=AliasChoices(
-            "ORGMEMORY_MCP_PUBLIC_URL", "MCP_PUBLIC_URL", "mcp_public_url"
+            "MEMORYWORKS_MCP_PUBLIC_URL",
+            "ORGMEMORY_MCP_PUBLIC_URL",
+            "MCP_PUBLIC_URL",
+            "mcp_public_url",
         ),
     )
     mcp_oauth_issuer_url: str = Field(
         default="http://localhost:8000",
         validation_alias=AliasChoices(
+            "MEMORYWORKS_MCP_OAUTH_ISSUER_URL",
             "ORGMEMORY_MCP_OAUTH_ISSUER_URL",
             "MCP_OAUTH_ISSUER_URL",
             "mcp_oauth_issuer_url",

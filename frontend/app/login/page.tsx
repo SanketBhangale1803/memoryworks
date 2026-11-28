@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import GitHubIcon from "@/components/icons/GitHubIcon";
 import BrandLogo from "@/components/BrandLogo";
-import { API, api } from "@/lib/api";
+import { API, api, errorMessage } from "@/lib/api";
 import { nextQuery, safeNextPath } from "@/lib/safeNext";
 
 type Providers = {
@@ -31,7 +31,7 @@ export default function Login() {
   const [next, setNext] = useState("/workspace");
 
   useEffect(() => {
-    api<Providers>("/api/auth/providers").then(setProviders).catch((exc) => setError(exc.message));
+    api<Providers>("/api/auth/providers").then(setProviders).catch((exc) => setError(errorMessage(exc)));
     const params = new URLSearchParams(window.location.search);
     const oauthError = params.get("error");
     if (oauthError) setError(oauthError);
@@ -51,8 +51,8 @@ export default function Login() {
         }),
       });
       window.location.assign(next);
-    } catch (exc: any) {
-      setError(exc.message);
+    } catch (exc) {
+      setError(errorMessage(exc));
       setBusy(false);
     }
   }
@@ -63,7 +63,7 @@ export default function Login() {
     setError("");
     setMessage("");
     try {
-      const result: any = await api("/api/auth/email/request", {
+      const result = await api<{ development_code?: string }>("/api/auth/email/request", {
         method: "POST",
         body: JSON.stringify({ email }),
       });
@@ -75,8 +75,8 @@ export default function Login() {
       } else {
         setMessage(`A one-time code was sent to ${email}.`);
       }
-    } catch (exc: any) {
-      setError(exc.message);
+    } catch (exc) {
+      setError(errorMessage(exc));
     } finally {
       setBusy(false);
     }
@@ -91,8 +91,8 @@ export default function Login() {
         body: JSON.stringify({ email, code }),
       });
       window.location.assign(next);
-    } catch (exc: any) {
-      setError(exc.message);
+    } catch (exc) {
+      setError(errorMessage(exc));
       setBusy(false);
     }
   }
@@ -109,8 +109,8 @@ export default function Login() {
         }),
       });
       window.location.assign(next);
-    } catch (exc: any) {
-      setError(exc.message);
+    } catch (exc) {
+      setError(errorMessage(exc));
       setBusy(false);
     }
   }

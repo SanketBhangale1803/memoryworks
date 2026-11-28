@@ -7,6 +7,7 @@ import PageBar from "@/components/PageBar";
 import WorkspaceFrame from "@/components/WorkspaceFrame";
 import { api } from "@/lib/api";
 import { safeNextPath } from "@/lib/safeNext";
+import type { AuthUser } from "@/lib/types";
 import { titleFor } from "@/lib/workspaceMap";
 
 const SECURING_MIN_MS = 450;
@@ -19,7 +20,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const isLogin = pathname === "/login";
   const isPublic = isLanding || isDocs || isLogin;
   const isChat = pathname === "/workspace";
-  const [user, setUser] = useState<any>();
+  const [user, setUser] = useState<AuthUser>();
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -30,7 +31,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     let current = true;
     let securingTimer: number | undefined;
     const securingStartedAt = Date.now();
-    api("/api/auth/me")
+    api<AuthUser>("/api/auth/me")
       .then((principal) => {
         if (!current) return;
         if (isLogin) {

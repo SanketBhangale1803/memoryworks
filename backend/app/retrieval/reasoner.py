@@ -8,7 +8,7 @@ from typing import Any
 
 from app.graph.base import GraphEvidence
 from app.llm import generate_grounded_json, stream_text
-from app.retrieval.intents import ownership_scope
+from app.retrieval.intents import OWNERSHIP_QUESTION_RE, ownership_scope
 from app.retrieval.universal import universal_evidence_answer
 
 CAUSE_MARKERS = (
@@ -24,6 +24,8 @@ CAUSE_MARKERS = (
     "unreachable",
     "error",
 )
+OWNER_FIELD = r"Owner:[ \t]+(?P<owner>[^.!?\r\n]{2,100})(?:[.!?](?=\s|$)|(?=\r?\n|$))"
+DECISION_REASON_RE = re.compile(r"\b(?:because|due to|in response to|so that|to prevent)\b", re.I)
 ACTION_MARKERS = (
     "check",
     "inspect",
@@ -104,10 +106,14 @@ def answer_intent(query: str) -> str:
         lowered,
     ):
         return "runtime_record"
-    if re.search(r"\b(endpoint|endpoints|api route|request payload|payload)\b", lowered) and (
-        "endpoint" in lowered
-        or "payload" in lowered
-        or re.search(r"\b(?:get|post|put|patch|delete)\s+/", lowered)
+    if (
+        not OWNERSHIP_QUESTION_RE.match(lowered)
+        and re.search(r"\b(endpoint|endpoints|api route|request payload|payload)\b", lowered)
+        and (
+            "endpoint" in lowered
+            or "payload" in lowered
+            or re.search(r"\b(?:get|post|put|patch|delete)\s+/", lowered)
+        )
     ):
         return "api_contract"
     briefing_facets = sum(
@@ -348,9 +354,7 @@ def evidence_answer(query: str, evidence: list[GraphEvidence]) -> dict[str, Any]
     if intent == "ownership":
         return _ownership_answer(query, evidence)
     if intent == "entity_ownership":
-        # Entity ownership must come from a typed atomic ownership memory.
-        # Generic source text containing "owner" is not sufficient.
-        return _insufficient()
+        return _entity_ownership_answer(query, evidence)
     if intent == "overview":
         return _overview_answer(evidence)
     return universal_evidence_answer(query, evidence)
@@ -1774,6 +1778,63 @@ def _ownership_answer(query: str, evidence: list[GraphEvidence]) -> dict[str, An
     return _structured(" ".join(parts), "repository ownership and commit history")
 
 
+def decision_ownership_excerpt(decision: str, source: str) -> str:
+    """Read an explicit owner field attached to this exact decision sentence."""
+    match = re.search(
+        rf"{re.escape(decision)}(?:[ \t]+|[ \t]*\r?\n[ \t]*)(?P<field>{OWNER_FIELD})",
+        source,
+        re.I,
+    )
+    if not match or match["owner"].strip().casefold() in {
+        "",
+        "tbd",
+        "unknown",
+        "none",
+        "unassigned",
+        "n/a",
+    }:
+        return ""
+    return f"{decision}\n{match['field'].strip()}"
+
+
+def _entity_ownership_evidence(item: GraphEvidence) -> bool:
+    if item.metadata.get("primary_lane") != "atomic_memory" or item.metadata.get(
+        "context_truncated"
+    ):
+        return False
+    return item.metadata.get("memory_type") == "ownership" or (
+        item.metadata.get("memory_type") == "decision"
+        and "\n" in item.text
+        and bool(re.fullmatch(OWNER_FIELD, item.text.rsplit("\n", 1)[1], re.I))
+    )
+
+
+def _entity_ownership_answer(query: str, evidence: list[GraphEvidence]) -> dict[str, Any]:
+    asks_why = bool(re.search(r"\bwhy\b", query, re.I))
+    statements = []
+    supporting_ids = []
+    for item in evidence:
+        if not _entity_ownership_evidence(item):
+            continue
+        if item.metadata.get("memory_type") == "decision":
+            decision, owner = item.text.rsplit("\n", 1)
+            if asks_why and not DECISION_REASON_RE.search(decision):
+                continue
+            statement = f"{decision} {owner}" if asks_why else owner
+        elif asks_why:
+            continue
+        else:
+            statement = item.text
+        statements.append(f"- {statement} [{item.source_title}]")
+        supporting_ids.append(item.chunk_id)
+    if not supporting_ids:
+        return _insufficient()
+    return {
+        **_structured("\n".join(dict.fromkeys(statements)), "company memory"),
+        "supporting_chunk_ids": supporting_ids,
+    }
+
+
 def _commit_records(
     evidence: list[GraphEvidence],
 ) -> list[tuple[str, GraphEvidence, dict[str, str]]]:
@@ -1967,15 +2028,7 @@ def validate_grounded_answer(
         if not item or not str(metadata.get("owner") or "").strip():
             return _insufficient()
     elif intent == "entity_ownership":
-        typed_memory = any(
-            str(item.metadata.get("memory_type") or "").casefold() == "ownership"
-            or (
-                item.metadata.get("primary_lane") == "atomic_memory"
-                and re.search(r"\b(?:owned by|owns|responsible for)\b", item.text, re.I)
-            )
-            for item in evidence
-        )
-        if not typed_memory:
+        if not any(_entity_ownership_evidence(item) for item in evidence):
             return _insufficient()
     elif intent == "repository_identity":
         item, metadata = _repository_metadata(evidence)

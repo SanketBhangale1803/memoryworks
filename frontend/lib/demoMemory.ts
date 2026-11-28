@@ -132,11 +132,79 @@ const baseTasks = [
   { id: "task_support", space_id: "space_support", space_name: "Customer Support", title: "Brief support on OAuth rollback", description: "Share the rollback procedure", status: "open", owner: "Ava Morgan", priority: "normal", kind: "task", depends_on: [], source_memory_ids: ["mem_support_gap"], updated_at: earlier },
 ];
 
+type DemoWatchFinding = {
+  id: string;
+  kind: string;
+  headline: string;
+  detail: string;
+  plan_id: string;
+  status: string;
+  created_at?: string;
+};
+
+type DemoWatch = {
+  id: string;
+  name: string;
+  space_ids: string[];
+  checks: string[];
+  interval_seconds: number;
+  status: string;
+  runs: number;
+  last_run_at?: string;
+  open_findings: number;
+  findings: DemoWatchFinding[];
+};
+
+type DemoPlanOperation = Record<string, unknown> & {
+  op?: string;
+  preview?: string;
+  task_id?: string;
+  title?: string;
+  type?: string;
+  status?: string;
+  owner?: string;
+  priority?: string;
+};
+
+type DemoPlan = {
+  id: string;
+  space_id: string;
+  summary: string;
+  status: string;
+  operations: DemoPlanOperation[];
+  results: { op?: string; ok: boolean }[];
+  created_at: string;
+};
+
+type DemoPlanBody = {
+  operations?: DemoPlanOperation[];
+  summary?: string;
+  space_id?: string;
+};
+
+type DemoParams = {
+  query?: string;
+  limit?: number;
+  assignee?: string;
+  priority?: string;
+  status?: string;
+  topic?: string;
+  [key: string]: unknown;
+};
+
+export type DemoBody = DemoPlanBody & {
+  reset?: boolean;
+  name?: string;
+  space_ids?: string[];
+  checks?: string[];
+  interval_seconds?: number;
+};
+
 let tasks = structuredClone(baseTasks);
 let conflictResolved = false;
-let watch: any = null;
+let watch: DemoWatch | null = null;
 let planCounter = 0;
-const plans = new Map<string, any>();
+const plans = new Map<string, DemoPlan>();
 
 const memoryById = (id: string) => memories.find((memory) => memory.id === id) || memories[0];
 const taskById = (id: string) => tasks.find((task) => task.id === id) || tasks[0];
@@ -235,22 +303,22 @@ function context() {
   };
 }
 
-function createPlan(body: any) {
+function createPlan(body: DemoPlanBody) {
   planCounter += 1;
   const id = `plan_demo_${planCounter}`;
-  const operations = (body.operations || []).map((operation: any) => ({
+  const operations: DemoPlanOperation[] = (body.operations || []).map((operation) => ({
     ...operation,
     preview:
       operation.preview ||
       (operation.op === "update_task"
-        ? `Update ${taskById(operation.task_id).title}`
+        ? `Update ${taskById(String(operation.task_id || "")).title}`
         : operation.op === "create_task"
           ? `Create “${operation.title}”`
           : `Add ${operation.type || "memory"} record`),
   }));
-  const plan = {
+  const plan: DemoPlan = {
     id,
-    space_id: body.space_id || operations[0]?.space_id || "space_security",
+    space_id: body.space_id || String(operations[0]?.space_id || "space_security"),
     summary: body.summary || "Proposed organizational changes",
     status: "pending_approval",
     operations,
@@ -267,16 +335,16 @@ function applyPlan(id: string, approved: boolean) {
   if (approved) {
     for (const operation of plan.operations) {
       if (operation.op === "update_task" && operation.task_id) {
-        const target = taskById(operation.task_id);
-        if (operation.status) target.status = operation.status;
-        if (operation.owner) target.owner = operation.owner;
-        if (operation.priority) target.priority = operation.priority;
+        const target = taskById(String(operation.task_id));
+        if (operation.status) target.status = String(operation.status);
+        if (operation.owner) target.owner = String(operation.owner);
+        if (operation.priority) target.priority = String(operation.priority);
       }
     }
-    if (plan.operations.some((operation: any) => operation.task_id === "task_security")) {
+    if (plan.operations.some((operation) => operation.task_id === "task_security")) {
       conflictResolved = true;
     }
-    plan.results = plan.operations.map((operation: any) => ({ op: operation.op, ok: true }));
+    plan.results = plan.operations.map((operation) => ({ op: operation.op, ok: true }));
   }
   plans.set(plan.id, plan);
   return plan;
@@ -285,8 +353,8 @@ function applyPlan(id: string, approved: boolean) {
 export async function demoOrgRequest<T>(
   method: "GET" | "POST" | "DELETE",
   path: string,
-  params: Record<string, any> = {},
-  body: any = {},
+  params: DemoParams = {},
+  body: DemoBody = {},
 ): Promise<T> {
   await pause();
   if (method === "GET" && path === "/spaces") return clone({ count: spaces.length, spaces }) as T;
@@ -407,14 +475,14 @@ export async function demoOrgRequest<T>(
       const plan = createPlan({ summary: "Reconcile the security tracker", operations: [conflict().resolution] });
       watch.findings = [{ id: "finding_demo_conflict", kind: "conflict", headline: "Security approval is recorded but the tracker remains open", detail: "A human-approved update is drafted and waiting.", plan_id: plan.id, status: "open", created_at: watch.last_run_at }];
     }
-    watch.open_findings = watch.findings.filter((finding: any) => finding.status === "open").length;
+    watch.open_findings = watch.findings.filter((finding) => finding.status === "open").length;
     return clone({ ...watch, new_findings: watch.open_findings }) as T;
   }
   if (method === "POST" && /\/watches\/[^/]+\/findings\/[^/]+\/resolve$/.test(path)) {
     const findingId = path.split("/")[4];
-    const finding = watch?.findings.find((item: any) => item.id === findingId);
+    const finding = watch?.findings.find((item) => item.id === findingId);
     if (finding) finding.status = "resolved";
-    if (watch) watch.open_findings = watch.findings.filter((item: any) => item.status === "open").length;
+    if (watch) watch.open_findings = watch.findings.filter((item) => item.status === "open").length;
     return clone({ id: findingId, status: "resolved" }) as T;
   }
   if (method === "DELETE" && path.startsWith("/watches/")) {
@@ -510,13 +578,13 @@ export async function demoAgentSession(
       "get_orgmemory_project_context",
       "Guided catch-up: assemble everything current across the scoped spaces.",
       `${state.memory_count} memories across ${state.spaces.length} spaces: ${state.decisions.length} decisions, ${state.open_tasks.length} open items, ${state.blockers.length} blocker.`,
-      state.decisions.map((item: any) => item.id),
+      state.decisions.map((item) => item.id),
     );
     await run(
       "get_orgmemory_recent_changes",
       "Then check what moved recently.",
       `${state.recent_changes.length} change(s) on record.`,
-      state.recent_changes.map((item: any) => item.id),
+      state.recent_changes.map((item) => item.id),
     );
     await run(
       "find_orgmemory_blockers",

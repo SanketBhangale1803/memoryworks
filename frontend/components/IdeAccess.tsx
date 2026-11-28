@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { api } from "@/lib/api";
+import { api, reportApiFailure } from "@/lib/api";
 
 /* Connecting an editor to company memory.
  *
@@ -119,8 +119,12 @@ export default function IdeAccess() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    api<Runtime>("/api/settings/runtime").then(setRuntime).catch(() => undefined);
-    api<ApiKey[]>("/api/keys").then(setKeys).catch(() => undefined);
+    api<Runtime>("/api/settings/runtime")
+      .then(setRuntime)
+      .catch((exc) => reportApiFailure(exc, setError));
+    api<ApiKey[]>("/api/keys")
+      .then(setKeys)
+      .catch((exc) => reportApiFailure(exc, setError));
   }, []);
 
   const url = runtime.mcp_http_url || "http://localhost:8001/mcp";
@@ -138,7 +142,7 @@ export default function IdeAccess() {
       setIssued(created.api_key);
       setKeys(await api<ApiKey[]>("/api/keys").catch(() => keys));
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not issue a key.");
+      reportApiFailure(cause, setError, "Could not issue a key.");
     } finally {
       setCreating(false);
     }

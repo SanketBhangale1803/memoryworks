@@ -2,14 +2,19 @@
 
 import { useEffect, useState } from "react";
 import Page from "@/components/Page";
-import { api, formatDate } from "@/lib/api";
+import { api, formatDate, reportApiFailure } from "@/lib/api";
+import type { IngestJob } from "@/lib/types";
 
 export default function IngestionJobs() {
-  const [jobs, setJobs] = useState<any[]>([]);
+  const [jobs, setJobs] = useState<IngestJob[]>([]);
+  const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    api<any[]>("/api/ingest/jobs").then(setJobs).catch((exc) => setError(exc.message));
+    api<IngestJob[]>("/api/ingest/jobs")
+      .then(setJobs)
+      .catch((exc) => reportApiFailure(exc, setError))
+      .finally(() => setLoaded(true));
   }, []);
 
   return (
@@ -59,9 +64,11 @@ export default function IngestionJobs() {
               ))}
             </tbody>
           </table>
-        ) : (
+        ) : loaded && !error ? (
           <div className="empty">Ingestion jobs appear after a repo, Slack channel, or upload is ingested.</div>
-        )}
+        ) : !loaded ? (
+          <div className="empty">Loading…</div>
+        ) : null}
       </section>
     </Page>
   );

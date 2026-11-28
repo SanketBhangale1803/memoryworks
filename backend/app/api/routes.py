@@ -69,6 +69,7 @@ from app.connectors.slack import SlackConnector
 from app.connectors.status import record_auth_outcome
 from app.connectors.stubs.registry import connector_catalog as product_connector_catalog
 from app.connectors.sync import SyncEngine
+from app.core import streams
 from app.core.config import settings
 from app.core.database import connect, decode, new_id, row, rows, utcnow
 from app.execution import ExecutionError, available_executors
@@ -78,6 +79,7 @@ from app.execution import list_runs as list_execution_runs
 from app.execution import start as start_execution_run
 from app.governance import ScopeService
 from app.graph import get_graph_store
+from app.graph.arcade_client import ArcadeDBUnavailable
 from app.hcag_adapter import HCAGAdapter
 from app.importers import NotConnectedError, get_importer, importer_statuses
 from app.ingestion.chat_import import DRIVE_KINDS, ImportIntent, parse_import
@@ -101,7 +103,7 @@ from app.intelligence import (
     blast_radius,
     correlate_changes,
 )
-from app.llm import model_catalog
+from app.llm import AnswerCancelled, cancellable, model_catalog, raise_if_cancelled
 from app.llm.providers import configured_model
 from app.memory import (
     ChangeIntelligenceService,
@@ -214,6 +216,8 @@ connector_sync = SyncEngine(
 
 
 def fail(exc: Exception):
+    if isinstance(exc, ArcadeDBUnavailable):
+        raise exc
     raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
@@ -1065,6 +1069,7 @@ def repair_project_memory(
             reingestion = RepositoryIngestor(ingestion, graph, connector).ingest(
                 project["repository"],
                 project["name"],
+                project_id=project_id,
             )
         retained_memories = rebuild_atomic_memories_from_index(
             graph,
@@ -1106,27 +1111,45 @@ def repair_project_memory(
         fail(exc)
 
 
-def _github_webhook_project(repository: str) -> dict:
+def _github_webhook_projects(repository: str) -> list[dict]:
+    """Every project that indexes this repository, oldest first.
+
+    Each workspace that imports a repository gets its own project, so one push
+    must refresh all of them; refreshing only the first would leave the other
+    workspaces answering from a stale copy.
+    """
+    matches: dict[str, dict] = {}
     for project in rows(
         """SELECT p.*,wp.workspace_id FROM projects p
-        LEFT JOIN workspace_projects wp ON wp.project_id=p.id"""
+        LEFT JOIN workspace_projects wp ON wp.project_id=p.id
+        ORDER BY p.created_at,p.id,wp.workspace_id"""
     ):
+        # A project shared by several workspaces (from before projects were
+        # per-workspace) is refreshed once.
         if GitHubConnector.slug(str(project.get("repository") or "")) == repository:
-            return project
-    raise HTTPException(404, "No MemoryWorks project is connected to this GitHub repository")
+            matches.setdefault(project["id"], project)
+    if not matches:
+        raise HTTPException(404, "No MemoryWorks project is connected to this GitHub repository")
+    return list(matches.values())
 
 
 def _process_github_webhook_event(event_id: str, payload: dict, workspace_id: str) -> None:
     try:
         connector = GitHubConnector(ConnectorSecrets(workspace_id))
         repository = str((payload.get("repository") or {}).get("full_name") or "")
-        project = _github_webhook_project(repository)
+        event = change_intelligence.get(event_id)
+        project = (
+            row("SELECT * FROM projects WHERE id=?", (event["project_id"],)) if event else None
+        )
+        if not project:
+            raise ValueError("The webhook project no longer exists")
         # A webhook is a source revision signal, not just a notification.
         # Reconcile the repository corpus first so HCAG can answer against the
         # new commit immediately after this background task completes.
         RepositoryIngestor(ingestion, graph, connector).ingest(
             str(project.get("repository") or ""),
             str(project.get("name") or repository),
+            project_id=project["id"],
         )
         diff, metadata = github_diff(payload, connector)
         change_intelligence.process(
@@ -1258,7 +1281,7 @@ async def github_change_webhook(
     except json.JSONDecodeError as exc:
         raise HTTPException(400, "GitHub webhook body is not valid JSON") from exc
     repository = str((payload.get("repository") or {}).get("full_name") or "")
-    project = _github_webhook_project(repository)
+    projects = _github_webhook_projects(repository)
     delivery_id = x_github_delivery or hashlib.sha256(body).hexdigest()
     pull_request = payload.get("pull_request") or {}
     commit_sha = str(((pull_request.get("head") or {}).get("sha")) or payload.get("after") or "")
@@ -1268,26 +1291,38 @@ async def github_change_webhook(
         or (payload.get("repository") or {}).get("html_url")
         or ""
     )
-    event, created = change_intelligence.observe(
-        project["id"],
-        delivery_id,
-        f"github_{x_github_event}",
-        repository,
-        commit_sha,
-        source_url,
-        payload,
-    )
-    if created:
-        background_jobs.enqueue(
-            "github.webhook",
-            {
-                "event_id": event["id"],
-                "payload": payload,
-                "workspace_id": str(project.get("workspace_id") or ""),
-            },
-            background_tasks=background_tasks,
+    events: list[tuple[dict, bool]] = []
+    for index, project in enumerate(projects):
+        # Deliveries are deduplicated by id; the first project keeps GitHub's
+        # own id so replays of earlier deliveries are still recognised.
+        project_delivery_id = delivery_id if index == 0 else f"{delivery_id}:{project['id']}"
+        event, created = change_intelligence.observe(
+            project["id"],
+            project_delivery_id,
+            f"github_{x_github_event}",
+            repository,
+            commit_sha,
+            source_url,
+            payload,
         )
-    return {**event, "accepted": created, "replayed": not created}
+        events.append((event, created))
+        if created:
+            background_jobs.enqueue(
+                "github.webhook",
+                {
+                    "event_id": event["id"],
+                    "payload": payload,
+                    "workspace_id": str(project.get("workspace_id") or ""),
+                },
+                background_tasks=background_tasks,
+            )
+    event, created = events[0]
+    return {
+        **event,
+        "accepted": created,
+        "replayed": not created,
+        "projects_refreshed": sum(1 for _, was_created in events if was_created),
+    }
 
 
 @router.post("/webhooks/slack")
@@ -1395,15 +1430,11 @@ def _ingest_github_repository(
 ) -> dict:
     with _REPOSITORY_INGEST_LOCK:
         result = RepositoryIngestor(ingestion, graph, connector).ingest(
-            request.repo_url_or_path, request.project_name
+            request.repo_url_or_path,
+            request.project_name,
+            workspace_id=principal["active_workspace_id"],
+            team_ids=team_ids,
         )
-    with connect() as conn:
-        conn.execute(
-            "INSERT OR IGNORE INTO workspace_projects VALUES (?,?)",
-            (principal["active_workspace_id"], result["project_id"]),
-        )
-    for team_id in team_ids:
-        scopes.assign_project(result["project_id"], team_id, "write")
     repository_resource = GitHubConnector.slug(request.repo_url_or_path) or request.repo_url_or_path
     connector_sync.enqueue(
         "github",
@@ -1558,16 +1589,9 @@ def _run_github_inventory(
     for item in queued:
         try:
             with _REPOSITORY_INGEST_LOCK:
-                result = ingestor.ingest(item["source"], item["repository"])
-            # Without this link the repository is ingested but invisible: it never
-            # appears in the workspace, and asking about it fails authorization.
-            # The single-repository route has always done this; bulk did not.
-            if workspace_id:
-                with connect() as conn:
-                    conn.execute(
-                        "INSERT OR IGNORE INTO workspace_projects VALUES (?,?)",
-                        (workspace_id, result["project_id"]),
-                    )
+                result = ingestor.ingest(
+                    item["source"], item["repository"], workspace_id=workspace_id
+                )
             _finish_job(item["job_id"], "succeeded", result)
         except Exception as exc:
             _fail_job(item["job_id"], exc)
@@ -1993,28 +2017,41 @@ def ask_stream(request: AskRequest, authorization: str | None = Header(default=N
     a draft is replaced, and one ``done`` event carrying exactly what ``/ask``
     would have returned. The draft is a preview; ``done`` is the answer. A
     ``ping`` keeps proxies from closing a quiet connection.
+
+    The first event, ``start``, carries the answer's id: ``POST
+    /ask/stream/{id}/cancel`` stops it, as does closing the connection. The
+    answer then ends with ``cancelled`` and its model calls are closed.
     """
     principal = _authorize_project(request.project_id, authorization)
     visible = _visible_project_ids(principal)
     events: queue.Queue[tuple[str, dict]] = queue.Queue()
+    answer_id = new_id("answer")
+    stop = streams.open_stream(answer_id, str(principal["id"]))
+
+    def narrate(kind: str, payload: dict) -> None:
+        raise_if_cancelled()  # every step is a place to stop
+        events.put((kind, payload))
 
     def worker() -> None:
         try:
-            result = retrieval.ask(
-                request.project_id,
-                request.query,
-                sorted(visible or []),
-                principal=principal,
-                allowed_team_ids=_principal_team_ids(principal),
-                token_budget=request.token_budget,
-                model_provider=request.model,
-                surface=request.surface,
-                scope=request.scope,
-                history=[turn.model_dump() for turn in request.history],
-                on_event=lambda kind, payload: events.put((kind, payload)),
-                commit_fetcher=_commit_fetcher(principal),
-            )
+            with cancellable(stop):
+                result = retrieval.ask(
+                    request.project_id,
+                    request.query,
+                    sorted(visible or []),
+                    principal=principal,
+                    allowed_team_ids=_principal_team_ids(principal),
+                    token_budget=request.token_budget,
+                    model_provider=request.model,
+                    surface=request.surface,
+                    scope=request.scope,
+                    history=[turn.model_dump() for turn in request.history],
+                    on_event=narrate,
+                    commit_fetcher=_commit_fetcher(principal),
+                )
             events.put(("done", {"answer": result}))
+        except AnswerCancelled:
+            events.put(("cancelled", {}))
         except Exception:  # noqa: BLE001 - the stream must end with an event
             logger.exception("Streamed answer failed")
             events.put(("error", {"message": "MemoryWorks could not finish this answer."}))
@@ -2023,25 +2060,41 @@ def ask_stream(request: AskRequest, authorization: str | None = Header(default=N
 
     def stream():
         deadline = time.monotonic() + settings.org_memory_answer_stream_timeout_seconds
-        while True:
-            try:
-                kind, payload = events.get(timeout=10)
-            except queue.Empty:
-                if time.monotonic() > deadline:
-                    message = _busy_message(principal["active_workspace_id"])
-                    yield json.dumps({"type": "error", "message": message}) + "\n"
+        try:
+            yield json.dumps({"type": "start", "id": answer_id}) + "\n"
+            while True:
+                try:
+                    kind, payload = events.get(timeout=1 if stop.is_set() else 10)
+                except queue.Empty:
+                    if stop.is_set():
+                        yield json.dumps({"type": "cancelled"}) + "\n"
+                        return
+                    if time.monotonic() > deadline:
+                        message = _busy_message(principal["active_workspace_id"])
+                        yield json.dumps({"type": "error", "message": message}) + "\n"
+                        return
+                    yield json.dumps({"type": "ping"}) + "\n"
+                    continue
+                yield json.dumps({"type": kind, **payload}, default=str) + "\n"
+                if kind in {"done", "error", "cancelled"}:
                     return
-                yield json.dumps({"type": "ping"}) + "\n"
-                continue
-            yield json.dumps({"type": kind, **payload}, default=str) + "\n"
-            if kind in {"done", "error"}:
-                return
+        finally:
+            # The client went away (or the answer ended): stop any work left.
+            stop.set()
+            streams.close_stream(answer_id)
 
     return StreamingResponse(
         stream(),
         media_type="application/x-ndjson",
         headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
     )
+
+
+@router.post("/ask/stream/{answer_id}/cancel")
+def cancel_ask_stream(answer_id: str, authorization: str | None = Header(default=None)):
+    """Stop an answer this caller started; it ends with a ``cancelled`` event."""
+    principal = _authorize_workspace(authorization)
+    return {"cancelled": streams.cancel(answer_id, str(principal["id"]))}
 
 
 @router.post("/execute")
@@ -2637,26 +2690,20 @@ def _memory_search_core(
     project_id: str = "",
     type: str = "",
     limit: int = 10,
+    *,
+    space_ids: list[str] | None = None,
 ) -> dict:
     """Shared search core for the HTTP route and the WebMCP agent runner."""
     if type and type not in MEMORY_TYPES:
         raise HTTPException(400, f"Unknown memory type; use one of {sorted(MEMORY_TYPES)}")
-    workspace_id = principal.get("active_workspace_id", "")
     if project_id:
         _authorize_project_for_principal(principal, project_id)
         project_ids = [project_id]
     else:
-        visible = _visible_project_ids(principal)
-        if visible is not None:
-            project_ids = sorted(visible)
-        else:
-            project_ids = [
-                item["project_id"]
-                for item in rows(
-                    "SELECT project_id FROM workspace_projects WHERE workspace_id=?",
-                    (workspace_id,),
-                )
-            ]
+        project_ids = _authorized_space_ids(principal)
+        if space_ids is not None:
+            requested = set(space_ids)
+            project_ids = [item for item in project_ids if item in requested]
     team_ids = _principal_team_ids(principal)
     terms = [term for term in re.split(r"\W+", q.casefold()) if term]
     if not terms and not type:
@@ -3683,7 +3730,7 @@ def _run_repository_refresh(request_id: str) -> None:
             raise ValueError("The selected project no longer has a GitHub repository")
         connector = GitHubConnector(ConnectorSecrets(record["workspace_id"], record["user_id"]))
         result = RepositoryIngestor(ingestion, graph, connector).ingest(
-            project["repository"], project["name"]
+            project["repository"], project["name"], project_id=record["project_id"]
         )
         repository_resource = GitHubConnector.slug(project["repository"]) or project["repository"]
         connector_sync.enqueue(

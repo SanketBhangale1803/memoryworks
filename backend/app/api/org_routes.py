@@ -10,18 +10,21 @@ from __future__ import annotations
 import json
 import queue
 import time
-from threading import Thread
+from threading import Event, Thread
 
 from fastapi import APIRouter, Header, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from app.core import streams
 from app.core.database import row
+from app.llm import AnswerCancelled, cancellable, raise_if_cancelled
 from app.llm.providers import configured_model, generate_grounded_json
 from app.orgops import OrgOpsService, WatchService
 from app.orgops.agent import build_org_executor, org_guided_decider, org_tool_catalog
 from app.orgops.seed import reset_launch_scenario, seed_launch_scenario
-from app.webmcp_agent import AgentSessionStore, WebMCPAgentRunner
+from app.orgops.sessions import OrgAgentSessionStore
+from app.webmcp_agent import WebMCPAgentRunner
 
 from .routes import (
     _authenticate,
@@ -38,7 +41,7 @@ from .routes import (
 org_router = APIRouter(prefix="/api/org", tags=["organization"])
 orgops = OrgOpsService(company_memory)
 watches = WatchService(orgops)
-org_sessions = AgentSessionStore()
+org_sessions = OrgAgentSessionStore()
 # Same loop the browser-tool agent uses; only the catalog differs, so a question
 # typed into the console is answered by a model choosing tools, not by a script.
 org_agent = WebMCPAgentRunner(catalog=org_tool_catalog, guided=org_guided_decider)
@@ -129,16 +132,16 @@ def search_memory(
     memory_type: str = "",
     limit: int = Query(10, ge=1, le=50),
     authorization: str | None = Header(default=None),
+    type: str = "",
 ):
     """Same retrieval the product uses, exposed with the agent-facing shape."""
     principal = _authenticate(authorization)
     targets = _spaces(principal, space_ids)
-    single = targets[0] if len(targets) == 1 else ""
-    result = _memory_search_core(principal, query, project_id=single, type=memory_type, limit=limit)
+    result = _memory_search_core(
+        principal, query, type=memory_type or type, limit=limit, space_ids=targets
+    )
     results = [
-        {**orgops.public_memory(item), "score": item.get("score")}
-        for item in result["results"]
-        if not space_ids or item["project_id"] in targets
+        {**orgops.public_memory(item), "score": item.get("score")} for item in result["results"]
     ]
     return {
         "query": query,
@@ -476,11 +479,11 @@ def _org_executor(principal: dict, space_ids: list[str]):
         return space_ids
 
     def search(caller: dict, query: str, memory_type: str, limit: int) -> dict:
-        result = _memory_search_core(caller, query, type=memory_type, limit=limit)
+        result = _memory_search_core(
+            caller, query, type=memory_type, limit=limit, space_ids=space_ids
+        )
         results = [
-            {**orgops.public_memory(item), "score": item.get("score")}
-            for item in result["results"]
-            if item["project_id"] in space_ids
+            {**orgops.public_memory(item), "score": item.get("score")} for item in result["results"]
         ]
         return {"query": query, "count": len(results), "results": results}
 
@@ -498,22 +501,28 @@ def _org_executor(principal: dict, space_ids: list[str]):
     return build_org_executor(orgops, resolve, search, propose)
 
 
-def _run_org_session(run_id: str, principal: dict, question: str, space_ids: list[str], model: str):
+def _run_org_session(
+    run_id: str, principal: dict, question: str, space_ids: list[str], model: str, stop: Event
+):
     def on_step(step: dict) -> None:
+        raise_if_cancelled()
         org_sessions.append_step(run_id, step)
 
     try:
-        result = org_agent.run(
-            principal=principal,
-            question=question,
-            model=model or None,
-            exec_tool=_org_executor(principal, space_ids),
-            list_spaces=lambda _: [
-                {"project_id": space["id"], "name": space["name"]}
-                for space in orgops.list_spaces(space_ids)
-            ],
-            on_step=on_step,
-        )
+        with cancellable(stop):
+            raise_if_cancelled()
+            result = org_agent.run(
+                principal=principal,
+                question=question,
+                model=model or None,
+                exec_tool=_org_executor(principal, space_ids),
+                list_spaces=lambda _: [
+                    {"project_id": space["id"], "name": space["name"]}
+                    for space in orgops.list_spaces(space_ids)
+                ],
+                on_step=on_step,
+            )
+            raise_if_cancelled()
         org_sessions.update(
             run_id,
             status="complete",
@@ -523,9 +532,13 @@ def _run_org_session(run_id: str, principal: dict, question: str, space_ids: lis
             thoughts=result.get("thoughts", []),
             mode=result.get("mode", "model"),
         )
+    except AnswerCancelled:
+        org_sessions.update(run_id, status="cancelled", error="Stopped")
     except Exception as exc:
         logger.exception("Organizational agent session failed")
         org_sessions.update(run_id, status="error", error=str(exc))
+    finally:
+        streams.close_stream(run_id)
 
 
 @org_router.post("/ask")
@@ -550,12 +563,20 @@ def ask_org(request: AskRequest, authorization: str | None = Header(default=None
         actor=str(principal["id"]),
         payload={"session_id": run_id, "spaces": len(space_ids)},
     )
+    stop = streams.open_stream(run_id, str(principal["id"]))
     Thread(
         target=_run_org_session,
-        args=(run_id, principal, request.question, space_ids, request.model or ""),
+        args=(run_id, principal, request.question, space_ids, request.model or "", stop),
         daemon=True,
     ).start()
     return org_sessions.get(run_id, principal.get("active_workspace_id", ""))
+
+
+@org_router.post("/ask/{run_id}/cancel")
+def cancel_org_session(run_id: str, authorization: str | None = Header(default=None)):
+    """Stop an Agent run this caller started; it ends at its next step or model call."""
+    principal = _authenticate(authorization)
+    return {"cancelled": streams.cancel(run_id, str(principal["id"]))}
 
 
 @org_router.get("/ask/{run_id}")
@@ -571,12 +592,10 @@ def org_session(run_id: str, authorization: str | None = Header(default=None)):
 def ask_org_stream(request: AskRequest, authorization: str | None = Header(default=None)):
     """Stream one agent session as NDJSON over a single request.
 
-    The session registry is process-local, so a console that polls
-    ``/ask/{run_id}`` can reach a different instance mid-run and lose the
-    trace entirely. Running the same loop inside the request keeps the run,
-    its tool calls, and its trace on one instance — and lets the console
-    render each step the moment it lands. ``POST /ask`` stays for SDK and
-    single-instance deployments.
+    Active runs and cancellation are local to the worker. The stream delivers
+    each step as it lands, and finished runs are readable through
+    ``/ask/{run_id}`` from any worker sharing the database. ``POST /ask``
+    stays for SDK and single-instance polling while runs are active.
     """
     principal = _authenticate(authorization)
     space_ids = _spaces(principal, ",".join(request.space_ids))
@@ -594,24 +613,29 @@ def ask_org_stream(request: AskRequest, authorization: str | None = Header(defau
     )
 
     events: queue.Queue[tuple[str, dict]] = queue.Queue()
+    # Stopped only by POST /ask/{run_id}/cancel: a dropped stream keeps the run
+    # going so the console can recover it by polling.
+    stop = streams.open_stream(run_id, str(principal["id"]))
 
     def on_step(step: dict) -> None:
+        raise_if_cancelled()
         org_sessions.append_step(run_id, step)
         events.put(("step", step))
 
     def worker() -> None:
         try:
-            result = org_agent.run(
-                principal=principal,
-                question=request.question,
-                model=request.model or None,
-                exec_tool=_org_executor(principal, space_ids),
-                list_spaces=lambda _: [
-                    {"project_id": space["id"], "name": space["name"]}
-                    for space in orgops.list_spaces(space_ids)
-                ],
-                on_step=on_step,
-            )
+            with cancellable(stop):
+                result = org_agent.run(
+                    principal=principal,
+                    question=request.question,
+                    model=request.model or None,
+                    exec_tool=_org_executor(principal, space_ids),
+                    list_spaces=lambda _: [
+                        {"project_id": space["id"], "name": space["name"]}
+                        for space in orgops.list_spaces(space_ids)
+                    ],
+                    on_step=on_step,
+                )
             org_sessions.update(
                 run_id,
                 status="complete",
@@ -620,6 +644,9 @@ def ask_org_stream(request: AskRequest, authorization: str | None = Header(defau
                 proposal=result.get("proposal"),
                 thoughts=result.get("thoughts", []),
                 mode=result.get("mode", "model"),
+                usage=result.get("usage", {}),
+                models=result.get("models", []),
+                model_calls=result.get("model_calls", 0),
             )
             events.put(
                 (
@@ -627,10 +654,15 @@ def ask_org_stream(request: AskRequest, authorization: str | None = Header(defau
                     org_sessions.get(run_id, principal.get("active_workspace_id", "")) or {},
                 )
             )
+        except AnswerCancelled:
+            org_sessions.update(run_id, status="cancelled", error="Stopped")
+            events.put(("cancelled", {}))
         except Exception as exc:  # noqa: BLE001 - the stream must end with an event
             logger.exception("Organizational agent session failed")
             org_sessions.update(run_id, status="error", error=str(exc))
             events.put(("error", {"message": str(exc)}))
+        finally:
+            streams.close_stream(run_id)
 
     Thread(target=worker, daemon=True).start()
 
@@ -654,6 +686,9 @@ def ask_org_stream(request: AskRequest, authorization: str | None = Header(defau
                 continue
             if kind == "done":
                 yield json.dumps({"type": "done", "session": payload}, default=str) + "\n"
+                return
+            if kind == "cancelled":
+                yield json.dumps({"type": "cancelled"}) + "\n"
                 return
             if kind == "error":
                 yield (

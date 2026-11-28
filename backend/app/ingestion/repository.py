@@ -11,7 +11,7 @@ from typing import Any
 
 from app.connectors.github import GitHubConnector
 from app.core.config import settings
-from app.core.database import connect, row, rows
+from app.core.database import connect, rows
 from app.graph.base import GraphStore
 from app.graph.graph_builder import RepoGraphBuilder
 
@@ -106,9 +106,18 @@ class RepositoryIngestor:
         self.github = github or GitHubConnector()
         self.graph_builder = RepoGraphBuilder(graph)
 
-    def ingest(self, source: str, project_name: str) -> dict[str, Any]:
-        existing = row("SELECT id FROM projects WHERE repository=?", (source,))
-        project_id = self.ingestion.create_project(project_name, source)
+    def ingest(
+        self,
+        source: str,
+        project_name: str,
+        *,
+        workspace_id: str = "",
+        project_id: str | None = None,
+        team_ids: list[str] | None = None,
+    ) -> dict[str, Any]:
+        project_id = self.ingestion.create_project(
+            project_name, source, project_id, workspace_id=workspace_id, team_ids=team_ids
+        )
         repository_id = f"repo:{project_id}"
         root, temporary = self._checkout(source, project_id)
         files_scanned = issues_scanned = pull_requests_scanned = chunks_created = 0
@@ -123,24 +132,23 @@ class RepositoryIngestor:
         unchanged_sources: set[str] = set()
         fully_scanned_types = {"repo_file"}
 
-        if existing:
-            for item in rows(
-                "SELECT source_id,source_type,content,metadata_json FROM knowledge_items "
-                "WHERE project_id=? AND source_type IN "
-                "('repo_file','github_issue','pull_request','repository_metadata','github_commit')",
-                (project_id,),
-            ):
-                try:
-                    previous_metadata = json.loads(item["metadata_json"] or "{}")
-                except json.JSONDecodeError:
-                    previous_metadata = {}
-                previous_items[item["source_id"]] = {
-                    "source_type": item["source_type"],
-                    "content_hash": hashlib.sha256(
-                        item["content"].encode("utf-8", errors="replace")
-                    ).hexdigest(),
-                    "index_schema_version": str(previous_metadata.get("index_schema_version") or 0),
-                }
+        for item in rows(
+            "SELECT source_id,source_type,content,metadata_json FROM knowledge_items "
+            "WHERE project_id=? AND source_type IN "
+            "('repo_file','github_issue','pull_request','repository_metadata','github_commit')",
+            (project_id,),
+        ):
+            try:
+                previous_metadata = json.loads(item["metadata_json"] or "{}")
+            except json.JSONDecodeError:
+                previous_metadata = {}
+            previous_items[item["source_id"]] = {
+                "source_type": item["source_type"],
+                "content_hash": hashlib.sha256(
+                    item["content"].encode("utf-8", errors="replace")
+                ).hexdigest(),
+                "index_schema_version": str(previous_metadata.get("index_schema_version") or 0),
+            }
 
         def ingest_if_changed(
             source_type: str,

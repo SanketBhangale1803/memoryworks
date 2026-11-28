@@ -2,16 +2,19 @@
 
 import { useEffect, useState } from "react";
 import WorkspaceChat from "@/components/WorkspaceChat";
-import { api } from "@/lib/api";
+import { api, reportApiFailure } from "@/lib/api";
+import type { AuthUser } from "@/lib/types";
 
 /* The workspace is the chat. Everything else — memories, graph, connectors,
    approvals — stays reachable, but nobody has to pass through a dashboard to
    ask their company a question. */
 export default function Workspace() {
-  const [user, setUser] = useState<any>();
+  const [user, setUser] = useState<AuthUser>();
 
   useEffect(() => {
-    api("/api/auth/me").then(setUser).catch(() => setUser({}));
+    api<AuthUser>("/api/auth/me")
+      .then(setUser)
+      .catch((exc) => reportApiFailure(exc, () => setUser({ id: "", email: "" })));
   }, []);
 
   return <WorkspaceChat user={user} />;

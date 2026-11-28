@@ -100,3 +100,21 @@ def test_a_refused_proposal_is_reported_as_not_filed():
 def test_a_fragment_that_fits_two_spaces_is_refused_not_guessed():
     with pytest.raises(ValueError, match="not one you can change"):
         _place_operations([{"op": "create_task", "title": "x", "space_id": "acme"}], SPACES, "")
+
+
+def test_an_operation_keyed_by_its_kind_is_understood():
+    # GLM wrote every operation as {"create_task": {...}}; all of them were
+    # refused with "op must be one of ..." and no plan was ever filed.
+    placed = _place_operations(
+        [{"create_task": {"space_id": "proj_b", "title": "Inventory SQLite use"}}],
+        SPACES,
+        "proj_a",
+    )
+    assert placed == [{"op": "create_task", "space_id": "proj_b", "title": "Inventory SQLite use"}]
+
+
+def test_an_operation_without_a_kind_is_refused_with_an_example():
+    from app.orgops.service import OrgOpsService
+
+    with pytest.raises(ValueError, match='"op": "create_task"'):
+        OrgOpsService._validate_operation({"title": "no kind"})
